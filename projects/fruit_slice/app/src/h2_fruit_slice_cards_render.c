@@ -192,7 +192,7 @@ static uint16_t lighten(uint16_t color, uint32_t amount) {
 
 /* Flat color used for small icons and flights. */
 static uint16_t icon_color(unsigned id) {
-  if (id < H2_FRUIT_SLICE_FRUIT_KINDS)
+  if (id <= H2_FRUIT_SLICE_CARD_LEMON)
     return h2_fruit_slice_game_juice((h2_fruit_slice_kind_t)id);
   switch (id) {
     case H2_FRUIT_SLICE_CARD_FRUIT_SALAD:
@@ -316,7 +316,7 @@ static void card_art(h2_fruit_slice_canvas_t* canvas,
                      float cy, float r, bool silhouette, float angle) {
   const uint64_t now = game->cards.time_ms;
   const float u = game->unit;
-  if (id < H2_FRUIT_SLICE_FRUIT_KINDS) {
+  if (id <= H2_FRUIT_SLICE_CARD_LEMON) {
     if (silhouette)
       h2_fruit_slice_draw_disc(canvas, cx, cy, r, k_silhouette, 256u);
     else
@@ -649,7 +649,9 @@ bool h2_fruit_slice_cards_prepare_sprites(h2_fruit_slice_sprites_t* sprites,
                                     &album);
   h2_fruit_slice_cards_reveal_layout(game->width, game->height, &reveal);
   bool ok = sprites != NULL;
-  for (unsigned k = 0; ok && k < H2_FRUIT_SLICE_KIND_COUNT; ++k) {
+  /* Album art is only for the original five fruit and the bomb. New fruit
+   * have no saved card slots and must not displace weapon illustrations. */
+  for (unsigned k = 0; ok && k <= H2_FRUIT_SLICE_BOMB; ++k) {
     const h2_fruit_slice_kind_t kind = (h2_fruit_slice_kind_t)k;
     ok =
         h2_fruit_slice_sprites_prepare_fruit(sprites, kind, album.art_radius) &&

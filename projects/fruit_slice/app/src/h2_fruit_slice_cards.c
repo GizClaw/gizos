@@ -367,26 +367,44 @@ static void check_score(h2_fruit_slice_cards_t* cards, uint32_t score,
     award(cards, H2_FRUIT_SLICE_CARD_LEGEND, x, y);
 }
 
+int h2_fruit_slice_card_for_fruit(unsigned kind) {
+  switch (kind) {
+    case H2_FRUIT_SLICE_WATERMELON:
+      return H2_FRUIT_SLICE_CARD_WATERMELON;
+    case H2_FRUIT_SLICE_ORANGE:
+      return H2_FRUIT_SLICE_CARD_ORANGE;
+    case H2_FRUIT_SLICE_APPLE:
+      return H2_FRUIT_SLICE_CARD_APPLE;
+    case H2_FRUIT_SLICE_KIWI:
+      return H2_FRUIT_SLICE_CARD_KIWI;
+    case H2_FRUIT_SLICE_LEMON:
+      return H2_FRUIT_SLICE_CARD_LEMON;
+    default:
+      return -1;
+  }
+}
+
 void h2_fruit_slice_cards_on_slice(h2_fruit_slice_cards_t* cards,
                                    unsigned fruit_kind, uint32_t score,
                                    unsigned weapon, float x, float y) {
-  if (!cards->run_active) return;
+  if (!cards->run_active || !h2_fruit_slice_is_fruit(fruit_kind)) return;
   ++cards->run_slices;
-  if (fruit_kind < H2_FRUIT_SLICE_FRUIT_KINDS &&
-      (cards->run_earned & (1u << fruit_kind)) == 0u) {
-    const bool owned = cards->counts[fruit_kind] != 0u;
-    const bool rare =
-        k_cards[fruit_kind].rarity != H2_FRUIT_SLICE_RARITY_COMMON;
+  const int mapped = h2_fruit_slice_card_for_fruit(fruit_kind);
+  const unsigned card =
+      mapped >= 0 ? (unsigned)mapped : H2_FRUIT_SLICE_CARD_COUNT;
+  if (mapped >= 0 && (cards->run_earned & (1u << card)) == 0u) {
+    const bool owned = cards->counts[card] != 0u;
+    const bool rare = k_cards[card].rarity != H2_FRUIT_SLICE_RARITY_COMMON;
     const uint32_t percent =
         owned ? H2_FRUIT_SLICE_CARD_DROP_OWNED_PERCENT
               : (rare ? H2_FRUIT_SLICE_CARD_DROP_NEW_PERCENT / 2u
                       : H2_FRUIT_SLICE_CARD_DROP_NEW_PERCENT);
-    if (cards->pity[fruit_kind] < 255u) ++cards->pity[fruit_kind];
+    if (cards->pity[card] < 255u) ++cards->pity[card];
     const bool pity =
-        !owned && cards->pity[fruit_kind] >= H2_FRUIT_SLICE_CARD_DROP_PITY;
+        !owned && cards->pity[card] >= H2_FRUIT_SLICE_CARD_DROP_PITY;
     if (pity || random_next(cards) % 100u < percent) {
-      cards->pity[fruit_kind] = 0u;
-      award(cards, fruit_kind, x, y);
+      cards->pity[card] = 0u;
+      award(cards, card, x, y);
     }
   }
   if (cards->run_slices >= H2_FRUIT_SLICE_CARD_SALAD_SLICES)

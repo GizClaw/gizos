@@ -48,11 +48,22 @@ typedef enum h2_fruit_slice_kind {
   H2_FRUIT_SLICE_APPLE,
   H2_FRUIT_SLICE_KIWI,
   H2_FRUIT_SLICE_LEMON,
-  H2_FRUIT_SLICE_BOMB,
+  /* Stable IDs: append fruit after the original bomb slot. */
+  H2_FRUIT_SLICE_BOMB = 5,
+  H2_FRUIT_SLICE_STRAWBERRY = 6,
+  H2_FRUIT_SLICE_BANANA,
+  H2_FRUIT_SLICE_PINEAPPLE,
+  H2_FRUIT_SLICE_GRAPES,
   H2_FRUIT_SLICE_KIND_COUNT,
 } h2_fruit_slice_kind_t;
 
-#define H2_FRUIT_SLICE_FRUIT_KINDS ((unsigned)H2_FRUIT_SLICE_BOMB)
+#define H2_FRUIT_SLICE_FRUIT_KINDS 9u
+
+/** Dense fruit index -> stable kind; out-of-range returns KIND_COUNT.
+ * Bombs are excluded. Repeated bodies of one kind are separate slice events,
+ * while a grape bunch is one body/event, including its visual berries. */
+h2_fruit_slice_kind_t h2_fruit_slice_kind_at(unsigned fruit_index);
+bool h2_fruit_slice_is_fruit(unsigned kind);
 
 typedef enum h2_fruit_slice_phase {
   H2_FRUIT_SLICE_PHASE_TITLE = 0,
@@ -143,6 +154,9 @@ typedef struct h2_fruit_slice_half {
   bool active;
   uint8_t kind;
   float radius;
+  /** Fruit-local orientation relative to the cut normal; preserves new
+   * silhouettes as the two cut halves separate and rotate. */
+  float shape_angle;
   /** body.angle is the outward normal of the cut face's opposite side: the
    * half covers points p with dot(p - center, normal) >= 0. */
   h2_fruit_slice_body_t body;
