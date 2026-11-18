@@ -238,7 +238,7 @@ static void test_title_guard_and_continue_disabled(void) {
   tap_rect(&game, &game.layout.title_buttons[2]);
   CHECK(game.phase == H2_XIANXIA_RPG_PHASE_CHAPTERS);
   run(&game, 300);
-  tap_rect(&game, &game.layout.chapter_rows[4]);
+  tap_rect(&game, &game.layout.chapter_rows[5]);
   CHECK(game.phase == H2_XIANXIA_RPG_PHASE_CHAPTERS);
   tap_rect(&game, &game.layout.chapter_back);
   CHECK(game.phase == H2_XIANXIA_RPG_PHASE_TITLE);

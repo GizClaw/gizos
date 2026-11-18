@@ -77,6 +77,8 @@ static const char* const k_actor_names[H2_XIANXIA_RPG_ACTOR_COUNT] = {
     [H2_XIANXIA_RPG_ACTOR_WRAITH] = "雾魇",
     [H2_XIANXIA_RPG_ACTOR_SHIYAN] = "石砚",
     [H2_XIANXIA_RPG_ACTOR_WENZHOU] = "闻舟",
+    [H2_XIANXIA_RPG_ACTOR_WEN_GRANDMA] = "闻婆",
+    [H2_XIANXIA_RPG_ACTOR_BOAT_DOCTOR] = "药舟大夫",
     [H2_XIANXIA_RPG_ACTOR_SWORD_SOUL] = "剑魄·听雨",
 };
 
@@ -102,6 +104,15 @@ static const char* const k_objectives[H2_XIANXIA_RPG_STAGE_COUNT] = {
     [H2_XIANXIA_RPG_STAGE_C4_ESCORT] = "护火过风口，向东点亮三灯",
     [H2_XIANXIA_RPG_STAGE_C4_GUARD] = "点祭台第三灯，守住三波",
     [H2_XIANXIA_RPG_STAGE_C4_RETURN] = "回村向陶伯问旧灯簿",
+    [H2_XIANXIA_RPG_STAGE_C5_ARRIVE] = "问药铺船大夫，寻找闻家",
+    [H2_XIANXIA_RPG_STAGE_C5_PAGE] = "旧城退潮，取右下残页",
+    [H2_XIANXIA_RPG_STAGE_C5_TOWER] = "钟台涨潮，右上进灯楼",
+    [H2_XIANXIA_RPG_STAGE_C5_CHOICE] = "回答闻婆：要灯还是还灯",
+    [H2_XIANXIA_RPG_STAGE_C5_DUEL] = "点闻舟：六回合或半血",
+    [H2_XIANXIA_RPG_STAGE_C5_RESCUE] = "退潮，去右下救闻婆",
+    [H2_XIANXIA_RPG_STAGE_C5_ESCORT] = "背人回钟涨潮，再向西",
+    [H2_XIANXIA_RPG_STAGE_C5_RETURN] = "闻婆安全，问药铺大夫",
+    [H2_XIANXIA_RPG_STAGE_C5_CLEARED] = "携江篱，急赴百草寒谷",
     [H2_XIANXIA_RPG_STAGE_C4_CLEARED] = "三灯归山，同赴照水",
 };
 
@@ -152,6 +163,12 @@ static const h2_xianxia_rpg_enemy_info_t k_enemies[H2_XIANXIA_RPG_ENEMY_COUNT] =
         [H2_XIANXIA_RPG_ENEMY_INK_TIDE] = {"浊潮墨影", "墨浪扑灯", 150, 30, 10,
                                            150, H2_XIANXIA_RPG_RGB(48, 56, 80),
                                            H2_XIANXIA_RPG_RGB(150, 120, 200)},
+        [H2_XIANXIA_RPG_ENEMY_WENZHOU] = {"闻舟", "穿檐", 360, 46, 14, 120,
+                                          H2_XIANXIA_RPG_RGB(64, 87, 110),
+                                          H2_XIANXIA_RPG_RGB(220, 208, 166)},
+        [H2_XIANXIA_RPG_ENEMY_TIDE_OTTER] = {"潮獭", "拍浪", 110, 34, 8, 20,
+                                             H2_XIANXIA_RPG_RGB(58, 128, 143),
+                                             H2_XIANXIA_RPG_RGB(202, 222, 194)},
         [H2_XIANXIA_RPG_ENEMY_SWORD_SOUL] = {"剑魄·听雨", "穿檐", 520, 32, 10,
                                              110,
                                              H2_XIANXIA_RPG_RGB(92, 146, 162),
@@ -323,7 +340,7 @@ static const h2_xianxia_rpg_script_t k_scripts[H2_XIANXIA_RPG_SCRIPT_C2_FIRST] =
 const char* const h2_xianxia_rpg_text[H2_XIANXIA_RPG_TEXT_COUNT] = {
     [H2_XIANXIA_RPG_TEXT_TITLE] = "竹溪仙缘",
     [H2_XIANXIA_RPG_TEXT_SUBTITLE] = "原创国风仙侠 · 回合制角色扮演",
-    [H2_XIANXIA_RPG_TEXT_CHAPTER] = "四章合辑 · 万灯归山",
+    [H2_XIANXIA_RPG_TEXT_CHAPTER] = "五章合辑 · 照水旧城",
     [H2_XIANXIA_RPG_TEXT_NEW_GAME] = "新的旅程",
     [H2_XIANXIA_RPG_TEXT_CONTINUE] = "继续旅程",
     [H2_XIANXIA_RPG_TEXT_TITLE_HINT] = "轻触选择",
@@ -378,7 +395,7 @@ const char* const h2_xianxia_rpg_text[H2_XIANXIA_RPG_TEXT_COUNT] = {
     [H2_XIANXIA_RPG_TEXT_STATUS_PLAYING] = "进行中",
     [H2_XIANXIA_RPG_TEXT_STATUS_OPEN] = "可开始",
     [H2_XIANXIA_RPG_TEXT_STATUS_SOON] = "敬请期待",
-    [H2_XIANXIA_RPG_TEXT_UPCOMING] = "第五章 · 照水旧城",
+    [H2_XIANXIA_RPG_TEXT_UPCOMING] = "第六章 · 百草寒谷",
     [H2_XIANXIA_RPG_TEXT_UNREADABLE] =
         "有一份存档无法读取，已跳过；其他记录不受影响。",
     [H2_XIANXIA_RPG_TEXT_RECAP_HEAD] = "前情提要",
@@ -472,6 +489,23 @@ const char* const h2_xianxia_rpg_text[H2_XIANXIA_RPG_TEXT_COUNT] = {
     [H2_XIANXIA_RPG_TEXT_C4_HERO] = "青崖 %u/%u",
     [H2_XIANXIA_RPG_TEXT_C4_RESOURCES] = "灵%u · 药%u",
     [H2_XIANXIA_RPG_TEXT_C4_SWITCH] = "%s·点切换",
+    [H2_XIANXIA_RPG_TEXT_C5_ONWARD] = "轻触屏幕，继续第五章《照水旧城》",
+    [H2_XIANXIA_RPG_TEXT_C5_LOW] = "退潮 · 街面可走，浮桥断开",
+    [H2_XIANXIA_RPG_TEXT_C5_HIGH] = "涨潮 · 浮桥可走，街面淹没",
+    [H2_XIANXIA_RPG_TEXT_C5_HELP] = "查看水路",
+    [H2_XIANXIA_RPG_TEXT_C5_TAKE] = "来求灯",
+    [H2_XIANXIA_RPG_TEXT_C5_GIVE] = "来还灯",
+    [H2_XIANXIA_RPG_TEXT_C5_CHOICE] = "闻婆：你是来要灯，还是来还灯？",
+    [H2_XIANXIA_RPG_TEXT_C5_STEPS] = "背人 · 余%u步回钟台",
+    [H2_XIANXIA_RPG_TEXT_C5_DUEL] = "对决 %u/6 · 半血即收剑",
+    [H2_XIANXIA_RPG_TEXT_C5_WON] = "双方收剑！潮水暴涨，先救闻婆。",
+    [H2_XIANXIA_RPG_TEXT_C5_OTTER] = "挑战潮獭",
+    [H2_XIANXIA_RPG_TEXT_C5_RAIN] = "闻舟垂袖，细雨将至",
+    [H2_XIANXIA_RPG_TEXT_C5_THRUST] = "闻舟收剑，聚雨穿檐",
+    [H2_XIANXIA_RPG_TEXT_C5_VISIT] = "向闻婆出示旧灯簿",
+    [H2_XIANXIA_RPG_TEXT_C5_ENEMY] = "%s %u/%u",
+    [H2_XIANXIA_RPG_TEXT_C5_WATER] = "潮獭攻%u · 涨潮增强两成",
+    [H2_XIANXIA_RPG_TEXT_C5_WIND] = "闻舟横剑，回风待攻",
     [H2_XIANXIA_RPG_TEXT_C4_FIRE_NONE] = "未取",
     [H2_XIANXIA_RPG_TEXT_C3_POSTS] = "轻触转剑 · 三剑朝中碑",
     [H2_XIANXIA_RPG_TEXT_HINT_TUTORIAL3] = "合击已就绪！点“合击”与江篱联手",
@@ -504,6 +538,8 @@ static const h2_xianxia_rpg_chapter_info_t k_chapter1 = {
 static bool c1_map(h2_xianxia_rpg_map_t map) { return (unsigned)map < C1_MAPS; }
 
 char h2_xianxia_rpg_tile(h2_xianxia_rpg_map_t map, int32_t x, int32_t y) {
+  if (h2_xianxia_rpg_map_chapter(map) == 5u)
+    return h2_xianxia_rpg_c5_tile(map, x, y);
   if (h2_xianxia_rpg_map_chapter(map) == 4u)
     return h2_xianxia_rpg_c4_tile(map, x, y);
   if (h2_xianxia_rpg_map_chapter(map) == 3u)
@@ -519,14 +555,16 @@ uint32_t h2_xianxia_rpg_map_chapter(h2_xianxia_rpg_map_t map) {
   if (c1_map(map)) return 1u;
   if ((unsigned)map <= H2_XIANXIA_RPG_MAP_WRECK) return 2u;
   if ((unsigned)map <= H2_XIANXIA_RPG_MAP_SWORD_HALL) return 3u;
-  return (unsigned)map < H2_XIANXIA_RPG_MAP_COUNT ? 4u : 0u;
+  if ((unsigned)map <= H2_XIANXIA_RPG_MAP_LANTERN_ALTAR) return 4u;
+  return (unsigned)map < H2_XIANXIA_RPG_MAP_COUNT ? 5u : 0u;
 }
 
 uint32_t h2_xianxia_rpg_stage_chapter(h2_xianxia_rpg_stage_t stage) {
   if (stage <= H2_XIANXIA_RPG_STAGE_CLEARED) return 1u;
   if (stage <= H2_XIANXIA_RPG_STAGE_C2_CLEARED) return 2u;
   if (stage <= H2_XIANXIA_RPG_STAGE_C3_CLEARED) return 3u;
-  return stage < H2_XIANXIA_RPG_STAGE_COUNT ? 4u : 0u;
+  if (stage <= H2_XIANXIA_RPG_STAGE_C4_CLEARED) return 4u;
+  return stage < H2_XIANXIA_RPG_STAGE_COUNT ? 5u : 0u;
 }
 
 const h2_xianxia_rpg_chapter_info_t* h2_xianxia_rpg_chapter_info(
@@ -536,6 +574,8 @@ const h2_xianxia_rpg_chapter_info_t* h2_xianxia_rpg_chapter_info(
       return &k_chapter1;
     case 2u:
       return h2_xianxia_rpg_c2_info();
+    case 5u:
+      return h2_xianxia_rpg_c5_info();
     case 4u:
       return h2_xianxia_rpg_c4_info();
     case 3u:
@@ -546,6 +586,8 @@ const h2_xianxia_rpg_chapter_info_t* h2_xianxia_rpg_chapter_info(
 }
 
 const char* h2_xianxia_rpg_map_name(h2_xianxia_rpg_map_t map) {
+  if (h2_xianxia_rpg_map_chapter(map) == 5u)
+    return h2_xianxia_rpg_c5_map_name(map);
   if (h2_xianxia_rpg_map_chapter(map) == 4u)
     return h2_xianxia_rpg_c4_map_name(map);
   if (h2_xianxia_rpg_map_chapter(map) == 3u)
@@ -576,6 +618,7 @@ const char* h2_xianxia_rpg_command_label(h2_xianxia_rpg_command_t command) {
 
 const h2_xianxia_rpg_script_t* h2_xianxia_rpg_script(
     h2_xianxia_rpg_script_id_t id) {
+  if (id >= H2_XIANXIA_RPG_SCRIPT_C5_FIRST) return h2_xianxia_rpg_c5_script(id);
   if (id >= H2_XIANXIA_RPG_SCRIPT_C4_FIRST) return h2_xianxia_rpg_c4_script(id);
   if (id >= H2_XIANXIA_RPG_SCRIPT_C3_FIRST) return h2_xianxia_rpg_c3_script(id);
   if (id >= H2_XIANXIA_RPG_SCRIPT_C2_FIRST) return h2_xianxia_rpg_c2_script(id);
@@ -586,6 +629,8 @@ size_t h2_xianxia_rpg_npcs(const h2_xianxia_rpg_game_t* game,
                            h2_xianxia_rpg_map_t map,
                            h2_xianxia_rpg_npc_t out[H2_XIANXIA_RPG_MAX_NPCS]) {
   size_t count = 0;
+  if (h2_xianxia_rpg_map_chapter(map) == 5u)
+    return h2_xianxia_rpg_c5_npcs(game, map, out);
   if (h2_xianxia_rpg_map_chapter(map) == 4u)
     return h2_xianxia_rpg_c4_npcs(game, map, out);
   switch (map) {
@@ -616,6 +661,7 @@ size_t h2_xianxia_rpg_npcs(const h2_xianxia_rpg_game_t* game,
 
 h2_xianxia_rpg_script_id_t h2_xianxia_rpg_talk_script(
     const h2_xianxia_rpg_game_t* game, h2_xianxia_rpg_actor_t actor) {
+  if (game->chapter == 5u) return h2_xianxia_rpg_c5_talk_script(game, actor);
   if (game->chapter == 4u) return h2_xianxia_rpg_c4_talk_script(game, actor);
   const h2_xianxia_rpg_stage_t stage = game->stage;
   switch (actor) {
@@ -659,6 +705,9 @@ h2_xianxia_rpg_script_id_t h2_xianxia_rpg_talk_script(
 bool h2_xianxia_rpg_tile_interactive(const h2_xianxia_rpg_game_t* game,
                                      int32_t x, int32_t y) {
   const char tile = h2_xianxia_rpg_tile(game->map, x, y);
+  if (game->chapter == 5u)
+    return tile == 'B' ||
+           (tile == 'p' && !(game->flags & H2_XIANXIA_RPG_FLAG_C5_HIGH));
   if (game->chapter == 4u) return tile == 'F' || (tile >= '1' && tile <= '3');
   if (game->chapter == 3u)
     return h2_xianxia_rpg_c3_tile_interactive(game, tile);
@@ -670,6 +719,7 @@ bool h2_xianxia_rpg_tile_interactive(const h2_xianxia_rpg_game_t* game,
 h2_xianxia_rpg_script_id_t h2_xianxia_rpg_tile_script(
     const h2_xianxia_rpg_game_t* game, int32_t x, int32_t y) {
   const char tile = h2_xianxia_rpg_tile(game->map, x, y);
+  if (game->chapter == 5u) return h2_xianxia_rpg_c5_tile_script(game, tile);
   if (game->chapter == 4u) return h2_xianxia_rpg_c4_tile_script(game, tile);
   if (game->chapter == 3u) return h2_xianxia_rpg_c3_tile_script(game, tile);
   if (!c1_map(game->map)) return h2_xianxia_rpg_c2_tile_script(game, tile);
@@ -693,6 +743,12 @@ bool h2_xianxia_rpg_exit_at(h2_xianxia_rpg_map_t map, int32_t x, int32_t y,
   static const struct {
     uint8_t map, x, y, to_map, to_x, to_y;
   } exits[] = {
+      {H2_XIANXIA_RPG_MAP_WATER_MARKET, 14, 4, H2_XIANXIA_RPG_MAP_OLD_CITY, 1,
+       4},
+      {H2_XIANXIA_RPG_MAP_OLD_CITY, 0, 4, H2_XIANXIA_RPG_MAP_WATER_MARKET, 13,
+       4},
+      {H2_XIANXIA_RPG_MAP_OLD_CITY, 14, 2, H2_XIANXIA_RPG_MAP_WEN_TOWER, 1, 4},
+      {H2_XIANXIA_RPG_MAP_WEN_TOWER, 0, 4, H2_XIANXIA_RPG_MAP_OLD_CITY, 13, 2},
       {H2_XIANXIA_RPG_MAP_NIGHT_VILLAGE, 14, 4, H2_XIANXIA_RPG_MAP_EAST_RIDGE,
        1, 4},
       {H2_XIANXIA_RPG_MAP_EAST_RIDGE, 0, 4, H2_XIANXIA_RPG_MAP_NIGHT_VILLAGE,
@@ -733,6 +789,14 @@ bool h2_xianxia_rpg_exit_at(h2_xianxia_rpg_map_t map, int32_t x, int32_t y,
 
 h2_xianxia_rpg_script_id_t h2_xianxia_rpg_exit_closed(
     const h2_xianxia_rpg_game_t* game, h2_xianxia_rpg_map_t map) {
+  if (game->chapter == 5u) {
+    if (game->stage == H2_XIANXIA_RPG_STAGE_C5_ARRIVE)
+      return H2_XIANXIA_RPG_SCRIPT_C5_BRIEF;
+    if (game->stage == H2_XIANXIA_RPG_STAGE_C5_RESCUE ||
+        (game->stage == H2_XIANXIA_RPG_STAGE_C5_ESCORT &&
+         (!(game->flags & H2_XIANXIA_RPG_FLAG_C5_HIGH) || game->tx != 0)))
+      return H2_XIANXIA_RPG_SCRIPT_C5_STAY;
+  }
   if (game->chapter == 4u && game->tx == 14 &&
       game->stage < H2_XIANXIA_RPG_STAGE_C4_RETURN) {
     const uint32_t need = map == H2_XIANXIA_RPG_MAP_EAST_RIDGE ? 1u
@@ -846,6 +910,9 @@ size_t h2_xianxia_rpg_story_strings(const char** out, size_t capacity) {
   count += h2_xianxia_rpg_c3_strings(
       out + (count < capacity ? count : capacity), room);
   room = count < capacity ? capacity - count : 0u;
-  return count + h2_xianxia_rpg_c4_strings(
+  count += h2_xianxia_rpg_c4_strings(
+      out + (count < capacity ? count : capacity), room);
+  room = count < capacity ? capacity - count : 0u;
+  return count + h2_xianxia_rpg_c5_strings(
                      out + (count < capacity ? count : capacity), room);
 }

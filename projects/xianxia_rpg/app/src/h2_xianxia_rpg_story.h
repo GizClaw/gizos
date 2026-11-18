@@ -129,6 +129,28 @@ typedef enum h2_xianxia_rpg_script_id {
   H2_XIANXIA_RPG_SCRIPT_C4_HERB_CLEAR,
   H2_XIANXIA_RPG_SCRIPT_C4_CHILD,
   H2_XIANXIA_RPG_SCRIPT_C4_CHILD_CLEAR,
+  H2_XIANXIA_RPG_SCRIPT_C5_FIRST,
+  H2_XIANXIA_RPG_SCRIPT_C5_INTRO = H2_XIANXIA_RPG_SCRIPT_C5_FIRST,
+  H2_XIANXIA_RPG_SCRIPT_C5_BRIEF,
+  H2_XIANXIA_RPG_SCRIPT_C5_HELP,
+  H2_XIANXIA_RPG_SCRIPT_C5_LOW,
+  H2_XIANXIA_RPG_SCRIPT_C5_HIGH,
+  H2_XIANXIA_RPG_SCRIPT_C5_PAGE,
+  H2_XIANXIA_RPG_SCRIPT_C5_NEED_PAGE,
+  H2_XIANXIA_RPG_SCRIPT_C5_QUESTION,
+  H2_XIANXIA_RPG_SCRIPT_C5_TAKE,
+  H2_XIANXIA_RPG_SCRIPT_C5_RETURN_LIGHT,
+  H2_XIANXIA_RPG_SCRIPT_C5_EVIDENCE,
+  H2_XIANXIA_RPG_SCRIPT_C5_DUEL,
+  H2_XIANXIA_RPG_SCRIPT_C5_FLOOD,
+  H2_XIANXIA_RPG_SCRIPT_C5_PICKUP,
+  H2_XIANXIA_RPG_SCRIPT_C5_RETRY,
+  H2_XIANXIA_RPG_SCRIPT_C5_SAFE,
+  H2_XIANXIA_RPG_SCRIPT_C5_REST,
+  H2_XIANXIA_RPG_SCRIPT_C5_END,
+  H2_XIANXIA_RPG_SCRIPT_C5_REVIVE,
+  H2_XIANXIA_RPG_SCRIPT_C5_STAY,
+  H2_XIANXIA_RPG_SCRIPT_C5_OTTER,
   H2_XIANXIA_RPG_SCRIPT_COUNT,
 } h2_xianxia_rpg_script_id_t;
 
@@ -277,6 +299,23 @@ typedef enum h2_xianxia_rpg_text_id {
   H2_XIANXIA_RPG_TEXT_C4_HERO,
   H2_XIANXIA_RPG_TEXT_C4_RESOURCES,
   H2_XIANXIA_RPG_TEXT_C4_SWITCH,
+  H2_XIANXIA_RPG_TEXT_C5_ONWARD,
+  H2_XIANXIA_RPG_TEXT_C5_LOW,
+  H2_XIANXIA_RPG_TEXT_C5_HIGH,
+  H2_XIANXIA_RPG_TEXT_C5_HELP,
+  H2_XIANXIA_RPG_TEXT_C5_TAKE,
+  H2_XIANXIA_RPG_TEXT_C5_GIVE,
+  H2_XIANXIA_RPG_TEXT_C5_CHOICE,
+  H2_XIANXIA_RPG_TEXT_C5_STEPS,
+  H2_XIANXIA_RPG_TEXT_C5_DUEL,
+  H2_XIANXIA_RPG_TEXT_C5_WON,
+  H2_XIANXIA_RPG_TEXT_C5_OTTER,
+  H2_XIANXIA_RPG_TEXT_C5_RAIN,
+  H2_XIANXIA_RPG_TEXT_C5_THRUST,
+  H2_XIANXIA_RPG_TEXT_C5_WIND,
+  H2_XIANXIA_RPG_TEXT_C5_VISIT,
+  H2_XIANXIA_RPG_TEXT_C5_ENEMY,
+  H2_XIANXIA_RPG_TEXT_C5_WATER,
   H2_XIANXIA_RPG_TEXT_COUNT,
 } h2_xianxia_rpg_text_id_t;
 
@@ -370,6 +409,22 @@ h2_xianxia_rpg_script_id_t h2_xianxia_rpg_c4_talk_script(
 h2_xianxia_rpg_script_id_t h2_xianxia_rpg_c4_tile_script(
     const h2_xianxia_rpg_game_t* game, char tile);
 size_t h2_xianxia_rpg_c4_strings(const char** out, size_t capacity);
+
+/* Chapter 5: tide routes, the Wen family and a bounded rescue. */
+char h2_xianxia_rpg_c5_tile(h2_xianxia_rpg_map_t map, int32_t x, int32_t y);
+const char* h2_xianxia_rpg_c5_map_name(h2_xianxia_rpg_map_t map);
+const h2_xianxia_rpg_chapter_info_t* h2_xianxia_rpg_c5_info(void);
+const h2_xianxia_rpg_script_t* h2_xianxia_rpg_c5_script(
+    h2_xianxia_rpg_script_id_t id);
+size_t h2_xianxia_rpg_c5_npcs(
+    const h2_xianxia_rpg_game_t* game, h2_xianxia_rpg_map_t map,
+    h2_xianxia_rpg_npc_t out[H2_XIANXIA_RPG_MAX_NPCS]);
+h2_xianxia_rpg_script_id_t h2_xianxia_rpg_c5_talk_script(
+    const h2_xianxia_rpg_game_t* game, h2_xianxia_rpg_actor_t actor);
+h2_xianxia_rpg_script_id_t h2_xianxia_rpg_c5_tile_script(
+    const h2_xianxia_rpg_game_t* game, char tile);
+bool h2_xianxia_rpg_c5_walkable(const h2_xianxia_rpg_game_t* game, char tile);
+size_t h2_xianxia_rpg_c5_strings(const char** out, size_t capacity);
 
 #ifdef __cplusplus
 }
