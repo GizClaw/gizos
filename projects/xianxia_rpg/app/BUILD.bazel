@@ -16,8 +16,8 @@ _LIBM = select({
     "//conditions:default": [],
 })
 
-# Every Chinese string drawn on screen lives in the story table, so it is the
-# glyph source of the body font.
+# Every Chinese string drawn on screen lives in the story tables, so they are
+# the glyph sources of the body font.
 lvgl_font(
     name = "body_font",
     size = 18,
@@ -27,7 +27,10 @@ lvgl_font(
     font_name = "h2_xianxia_rpg_font_body",
     lv_include = "h2_xianxia_rpg_font_format.h",
     ranges = ["0x20-0x7E"],
-    symbol_sources = ["src/h2_xianxia_rpg_story.c"],
+    symbol_sources = [
+        "src/h2_xianxia_rpg_chapter2.c",
+        "src/h2_xianxia_rpg_story.c",
+    ],
 )
 
 lvgl_font(
@@ -61,6 +64,7 @@ cc_library(
     name = "xianxia_rpg",
     srcs = _PRIVATE_HEADERS + [
         "src/h2_xianxia_rpg.c",
+        "src/h2_xianxia_rpg_chapter2.c",
         "src/h2_xianxia_rpg_game.c",
         "src/h2_xianxia_rpg_render.c",
         "src/h2_xianxia_rpg_story.c",
@@ -98,9 +102,10 @@ cc_test(
 
 cc_test(
     name = "app_test",
-    srcs = ["tests/test_app.c"],
+    srcs = _PRIVATE_HEADERS + ["tests/test_app.c"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
+    includes = ["src"],
     target_compatible_with = select({
         "//tools/bazel/platforms:host_linux_target_linux": [],
         "//tools/bazel/platforms:host_macos_target_macos": [],

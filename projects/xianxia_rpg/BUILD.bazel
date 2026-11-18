@@ -4,5 +4,5 @@ package(default_visibility = ["//visibility:public"])
 
 app_version(
     name = "version",
-    value = "0.1.0",
+    value = "0.2.0",
 )
