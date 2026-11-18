@@ -579,6 +579,51 @@ static void test_chapter7_screens(int32_t width, int32_t height) {
   check_all_layers(&game);
 }
 
+static void test_chapter8_screens(int32_t width, int32_t height) {
+  h2_xianxia_rpg_game_init(&game, width, height, 8, NULL);
+  game.chapter = game.prologue_chapter = 8;
+  game.phase = H2_XIANXIA_RPG_PHASE_PROLOGUE;
+  check_all_layers(&game);
+  game.phase = H2_XIANXIA_RPG_PHASE_EXPLORE;
+  for (int map = H2_XIANXIA_RPG_MAP_SNOW_CAMP;
+       map <= H2_XIANXIA_RPG_MAP_SNOW_CAVE; ++map) {
+    game.map = (h2_xianxia_rpg_map_t)map;
+    game.stage = H2_XIANXIA_RPG_STAGE_C8_RESCUE;
+    game.facts = H2_XIANXIA_RPG_FACT_C8_CHOSEN;
+    check_all_layers(&game);
+    h2_xianxia_rpg_layer_key_t a, b;
+    h2_xianxia_rpg_background_key(&game, &a);
+    game.facts |= H2_XIANXIA_RPG_FACT_C8_LIGHT |
+                  H2_XIANXIA_RPG_FACT_C8_EAST_BLOCK |
+                  H2_XIANXIA_RPG_FACT_C8_WEST_BLOCK;
+    h2_xianxia_rpg_background_key(&game, &b);
+    CHECK(memcmp(&a, &b, sizeof(a)) != 0);
+    game.stage = H2_XIANXIA_RPG_STAGE_C8_INJURY;
+    check_all_layers(&game);
+  }
+  game.phase = H2_XIANXIA_RPG_PHASE_BATTLE;
+  game.battle.enemy = H2_XIANXIA_RPG_ENEMY_BRIDGE_SHADE;
+  game.battle.enemy_hp = game.battle.enemy_hp_max = 900;
+  game.battle.ally = game.battle.boss = game.battle.lamp_battle =
+      game.battle.dual_lamps = true;
+  game.battle.lamp_hp = game.battle.west_lamp_hp = game.battle.lamp_max = 60;
+  game.battle.state = H2_XIANXIA_RPG_BATTLE_COMMAND;
+  for (unsigned turn = 0; turn < 3; ++turn) {
+    game.battle.turn = game.battle.wave_turn = turn;
+    check_all_layers(&game);
+  }
+  h2_xianxia_rpg_layer_key_t a, b;
+  h2_xianxia_rpg_static_key(&game, &a);
+  --game.battle.west_lamp_hp;
+  h2_xianxia_rpg_static_key(&game, &b);
+  CHECK(memcmp(&a, &b, sizeof(a)) != 0);
+  game.facts |=
+      H2_XIANXIA_RPG_FACT_C8_ACTIVE_WEN | H2_XIANXIA_RPG_FACT_C8_WEST_FIRST;
+  check_all_layers(&game);
+  game.phase = H2_XIANXIA_RPG_PHASE_ENDING;
+  check_all_layers(&game);
+}
+
 int main(void) {
   test_glyph_coverage();
   test_keys();
@@ -593,6 +638,7 @@ int main(void) {
     test_chapter5_screens(sizes[i][0], sizes[i][1]);
     test_chapter6_screens(sizes[i][0], sizes[i][1]);
     test_chapter7_screens(sizes[i][0], sizes[i][1]);
+    test_chapter8_screens(sizes[i][0], sizes[i][1]);
   }
   printf("xianxia_rpg render tests passed\n");
   return 0;
