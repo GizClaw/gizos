@@ -816,6 +816,25 @@ static void battle_backdrop(canvas_t* canvas, const game_t* game) {
   const h2_xianxia_rpg_layout_t* l = &game->layout;
   const float w = (float)canvas->width, sh = (float)l->stage.h;
   const float u = game->unit;
+  if (game->chapter == 7u) {
+    gradient_rect(canvas, 0, 0, w, sh, c3(23, 46, 64), c3(84, 132, 148));
+    for (int i = 0; i < 5; ++i) {
+      const float px = w * (.06f + .22f * (float)i);
+      fill_rect(canvas, px, sh * .12f, w * .035f, sh * .58f, RGB(117, 148, 154),
+                256u);
+      fill_rect(canvas, px - w * .012f, sh * .12f, w * .06f, sh * .035f, C_GOLD,
+                256u);
+    }
+    fill_rect(canvas, 0, sh * .15f, w, sh * .035f, RGB(117, 148, 154), 256u);
+    fill_rect(canvas, 0, sh * .7f, w, sh * .3f, RGB(38, 76, 97), 256u);
+    for (int i = 0; i < 8; ++i)
+      fill_rect(canvas, w * (.04f + .12f * (float)i),
+                sh * (.78f + .07f * (float)(i % 3)), w * .08f, 2,
+                RGB(126, 183, 191), 150u);
+    fill_rect(canvas, 0, (float)l->panel.y, w, (float)l->panel.h,
+              RGB(20, 16, 24), 256u);
+    return;
+  }
   const bool shrine = game->map == H2_XIANXIA_RPG_MAP_SHRINE ||
                       game->map == H2_XIANXIA_RPG_MAP_LANTERN_ALTAR;
   if (h2_xianxia_rpg_map_chapter(game->map) == 3u ||
@@ -1580,6 +1599,12 @@ static void c7_tile_art(canvas_t* canvas, const game_t* game, char tile,
   if (tile == '~' || (route && !open)) {
     fill_rect(canvas, x + t * .15f, y + t * .4f, t * .6f, 2,
               past ? RGB(154, 164, 116) : RGB(78, 130, 154), 190u);
+    if (tile == '~' && past && seed % 3u == 0u) {
+      fill_rect(canvas, x + t * .35f, y + t * .2f, t * .3f, t * .2f, C_GOLD,
+                256u);
+      fill_rect(canvas, x + t * .3f, y + t * .58f, t * .4f, t * .04f, C_GOLD,
+                130u);
+    }
     if (tile == 'b') {
       fill_rect(canvas, x, y + t * .2f, t * .2f, t * .6f, RGB(95, 79, 67),
                 256u);
@@ -1635,7 +1660,9 @@ static void c7_tile_art(canvas_t* canvas, const game_t* game, char tile,
     diamond(canvas, x + t * .5f, y + t * .3f, t * .27f, C_TEXT, 256u);
     label = H2_XIANXIA_RPG_TEXT_C7_HEART;
   } else if (tile == 'E') {
-    label = H2_XIANXIA_RPG_TEXT_C7_EXIT;
+    label = game->map == H2_XIANXIA_RPG_MAP_MIRROR_SHORE
+                ? H2_XIANXIA_RPG_TEXT_C7_EXIT
+                : H2_XIANXIA_RPG_TEXT_C7_BACK;
   }
   if (label != H2_XIANXIA_RPG_TEXT_COUNT) {
     const char* word = h2_xianxia_rpg_text[label];
@@ -3141,8 +3168,14 @@ static void draw_hud(canvas_t* canvas, const game_t* game) {
   const int32_t x = r->x + 10, w = r->w - 20;
   int32_t y = r->y + 5;
   if (game->chapter == 7u) {
-    text_wrapped(canvas, h2_xianxia_rpg_objective(game->stage), x, y, w, 1,
-                 C_TEXT, 256u, UINT32_MAX);
+    const char* goal =
+        (game->flags & H2_XIANXIA_RPG_FLAG_C7_FEEDBACK)
+            ? h2_xianxia_rpg_text[H2_XIANXIA_RPG_TEXT_C7_RECORDED]
+        : game->map == H2_XIANXIA_RPG_MAP_MIRROR_SHORE &&
+                game->stage == H2_XIANXIA_RPG_STAGE_C7_TREATY
+            ? h2_xianxia_rpg_text[H2_XIANXIA_RPG_TEXT_C7_TO_HALL]
+            : h2_xianxia_rpg_objective(game->stage);
+    text_wrapped(canvas, goal, x, y, w, 1, C_TEXT, 256u, UINT32_MAX);
     char status[128];
     (void)snprintf(status, sizeof(status),
                    h2_xianxia_rpg_text[H2_XIANXIA_RPG_TEXT_C7_STATUS],

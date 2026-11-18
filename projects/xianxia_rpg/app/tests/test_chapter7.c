@@ -200,6 +200,33 @@ int main(void) {
   routes();
   answers(0u);
   CHECK(g.trust == 0u);
+  battle(); /* The least trusting default party also needs no pills. */
+  h2_xianxia_rpg_records_t r = g.records;
+  r.journey7.stage = H2_XIANXIA_RPG_STAGE_C7_REVEAL;
+  for (unsigned i = 0; i < H2_XIANXIA_RPG_CHAPTER_MAX; ++i)
+    if (i != 6u) r.progress.reserved[i] = (uint8_t)(160u + i);
+  r.progress.reserved[5] = 30u;
+  uint8_t before[H2_XIANXIA_RPG_PROGRESS_BYTES],
+      after[H2_XIANXIA_RPG_PROGRESS_BYTES];
+  h2_xianxia_rpg_progress_encode(&r.progress, before);
+  h2_xianxia_rpg_game_init(&g, 640, 480, 7, &r);
+  step(300);
+  box(&g.layout.title_buttons[1]);
+  dialog();
+  h2_xianxia_rpg_writes_t clear;
+  CHECK(h2_xianxia_rpg_game_take_writes(&g, &clear) && clear.progress &&
+        clear.journey7 && !clear.journey6);
+  h2_xianxia_rpg_progress_encode(&clear.progress_record, after);
+  for (unsigned i = 0; i < H2_XIANXIA_RPG_CHAPTER_MAX; ++i)
+    if (i != 6u)
+      CHECK(memcmp(before + 4 + 16 * i, after + 4 + 16 * i, 16) == 0);
+  r.progress_unreadable = true;
+  h2_xianxia_rpg_game_init(&g, 640, 480, 7, &r);
+  step(300);
+  box(&g.layout.title_buttons[1]);
+  dialog();
+  CHECK(h2_xianxia_rpg_game_take_writes(&g, &clear) && !clear.progress &&
+        clear.journey7);
   h2_xianxia_rpg_writes_t w;
   g.save_pending = true;
   CHECK(h2_xianxia_rpg_game_take_writes(&g, &w));

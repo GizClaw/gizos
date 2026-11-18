@@ -580,6 +580,9 @@ const char* const h2_xianxia_rpg_text[H2_XIANXIA_RPG_TEXT_COUNT] = {
     [H2_XIANXIA_RPG_TEXT_C7_WATER] = "水轮",
     [H2_XIANXIA_RPG_TEXT_C7_TREATY] = "古约",
     [H2_XIANXIA_RPG_TEXT_C7_HEART] = "心影",
+    [H2_XIANXIA_RPG_TEXT_C7_BACK] = "湖岸",
+    [H2_XIANXIA_RPG_TEXT_C7_TO_HALL] = "回今时，点右侧镜廊入口",
+    [H2_XIANXIA_RPG_TEXT_C7_RECORDED] = "回答已记录 · 听江篱说",
     [H2_XIANXIA_RPG_TEXT_C7_EXIT] = "镜廊",
     [H2_XIANXIA_RPG_TEXT_C4_FIRE_NONE] = "未取",
     [H2_XIANXIA_RPG_TEXT_C3_POSTS] = "轻触转剑 · 三剑朝中碑",
@@ -722,7 +725,15 @@ size_t h2_xianxia_rpg_npcs(const h2_xianxia_rpg_game_t* game,
                            h2_xianxia_rpg_map_t map,
                            h2_xianxia_rpg_npc_t out[H2_XIANXIA_RPG_MAX_NPCS]) {
   size_t count = 0;
-  if (h2_xianxia_rpg_map_chapter(map) == 7u) return 0;
+  if (h2_xianxia_rpg_map_chapter(map) == 7u) {
+    if (map == H2_XIANXIA_RPG_MAP_MIRROR_SHORE &&
+        (game->flags & H2_XIANXIA_RPG_FLAG_C7_PAST)) {
+      out[0] = (h2_xianxia_rpg_npc_t){H2_XIANXIA_RPG_ACTOR_CHILD, 10, 3,
+                                      H2_XIANXIA_RPG_FACING_DOWN};
+      return 1;
+    }
+    return 0;
+  }
   if (h2_xianxia_rpg_map_chapter(map) == 6u)
     return h2_xianxia_rpg_c6_npcs(game, map, out);
   if (h2_xianxia_rpg_map_chapter(map) == 5u)

@@ -791,7 +791,9 @@ h2_xianxia_rpg_ally_action_t h2_xianxia_rpg_ally_intent(
     const h2_xianxia_rpg_game_t* game) {
   const h2_xianxia_rpg_battle_t* b = &game->battle;
   if (!b->ally) return H2_XIANXIA_RPG_ALLY_NONE;
-  return b->veiled ? H2_XIANXIA_RPG_ALLY_LANTERN : H2_XIANXIA_RPG_ALLY_POLE;
+  return b->veiled || b->enemy == H2_XIANXIA_RPG_ENEMY_MIRROR
+             ? H2_XIANXIA_RPG_ALLY_LANTERN
+             : H2_XIANXIA_RPG_ALLY_POLE;
 }
 
 static void gain_rapport(h2_xianxia_rpg_game_t* game) {
@@ -2074,7 +2076,13 @@ static void c7_interact(h2_xianxia_rpg_game_t* game, char tile, int32_t x) {
 
 static void interact(h2_xianxia_rpg_game_t* game, int32_t x, int32_t y) {
   if (game->chapter == 7u) {
-    c7_interact(game, h2_xianxia_rpg_tile(game->map, x, y), x);
+    c7_interact(game,
+                game->map == H2_XIANXIA_RPG_MAP_MIRROR_SHORE &&
+                        (game->flags & H2_XIANXIA_RPG_FLAG_C7_PAST) &&
+                        x == 10 && y == 3
+                    ? 'L'
+                    : h2_xianxia_rpg_tile(game->map, x, y),
+                x);
     return;
   }
   game->facing = facing_toward(x - game->tx, y - game->ty);
