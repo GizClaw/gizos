@@ -1269,19 +1269,21 @@ void h2_fruit_slice_render_scene(h2_fruit_slice_canvas_t* canvas,
 
   draw_trail(canvas, game);
 
+  const h2_fruit_slice_popup_t* combo = NULL;
   for (unsigned i = 0; i < H2_FRUIT_SLICE_MAX_POPUPS; ++i) {
     const h2_fruit_slice_popup_t* popup = &game->popups[i];
-    if (!popup->active) continue;
-    const uint32_t alpha = fade(popup->age_ms, popup->life_ms, 512u);
-    const int32_t scale = fit_scale(popup->text, (float)canvas->width - 16.0f,
+    if (popup->active && (combo == NULL || popup->age_ms < combo->age_ms))
+      combo = popup;
+  }
+  if (combo != NULL && game->phase == H2_FRUIT_SLICE_PHASE_PLAYING) {
+    const uint32_t alpha = fade(combo->age_ms, combo->life_ms, 512u);
+    const int32_t scale = fit_scale(combo->text, (float)canvas->width - 16.0f,
                                     text_scale(u, 3.0f));
-    const float half_w =
-        (float)h2_fruit_slice_text_width(popup->text, scale) * 0.5f;
-    text_centered(
-        canvas, popup->text,
-        clampf(popup->x, half_w + 8.0f, (float)canvas->width - half_w - 8.0f),
-        fmaxf(popup->y, fmaxf(48.0f, 64.0f * u)), scale, popup->color,
-        alpha > 256u ? 256u : alpha);
+    /* Keep only the latest combo on its own line below the score. Drop
+     * cards retain their labels and center HUD landing destination. */
+    text(canvas, combo->text, (int32_t)fmaxf(8.0f, 12.0f * u),
+         (int32_t)fmaxf(48.0f, 80.0f * u), scale, combo->color,
+         alpha > 256u ? 256u : alpha);
   }
 
   if (game->flash_ms > 0u) {

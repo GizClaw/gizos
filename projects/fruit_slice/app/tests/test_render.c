@@ -457,7 +457,35 @@ static void test_card_scenes(int32_t width, int32_t height) {
   CHECK(allocation_calls == prepared); /* No frame-time texture allocation. */
 }
 
+static void test_combo_feedback_priority(void) {
+  h2_fruit_slice_game_init(&game, 480, 320, 57u, 0u);
+  game.phase = H2_FRUIT_SLICE_PHASE_PLAYING;
+  memset(game.fruits, 0, sizeof(game.fruits));
+  game.popups[0] = (h2_fruit_slice_popup_t){.active = true,
+                                            .age_ms = 100u,
+                                            .life_ms = 900u,
+                                            .color = 0xFFFFu,
+                                            .text = "COMBO +3"};
+  game.popups[1] = (h2_fruit_slice_popup_t){.active = true,
+                                            .age_ms = 200u,
+                                            .life_ms = 900u,
+                                            .color = 0xFFFFu,
+                                            .text = "COMBO +5"};
+  CHECK(check_layer(h2_fruit_slice_render_scene, NULL, 480, 320) > 0u);
+  memcpy(background, pixels, 480u * 320u * sizeof(*pixels));
+  game.popups[1].active = false;
+  CHECK(check_layer(h2_fruit_slice_render_scene, NULL, 480, 320) > 0u);
+  CHECK(memcmp(background, pixels, 480u * 320u * sizeof(*pixels)) == 0);
+  game.popups[1].active = true;
+  game.popups[0].active = false;
+  CHECK(check_layer(h2_fruit_slice_render_scene, NULL, 480, 320) > 0u);
+  CHECK(memcmp(background, pixels, 480u * 320u * sizeof(*pixels)) != 0);
+  game.phase = H2_FRUIT_SLICE_PHASE_GAME_OVER;
+  CHECK(check_layer(h2_fruit_slice_render_scene, NULL, 480, 320) == 0u);
+}
+
 int main(void) {
+  test_combo_feedback_priority();
   test_card_scenes(240, 240);
   test_card_scenes(480, 320);
   test_card_scenes(480, 800);
