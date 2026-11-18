@@ -3520,7 +3520,7 @@ static void draw_c6_ritual(canvas_t* canvas, const game_t* game) {
                 (float)gy - 28, 50, H2_XIANXIA_RPG_FACING_DOWN, 0, 0);
     text_centered(canvas, false,
                   h2_xianxia_rpg_text[both ? H2_XIANXIA_RPG_TEXT_C6_CHARM
-                                           : H2_XIANXIA_RPG_TEXT_C6_HOLD],
+                                           : H2_XIANXIA_RPG_TEXT_C6_PAUSE],
                   (float)w * .5f, gy + 115, C_DIM, 256u);
   }
   for (unsigned i = 0; i < H2_XIANXIA_RPG_COMMANDS; ++i)

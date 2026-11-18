@@ -536,6 +536,7 @@ const char* const h2_xianxia_rpg_text[H2_XIANXIA_RPG_TEXT_COUNT] = {
     [H2_XIANXIA_RPG_TEXT_C6_SPRING] = "蒸汽加热，蓝泉降温",
     [H2_XIANXIA_RPG_TEXT_C6_HUT] = "点荀七娘或上方泉眼",
     [H2_XIANXIA_RPG_TEXT_C6_CHARM] = "温玉 · 稳区扩大",
+    [H2_XIANXIA_RPG_TEXT_C6_PAUSE] = "护心挡一息，不增加稳息",
 
     [H2_XIANXIA_RPG_TEXT_C4_FIRE_NONE] = "未取",
     [H2_XIANXIA_RPG_TEXT_C3_POSTS] = "轻触转剑 · 三剑朝中碑",

@@ -72,6 +72,7 @@ static void begin(void) {
   tap(320, 200);
   dialog();
   CHECK(g.hero.level == 9 && g.hero.pills == 3);
+  CHECK(!h2_xianxia_rpg_walkable(&g, g.map, 1, 1));
   talk(7, 3);
   CHECK(g.stage == H2_XIANXIA_RPG_STAGE_C6_HERBS &&
         !h2_xianxia_rpg_ally_joined(&g));

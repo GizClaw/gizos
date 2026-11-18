@@ -261,7 +261,8 @@ bool h2_xianxia_rpg_walkable(const h2_xianxia_rpg_game_t* game,
                              h2_xianxia_rpg_map_t map, int32_t x, int32_t y) {
   const char tile = h2_xianxia_rpg_tile(map, x, y);
   if (h2_xianxia_rpg_map_chapter(map) == 6u)
-    return tile == '.' || tile == '=' || tile == 'i' || tile == 'h';
+    return tile == '.' || tile == '=' || tile == 'i' ||
+           (tile == 'h' && map == H2_XIANXIA_RPG_MAP_HOT_SPRING);
   if (h2_xianxia_rpg_map_chapter(map) == 5u)
     return h2_xianxia_rpg_c5_walkable(game, tile);
   if (h2_xianxia_rpg_map_chapter(map) == 4u)

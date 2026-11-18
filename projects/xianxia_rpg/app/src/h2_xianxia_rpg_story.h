@@ -355,6 +355,7 @@ typedef enum h2_xianxia_rpg_text_id {
   H2_XIANXIA_RPG_TEXT_C6_SPRING,
   H2_XIANXIA_RPG_TEXT_C6_HUT,
   H2_XIANXIA_RPG_TEXT_C6_CHARM,
+  H2_XIANXIA_RPG_TEXT_C6_PAUSE,
   H2_XIANXIA_RPG_TEXT_COUNT,
 } h2_xianxia_rpg_text_id_t;
 
