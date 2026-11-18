@@ -17,7 +17,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
-#include <stdio.h>
+#include "generic/printf.h"
 
 enum {
   H2_AUDIO_SAMPLE_RATE = 16000,
