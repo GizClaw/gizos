@@ -500,6 +500,7 @@ static void initialize(fixture_t* fixture) {
       .mem = &fixture->memory.api,
       .time = &fixture->time.api,
       .http = &http,
+      .gateway_url = "https://iotapi.alipay.com/mgw.htm",
       .pref = &fixture->pref.api,
       .crypto = &fixture->crypto,
       .identity = {"TEST_SN", "TEST_SN", "12:34:56:78:9A:BC", "H106"},
@@ -1729,7 +1730,7 @@ static void tap_receive_case(fixture_t* fixture, yyjson_val* root) {
   assert(namespace->set_u32(namespace, "npay_show", 0u) == 0);
   assert(namespace->commit(namespace) == 0 && namespace->close(namespace) == 0);
   assert(h2_pal_time_set_wall_ms(&fixture->time.api, 1794449000000u) == 0);
-  uint8_t input[272], amount[16];
+  uint8_t input[512], amount[16];
   size_t input_length = decode(root, "input", input, sizeof(input));
   memset(amount, 0xa5, sizeof(amount));
   receive_events = yyjson_obj_get(root, "events");

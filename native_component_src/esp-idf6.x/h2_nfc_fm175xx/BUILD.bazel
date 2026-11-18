@@ -24,6 +24,7 @@ firmware_native_component(
         "manual",
     ],
     deps = [
+        "//libs/crypto/sha256",
         "//libs/drivers/nfc/fm175xx",
         "//pal",
     ],
@@ -55,6 +56,7 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
+        "//libs/crypto/sha256",
         "//libs/drivers/nfc/fm175xx",
         "//libs/testing:testing_pal",
         "//pal",

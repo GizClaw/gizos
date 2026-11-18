@@ -10,6 +10,19 @@ static h2_pal_result_t init_result = H2_PAL_OK;
 static h2_pal_result_t write_result = H2_PAL_OK;
 static int bus_storage, device_storage;
 static unsigned sequence_writes, fail_write;
+static bool probe_scan_busy, probe_read_busy;
+static unsigned busy_rejections;
+static void probe_busy_write(void) {
+  const uint8_t uid[] = {0x42u, 1u, 2u, 3u};
+  const uint8_t message[] = {0xd1u, 1u, 2u, 'U', 4u, 'x'};
+  unsigned before = nfc_writes;
+  assert(h2_pal_nfc_write_nfc_data(h2_esp_board_nfc_api(),
+                                   H2_TIGA_ESP_NFC_READER_ID, uid, sizeof(uid),
+                                   H2_PAL_NFC_DATA_NDEF, message,
+                                   sizeof(message)) == H2_PAL_ERR_BUSY);
+  assert(nfc_writes == before);
+  ++busy_rejections;
+}
 i2c_master_bus_handle_t h2_esp_tiga_board_i2c_bus(void) {
   ++bus_calls;
   return (i2c_master_bus_handle_t)&bus_storage;
@@ -29,6 +42,7 @@ static h2_pal_result_t scan(void* user, h2_pal_periph_id_t id,
   (void)id;
   (void)out;
   ++scans;
+  if (probe_scan_busy) probe_busy_write();
   return H2_PAL_OK;
 }
 static h2_pal_result_t read_card(void* user, h2_pal_periph_id_t id,
@@ -44,6 +58,7 @@ static h2_pal_result_t read_card(void* user, h2_pal_periph_id_t id,
   (void)mem;
   (void)out;
   ++reads;
+  if (probe_read_busy) probe_busy_write();
   return H2_PAL_OK;
 }
 static h2_pal_result_t write_card(void* user, h2_pal_periph_id_t id,
@@ -202,5 +217,30 @@ int main(void) {
   fail_write = 0;
   assert(nfc->vtable->scan_nfc_reader(NULL, id, &result) == H2_PAL_OK);
   assert(init_calls == before_init + 1u);
+  unsigned before_nfc_writes = nfc_writes;
+  probe_scan_busy = true;
+  assert(nfc->vtable->scan_nfc_reader(NULL, id, &result) == H2_PAL_OK);
+  probe_scan_busy = false;
+  assert(busy_rejections == 1u && nfc_writes == before_nfc_writes);
+  assert(h2_pal_nfc_write_nfc_data(api, id, uid, sizeof(uid),
+                                   H2_PAL_NFC_DATA_NDEF, message,
+                                   sizeof(message)) == H2_PAL_OK);
+  assert(nfc_writes == before_nfc_writes + 1u);
+  probe_read_busy = true;
+  assert(nfc->vtable->read_nfc_data(NULL, id, NULL, 0, 0, &mem, &data) ==
+         H2_PAL_OK);
+  probe_read_busy = false;
+  assert(busy_rejections == 2u && nfc_writes == before_nfc_writes + 1u);
+  write_result = H2_PAL_ERR_IO;
+  assert(h2_pal_nfc_write_nfc_data(api, id, uid, sizeof(uid),
+                                   H2_PAL_NFC_DATA_NDEF, message,
+                                   sizeof(message)) == H2_PAL_ERR_IO);
+  assert(nfc_writes == before_nfc_writes + 2u);
+  assert(nfc->vtable->scan_nfc_reader(NULL, id, &result) == H2_PAL_OK);
+  write_result = H2_PAL_OK;
+  assert(h2_pal_nfc_write_nfc_data(api, id, uid, sizeof(uid),
+                                   H2_PAL_NFC_DATA_NDEF, message,
+                                   sizeof(message)) == H2_PAL_OK);
+  assert(nfc_writes == before_nfc_writes + 3u);
   return 0;
 }

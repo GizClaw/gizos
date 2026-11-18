@@ -21,9 +21,43 @@ cc_library(
     ],
     includes = ["include"],
     deps = [
+        ":diagnostics",
         "//pal",
-        "//projects/testing/integration/alipay/diagnostics",
     ],
+)
+
+cc_library(
+    name = "diagnostics",
+    srcs = ["src/h2_alipay_trace.c"],
+    hdrs = ["include/h2_alipay_trace.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    deps = ["//libs/crypto/sha256"],
+)
+
+cc_library(
+    name = "independent",
+    srcs = ["src/h2_alipay_e2e_independent.c"],
+    hdrs = ["include/h2_alipay_e2e_independent.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    deps = [
+        ":api",
+        ":diagnostics",
+        "//libs/clients/alipay",
+    ],
+)
+
+cc_library(
+    name = "nfc",
+    srcs = ["src/h2_alipay_nfc.c"],
+    hdrs = ["include/h2_alipay_nfc.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    deps = ["//pal"],
 )
 
 cc_library(
@@ -56,6 +90,7 @@ cc_library(
     deps = [
         ":tasks",
         ":workflow",
+        "//libs/crypto/sha256",
         "//libs/image/qrcode",
         "//libs/sync/atomic",
         "//libs/ui/lvgl",
@@ -139,6 +174,38 @@ cc_test(
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
     deps = [
         ":api",
-        "//projects/testing/integration/alipay/diagnostics",
+        ":diagnostics",
     ],
+)
+
+cc_test(
+    name = "trace_test",
+    size = "small",
+    srcs = ["tests/test_trace.c"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [":diagnostics"],
+)
+
+cc_test(
+    name = "payment_test",
+    srcs = ["tests/test_payment.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        ":independent",
+        "//libs/clients/alipay:test_binding",
+        "//libs/sync/atomic/providers/c11",
+        "//libs/testing:testing_pal",
+        "//pal/providers/backends/wolfssl:wolfcrypt",
+    ],
+)
+
+cc_test(
+    name = "nfc_test",
+    srcs = ["tests/test_nfc.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [":nfc"],
 )

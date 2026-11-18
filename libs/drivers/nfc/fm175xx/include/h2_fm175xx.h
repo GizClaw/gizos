@@ -121,8 +121,9 @@ int h2_fm175xx_ntag_read_all(h2_fm175xx_t* reader, uint8_t* out_data,
  * Retained CRC frames include malformed CRC replies; last_result preserves
  * the last READ result independently of the enclosing NDEF parser result.
  * required_capacity records the NDEF length after checking the tag extent.
- * A failed READ samples control/status without consuming FIFO bytes.
- * status_result is OK only when that entire snapshot succeeded. */
+ * rx_status_result validates the RX-completion snapshot before FIFO consumption
+ * and command cleanup. A failed READ also samples post-cleanup control/status
+ * without consuming more FIFO bytes; status_result validates that snapshot. */
 typedef struct h2_fm175xx_read_diagnostics {
   size_t read_count;
   size_t retained_crc_frames;
@@ -132,6 +133,8 @@ typedef struct h2_fm175xx_read_diagnostics {
   size_t required_capacity;
   int status_result;
   uint8_t last_irq, last_error, last_fifo, last_control;
+  int rx_status_result;
+  uint8_t rx_irq, rx_error, rx_fifo, rx_control;
 } h2_fm175xx_read_diagnostics_t;
 
 /** Read the first NDEF TLV of a selected, formatted Type 2 tag. Complete
@@ -145,15 +148,17 @@ int h2_fm175xx_ntag_read_ndef(h2_fm175xx_t* reader, uint8_t* out_data,
 int h2_fm175xx_ntag_read_ndef_diagnostic(
     h2_fm175xx_t* reader, uint8_t* out_data, size_t capacity, size_t* out_len,
     h2_fm175xx_read_diagnostics_t* diagnostics);
-/** Replace a selected Type 2 tag's first NDEF TLV and verify it.
+/** Replace a selected Type 2 tag's first NDEF TLV.
  * Supports freely writable CC version 1 tags with NULL/Lock Control/Memory
  * Control prefixes. Prefix bytes and partial-page neighbours are preserved.
  * Static lock bytes and declared dynamic lock bits must be clear. Referenced
  * lock bytes must be readable within the 1024-byte address range. Reserved
  * pages intersecting the TLV stream or replacement are unsupported.
  * Unknown prefix/trailing TLVs are rejected. No lock/config pages are written.
- * Length is invalidated before payload writes and published last. Failure
- * can leave an empty/incomplete message; do not retry a payment implicitly. */
+ * Length is invalidated before payload writes and published last. Success
+ * requires an acknowledged response to every page write, with no automatic
+ * readback or persistence guarantee. Failure can leave an empty/incomplete
+ * message; do not retry a payment implicitly. */
 int h2_fm175xx_ntag_write_ndef(h2_fm175xx_t* reader, const uint8_t* data,
                                size_t length);
 typedef enum h2_fm175xx_write_phase {
@@ -167,6 +172,7 @@ typedef enum h2_fm175xx_write_phase {
   H2_FM175XX_WRITE_INVALIDATE,
   H2_FM175XX_WRITE_PAYLOAD,
   H2_FM175XX_WRITE_PUBLISH,
+  /** Reserved legacy phase; writes no longer perform automatic readback. */
   H2_FM175XX_WRITE_VERIFY,
   H2_FM175XX_WRITE_COMPLETE
 } h2_fm175xx_write_phase_t;
@@ -183,13 +189,38 @@ typedef struct h2_fm175xx_write_diagnostics {
   uint8_t first_tlv;
   uint8_t control_tlv[5];
   uint8_t last_page;
+  size_t last_reply_bits;
+  uint8_t last_reply_low4;
+  uint8_t last_reply_crc_valid;
+  uint8_t last_reply[3];
+  int rx_status_result, configuration_result;
+  uint8_t rx_irq, rx_error, rx_fifo, rx_control;
+  uint8_t last_tx_mode, last_rx_mode, last_framing;
+  int last_command_result, last_restore_result, status_result;
+  uint8_t last_irq, last_error, last_fifo, last_control;
+  size_t before_ndef_length;
+  uint8_t before_ndef_valid, expected_ndef_valid;
+  uint8_t before_ndef_sha256[32];
+  uint8_t expected_ndef_sha256[32];
 } h2_fm175xx_write_diagnostics_t;
 
-/** Same single write/readback with optional per-call diagnostics.
+/** Same single write with optional per-call diagnostics.
  * Cleared before validation; metadata_valid requires a complete tag read.
- * Only capability/lock/TLV metadata is retained, never UID or message bytes.
- * write_calls counts page-write calls, including failed register setup.
- * No permission check, wire behavior or retry policy is changed. */
+ * Metadata and bounded control replies are retained, never UID or message
+ * bytes. write_calls counts page-write calls, including failed register setup.
+ * Writes require a four-bit ACK or the exact ACK byte with valid retained
+ * CRC_A. Unprotected byte-sized and malformed replies remain failures. Reply
+ * diagnostics retain at most three control-response
+ * bytes and the bit count, never the written message. rx_status_result
+ * validates the snapshot at RX completion before FIFO consumption and command
+ * cleanup; configuration_result validates the pre-command TX/RX/framing
+ * snapshot. Failure status registers are separately sampled after cleanup;
+ * status_result must be OK before interpreting that snapshot. Diagnostics do
+ * not retry I/O or read the message back after publishing its length.
+ * SHA-256 fingerprints cover complete NDEF bytes only. before_ndef is taken
+ * from the existing pre-write tag read; expected_ndef covers the input. Each
+ * valid flag must be set before using its digest. No extra device I/O is
+ * added. */
 int h2_fm175xx_ntag_write_ndef_diagnostic(
     h2_fm175xx_t* reader, const uint8_t* data, size_t length,
     h2_fm175xx_write_diagnostics_t* diagnostics);

@@ -182,11 +182,10 @@ int h2_alipay_client_post(const h2_alipay_client_config_t* config,
     h2_alipay_client_wipe(workspace->canonical, sizeof(workspace->canonical));
     if (rc != H2_PAL_OK) return rc;
   }
-  static const char url[] = "https://iotapi.alipay.com/mgw.htm";
   response_headers_t observed = {.result = result};
   h2_pal_http_request_t request = {
       .method = H2_PAL_HTTP_POST,
-      .url = {url, sizeof(url) - 1u},
+      .url = {config->gateway_url, strlen(config->gateway_url)},
       .headers = headers,
       .header_count = binary ? 6u : 9u,
       .body = body,
@@ -314,13 +313,26 @@ static int read_token(const h2_alipay_client_config_t* config,
   return rc;
 }
 
+static bool gateway_valid(const char* url) {
+  if (url == NULL || strncmp(url, "https://", 8u) != 0) return false;
+  const char* path = strchr(url + 8u, '/');
+  if (path == NULL || path == url + 8u || path[1] == '\0') return false;
+  for (const char* cursor = url + 8u; *cursor != '\0'; ++cursor) {
+    unsigned char byte = (unsigned char)*cursor;
+    if (byte <= 0x20u || byte >= 0x7fu || byte == '@' || byte == '?' ||
+        byte == '#' || byte == '\\')
+      return false;
+  }
+  return true;
+}
+
 h2_pal_result_t h2_alipay_client_validate_config(
     const h2_alipay_client_config_t* config) {
   if (config == NULL || config->mem == NULL || config->time == NULL ||
       config->http == NULL || config->pref == NULL || config->crypto == NULL ||
       config->company == NULL || config->pref_namespace == NULL ||
       config->pref_namespace[0] == '\0' || config->company[0] == '\0' ||
-      strlen(config->company) > 15u)
+      strlen(config->company) > 15u || !gateway_valid(config->gateway_url))
     return H2_PAL_ERR_INVALID_ARG;
   if (config->product_type != 3u) return H2_PAL_ERR_UNSUPPORTED;
   if ((config->legacy_pref == NULL) !=

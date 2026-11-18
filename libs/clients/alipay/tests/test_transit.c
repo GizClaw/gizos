@@ -134,6 +134,7 @@ static void initialize(transit_fixture_t* fixture) {
       .time = &fixture->time.api,
       .crypto = h2_wolfcrypt_crypto_api(),
       .http = &fixture->http,
+      .gateway_url = "https://iotapi.alipay.com/mgw.htm",
       .identity = {"TEST_SN", "TEST_SN", "12:34:56:78:9A:BC", "H106"},
       .company = "HAIVIVI",
       .product_type = 3u,

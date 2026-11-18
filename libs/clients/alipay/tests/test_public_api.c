@@ -357,6 +357,7 @@ int main(void) {
       .time = &time.api,
       .crypto = h2_wolfcrypt_crypto_api(),
       .http = &http,
+      .gateway_url = "https://iotapi.alipay.com/mgw.htm",
       .identity = {.sn = "TEST_SN_001",
                    .imei = "TEST_SN_001",
                    .mac = "12:34:56:78:9A:BC",

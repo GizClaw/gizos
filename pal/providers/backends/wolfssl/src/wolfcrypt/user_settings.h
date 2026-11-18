@@ -31,8 +31,8 @@
 #define NO_RABBIT
 #define NO_RC4
 #define NO_PWDBASED
-#define NO_ASN
 #define NO_CERTS
+#define WOLFSSL_ASN_TEMPLATE
 #define NO_SESSION_CACHE
 
 #if defined(_MSC_VER)
@@ -53,7 +53,7 @@
 #define HAVE_ECC_KOBLITZ
 #define WOLFSSL_CUSTOM_CURVES
 #define WOLFSSL_SM2
-#define H2_WOLFSM_EXTERNAL_DIGEST
+#define WOLFSSL_BASE16
 #define ECC_MIN_KEY_SZ 192
 #define NO_ECC224
 #define NO_ECC384

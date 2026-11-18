@@ -2,6 +2,7 @@
 #include "h2_alipay_payment_model.h"
 #include "h2_atomic.h"
 #include "h2_qrcode.h"
+#include "h2_sha256.h"
 #include <stdio.h>
 #include <stdarg.h>
 #include <string.h>
@@ -272,10 +273,26 @@ static int write_reply(void* user, const uint8_t* data, size_t length) {
   if (rc == H2_PAL_OK)
     rc = h2_runtime_periph_id(page->rt, page->config->payment_nfc_component_id,
                               &id);
-  if (rc == H2_PAL_OK)
+  unsigned busy_waits = 0u;
+  while (rc == H2_PAL_OK) {
     rc = h2_pal_nfc_write_nfc_data(page->rt->nfc, id, page->uid,
                                    page->uid_length, H2_PAL_NFC_DATA_NDEF,
                                    message, size);
+    if (rc != H2_PAL_ERR_BUSY || busy_waits == 100u) break;
+    if (busy_waits == 0u)
+      (void)h2_pal_log_write(
+          page->rt->log, H2_PAL_LOG_WARN, "alipay/payment",
+          "H2_ALIPAY_NFC_WRITE phase=wait pal_rc=-18 limit=100 delay_ms=20");
+    ++busy_waits;
+    rc = h2_pal_time_sleep_ms(page->rt->time, 20u);
+  }
+  char diagnostic[160];
+  (void)snprintf(diagnostic, sizeof(diagnostic),
+                 "H2_ALIPAY_NFC_WRITE phase=complete pal_rc=%d sdk_bytes=%zu "
+                 "ndef_bytes=%zu busy_waits=%u",
+                 rc, length, size, busy_waits);
+  (void)h2_pal_log_write(page->rt->log, H2_PAL_LOG_WARN, "alipay/payment",
+                         diagnostic);
   wipe(message, sizeof(message));
   return rc;
 }
@@ -359,9 +376,23 @@ static void work(void* user) {
           h2_runtime_periph_id(p->rt, p->config->payment_nfc_component_id, &id);
       if (p->call_rc == 0) p->call_rc = read_ndef_frame(p, id, &data);
       p->nfc_read_rc = p->call_rc;
-      if (p->call_rc == 0)
+      if (p->call_rc == 0) {
+        h2_sha256_t sha;
+        uint8_t digest[32];
+        h2_sha256_init(&sha);
+        h2_sha256_update(&sha, data.bytes, data.len);
+        h2_sha256_finish(&sha, digest);
         p->call_rc =
             api->receive_ndef(p->api->user, data.bytes, data.len, &p->result);
+        char hex[65], diagnostic[160];
+        h2_sha256_hex(digest, hex);
+        (void)snprintf(
+            diagnostic, sizeof(diagnostic),
+            "H2_ALIPAY_NFC_INPUT bytes=%zu sha256=%s sdk_rc=%d transport_rc=%d",
+            data.len, hex, p->result.sdk_rc, p->result.transport_rc);
+        (void)h2_pal_log_write(p->rt->log, H2_PAL_LOG_WARN, "alipay/payment",
+                               diagnostic);
+      }
       if (data.bytes != NULL) {
         wipe(data.bytes, data.len);
         h2_pal_mem_free(p->rt->mem, data.bytes);

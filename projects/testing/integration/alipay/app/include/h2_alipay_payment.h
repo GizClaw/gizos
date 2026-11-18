@@ -21,7 +21,7 @@ typedef enum h2_alipay_payment_state {
   H2_ALIPAY_PAYMENT_DISABLED,
 } h2_alipay_payment_state_t;
 
-/** Non-secret diagnostics. Processing success and completed NFC write/readback
+/** Non-secret diagnostics. Processing success and completed NFC writes
  * do not establish payment success; PAID requires an actual result query. */
 typedef struct h2_alipay_payment_result {
   h2_alipay_payment_state_t state;
@@ -33,9 +33,10 @@ typedef struct h2_alipay_payment_result {
 } h2_alipay_payment_result_t;
 
 /** Borrowed synchronous NFC transport, called on the business worker.
- * Complete real write/readback before returning OK. Bytes are application
- * data and need the configured terminal NDEF encoding. No SDK reentry is
- * allowed. Borrowed data lives only through this call. */
+ * Complete the physical write before returning OK; automatic NDEF readback is
+ * not required. Bytes are application data and need the configured terminal
+ * NDEF encoding. No SDK reentry is allowed. Borrowed data lives only through
+ * this call. */
 typedef struct h2_alipay_tap_transport {
   void* user;
   h2_pal_result_t (*write_reply)(void* user, const uint8_t* data,

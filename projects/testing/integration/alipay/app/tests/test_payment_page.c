@@ -25,12 +25,16 @@ typedef struct fixture {
   uint16_t pixels[240 * 240];
   unsigned flow, flow_phase, reads, writes, frames, confirmations;
   unsigned results, advertising_starts, advertising_stops;
+  unsigned received_frames, reply_encodes, accepted_writes;
   bool advertising;
   h2_alipay_tap_transport_t transport;
   h2_pal_ble_scan_result_fn scan_callback;
   void* scan_user;
   const h2_pal_ble_gatt_service_t* service;
 } fixture_t;
+static const uint8_t nfc_input[] = {0x91u, 1u,  2u,  'T', 0u, 'x',
+                                    0x51u, 1u,  7u,  'T', 2u, 'e',
+                                    'n',   'T', 'E', 'S', 'T'};
 static int open_display(void* user) {
   (void)user;
   return 0;
@@ -162,6 +166,7 @@ static int read_nfc(void* user, h2_pal_periph_id_t id, const uint8_t* uid,
   worker(fixture);
   assert(id == 101u && uid_length == 4u && uid[0] == 0x42u &&
          type == H2_PAL_NFC_DATA_NDEF);
+  assert(atomic_load(&fixture->starts) == 1u && fixture->writes == 0u);
   ++fixture->reads;
   if (fixture->flow == 8u && fixture->reads == 1u) return H2_PAL_ERR_IO;
   if (fixture->flow == 12u) {
@@ -181,10 +186,10 @@ static int read_nfc(void* user, h2_pal_periph_id_t id, const uint8_t* uid,
     if (fixture->reads <= 101u) return H2_PAL_ERR_BUSY;
   }
   if (fixture->nfc_read_rc != 0) return fixture->nfc_read_rc;
-  out->bytes = h2_pal_mem_alloc(memory, 4u);
+  out->bytes = h2_pal_mem_alloc(memory, sizeof(nfc_input));
   assert(out->bytes != NULL);
-  memcpy(out->bytes, "TEST", 4u);
-  out->len = 4u;
+  memcpy(out->bytes, nfc_input, sizeof(nfc_input));
+  out->len = sizeof(nfc_input);
   if (fixture->flow == 11u && fixture->reads == 1u) return H2_PAL_ERR_IO;
   return 0;
 }
@@ -194,6 +199,8 @@ static int encode_reply(void* user, const uint8_t* data, size_t length,
   fixture_t* fixture = user;
   worker(fixture);
   assert(length == 4u && memcmp(data, "TEST", 4u) == 0 && capacity >= 8u);
+  ++fixture->reply_encodes;
+  assert(fixture->received_frames == 1u && fixture->reply_encodes == 1u);
   const uint8_t record[] = {0xd1u, 1u, 4u, 'T', 0u, 'O', 'K', '!'};
   memcpy(out, record, sizeof(record));
   *size = sizeof(record);
@@ -209,30 +216,57 @@ static int write_nfc(void* user, h2_pal_periph_id_t id, const uint8_t* uid,
          type == H2_PAL_NFC_DATA_NDEF);
   const uint8_t record[] = {0xd1u, 1u, 4u, 'T', 0u, 'O', 'K', '!'};
   assert(length == sizeof(record) && memcmp(data, record, length) == 0);
+  assert(fixture->accepted_writes == 0u);
   ++fixture->writes;
-  return fixture->flow == 7u ? H2_PAL_ERR_IO : 0;
+  if ((fixture->flow == 18u && fixture->writes <= 3u) || fixture->flow == 19u ||
+      ((fixture->flow == 20u || fixture->flow == 21u) && fixture->writes <= 2u))
+    return H2_PAL_ERR_BUSY;
+  ++fixture->accepted_writes;
+  if (fixture->flow == 21u) return H2_PAL_ERR_TIMEOUT;
+  return fixture->flow == 7u || fixture->flow == 20u ? H2_PAL_ERR_IO : 0;
 }
 
 static int receive_ndef(void* user, const uint8_t* data, size_t length,
                         h2_alipay_payment_result_t* out) {
   fixture_t* fixture = user;
   worker(fixture);
-  assert(length == 4u && memcmp(data, "TEST", 4u) == 0);
+  assert(length == sizeof(nfc_input) &&
+         memcmp(data, nfc_input, sizeof(nfc_input)) == 0);
+  ++fixture->received_frames;
   assert(fixture->transport.write_reply != NULL);
-  int rc =
-      fixture->transport.write_reply(fixture->transport.user, data, length);
+  static const uint8_t reply[] = "TEST";
+  int rc = fixture->transport.write_reply(fixture->transport.user, reply,
+                                          sizeof(reply) - 1u);
   *out = (h2_alipay_payment_result_t){
-      .write_attempted = true, .nfc_write_rc = rc, .response_sent = rc == 0};
+      .state = rc == 0 ? H2_ALIPAY_PAYMENT_PENDING : H2_ALIPAY_PAYMENT_UNKNOWN,
+      .processing_status = 1,
+      .write_attempted = true,
+      .nfc_write_rc = rc,
+      .response_sent = rc == 0};
   return rc;
 }
 
 static int query_tap(void* user, h2_alipay_payment_result_t* out) {
   fixture_t* fixture = user;
   worker(fixture);
+  ++fixture->results;
+  assert(fixture->accepted_writes == 1u);
+  if (fixture->flow == 22u) {
+    assert(fixture->writes == 1u && fixture->reads == 1u);
+    if (fixture->results == 2u) {
+      *out = (h2_alipay_payment_result_t){.sdk_rc = 99};
+      return H2_PAL_ERR_IO;
+    }
+    *out = (h2_alipay_payment_result_t){.state = fixture->results == 1u
+                                                     ? H2_ALIPAY_PAYMENT_PENDING
+                                                     : H2_ALIPAY_PAYMENT_PAID,
+                                        .amount = "0.00"};
+    return 0;
+  }
   if (fixture->flow == 6u || fixture->flow == 8u || fixture->flow == 11u ||
-      fixture->flow == 12u || fixture->flow == 16u || fixture->flow == 17u) {
-    ++fixture->results;
-    assert(fixture->writes == 1u);
+      fixture->flow == 12u || fixture->flow == 16u || fixture->flow == 17u ||
+      fixture->flow == 18u) {
+    assert(fixture->writes == (fixture->flow == 18u ? 4u : 1u));
     *out = (h2_alipay_payment_result_t){.state = H2_ALIPAY_PAYMENT_PAID,
                                         .amount = "0.00"};
     return 0;
@@ -465,19 +499,46 @@ static bool flow_exit(fixture_t* fixture) {
     assert(h2_runtime_test_set_component_state(fixture->input, 1u, &state,
                                                sizeof(state)) == 0);
     fixture->flow_phase = 2u;
-  } else if (fixture->flow_phase == 2u && fixture->flow == 7u) {
+  } else if (fixture->flow_phase == 2u &&
+             (fixture->flow == 7u || fixture->flow == 19u ||
+              fixture->flow == 20u || fixture->flow == 21u)) {
     char failure[80];
+    int result = fixture->flow == 19u   ? H2_PAL_ERR_BUSY
+                 : fixture->flow == 21u ? H2_PAL_ERR_TIMEOUT
+                                        : H2_PAL_ERR_IO;
     (void)snprintf(failure, sizeof(failure), "NFC write failed\nrc: %d",
-                   H2_PAL_ERR_IO);
+                   result);
     if (find_label(lv_screen_active(), failure) != NULL) {
-      assert(fixture->writes == 1u && fixture->results == 0u &&
+      unsigned calls = fixture->flow == 19u  ? 101u
+                       : fixture->flow == 7u ? 1u
+                                             : 3u;
+      assert(fixture->writes == calls && fixture->results == 0u &&
              fixture->advertising_starts == 0u);
       fixture->flow_phase = 6u;
     }
+  } else if (fixture->flow == 22u) {
+    char failure[96];
+    (void)snprintf(failure, sizeof(failure),
+                   "Payment query failed\nSDK: 99 / rc: %d", H2_PAL_ERR_IO);
+    if (fixture->flow_phase == 2u &&
+        find_label(lv_screen_active(), "Response sent; checking payment"))
+      fixture->flow_phase = 4u;
+    else if (fixture->flow_phase == 4u &&
+             find_label(lv_screen_active(), "Waiting for merchant result"))
+      fixture->flow_phase = 5u;
+    else if (fixture->flow_phase == 5u &&
+             find_label(lv_screen_active(), failure))
+      fixture->flow_phase = 7u;
+    else if (fixture->flow_phase == 7u &&
+             find_label(lv_screen_active(), "Payment confirmed\n0.00"))
+      fixture->flow_phase = 6u;
+    if (fixture->flow_phase != 6u)
+      assert(find_label(lv_screen_active(), "Payment confirmed\n0.00") == NULL);
   } else if ((fixture->flow_phase == 2u || fixture->flow_phase == 4u) &&
              (fixture->flow == 6u || fixture->flow == 8u ||
               fixture->flow == 11u || fixture->flow == 12u ||
-              fixture->flow == 16u || fixture->flow == 17u)) {
+              fixture->flow == 16u || fixture->flow == 17u ||
+              fixture->flow == 18u)) {
     if (find_label(lv_screen_active(), "Response sent; checking payment") !=
         NULL)
       fixture->flow_phase = 4u;
@@ -682,10 +743,20 @@ static void run(bool buttons, bool production, bool payer_only, int touch_rc,
                                                             : 1u;
     bool read_failed = flow == 5u || flow == 9u || flow == 10u || flow == 13u ||
                        flow == 14u || flow == 15u;
+    unsigned expected_writes = read_failed                  ? 0u
+                               : flow == 18u                ? 4u
+                               : flow == 19u                ? 101u
+                               : flow == 20u || flow == 21u ? 3u
+                                                            : 1u;
     assert(f.flow_phase == 6u && f.reads == expected_reads &&
-           f.writes == (read_failed ? 0u : 1u) &&
-           f.results == (flow == 6u || flow == 8u || flow == 11u ||
-                                 flow == 12u || flow == 16u || flow == 17u
+           f.writes == expected_writes &&
+           f.accepted_writes == (read_failed || flow == 19u ? 0u : 1u) &&
+           f.received_frames == (read_failed ? 0u : 1u) &&
+           f.reply_encodes == (read_failed ? 0u : 1u) &&
+           f.results == (flow == 22u ? 3u
+                         : flow == 6u || flow == 8u || flow == 11u ||
+                                 flow == 12u || flow == 16u || flow == 17u ||
+                                 flow == 18u
                              ? 1u
                              : 0u) &&
            f.confirmations == 0u && f.advertising_starts == 0u &&
@@ -731,5 +802,10 @@ int main(void) {
   run(true, false, false, 0, 0, 15u);
   run(true, false, false, 0, 0, 16u);
   run(true, false, false, 0, 0, 17u);
+  run(true, false, false, 0, 0, 18u);
+  run(true, false, false, 0, 0, 19u);
+  run(true, false, false, 0, 0, 20u);
+  run(true, false, false, 0, 0, 21u);
+  run(true, false, false, 0, 0, 22u);
   return 0;
 }

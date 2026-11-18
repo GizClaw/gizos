@@ -81,6 +81,7 @@ h2_pal_result_t h2_alipay_tiga_protocol_configure(
       .mem = runtime->mem,
       .time = runtime->time,
       .http = runtime->http,
+      .gateway_url = "https://iotapi.alipay.com/mgw.htm",
       .pref = pref,
       .crypto = crypto,
       .identity = {.sn = s_sn,

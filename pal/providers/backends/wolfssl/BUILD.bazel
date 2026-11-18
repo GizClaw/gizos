@@ -283,9 +283,12 @@ cc_library(
     local_defines = [
         "WOLFSSL_USER_SETTINGS",
         "wc_ecc_make_key_ex2=h2_wolfcrypt_test_sm2_make_key_ex2",
+        "wc_ecc_sm2_create_digest=h2_wolfcrypt_fixture_sm2_create_digest",
         "wc_ecc_sm2_make_key=h2_wolfcrypt_fixture_sm2_make_key",
         "wc_ecc_sm2_shared_secret=h2_wolfcrypt_fixture_sm2_shared_secret",
+        "wc_ecc_sm2_sign_hash=h2_wolfcrypt_fixture_sm2_sign_hash",
         "wc_ecc_sm2_sign_hash_ex=h2_wolfcrypt_fixture_sm2_sign_hash_ex",
+        "wc_ecc_sm2_verify_hash=h2_wolfcrypt_fixture_sm2_verify_hash",
         "wc_ecc_sm2_verify_hash_ex=h2_wolfcrypt_fixture_sm2_verify_hash_ex",
     ],
     deps = ["@h2_vendor_wolfssl//:wolfcrypt_header_group"],

@@ -10,7 +10,7 @@
 extern "C" {
 #endif
 
-/** Test-only resident adapter around the independent original API. Copies
+/** Integration adapter around the owned compatible Alipay API. Copies
  * configuration and borrows its providers and strings until release succeeds.
  * Configuration/release require all workers to be joined. Business calls use
  * the original initialization, code, query and durable binding snapshot
@@ -24,8 +24,8 @@ const h2_alipay_api_t* h2_alipay_e2e_independent_api(void);
  * Static payer-code and NFC wallet API; available before configure for target
  * input assembly. Calls require configured initialization and complete binding.
  * The integration owns physical transport and result
- * presentation. All original calls use unchanged vendor declarations with
- * the independent implementation. Payment operations require caller
+ * presentation. All SDK calls use the owned compatible declarations and
+ * implementation. Payment operations require caller
  * serialization, including configure/release.
  */
 const h2_alipay_payment_api_t* h2_alipay_e2e_independent_payment_api(void);

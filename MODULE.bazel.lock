@@ -480,7 +480,7 @@
     "//tools/bazel/repositories:repositories.bzl%vendor_repositories": {
       "general": {
         "bzlTransitiveDigest": "2JZy85z5MiIaUpyUMEYbak7QXyt1MNAqmSOeoGW3Et0=",
-        "usagesDigest": "iJx7PjYehIIdft/ehOLcvlLmpoCh3H7SlM84qoVaGrA=",
+        "usagesDigest": "KN9CeRWyKaPymJ3xdGJEjtgVVd4t8k//msTAPAIJveo=",
         "recordedInputs": [
           "REPO_MAPPING:,h2_vendor_wolfsm +vendor_repositories+h2_vendor_wolfsm"
         ],
@@ -866,9 +866,7 @@
               "nested_archive_strip_prefix": {},
               "nested_archive_urls": {},
               "overlay_files": {},
-              "patches": [
-                "@@//third_party/wolfsm_patch:wolfsm.patch"
-              ],
+              "patches": [],
               "sha256": "08fabd465573468762530220849b48864dcc436f2901d5cbba143b0477de2766",
               "strip_prefix": "wolfsm-a7650b11d30eb0e69e218ffc6fc8767cee3e6d1b",
               "urls": [

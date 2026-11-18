@@ -60,6 +60,12 @@ static void selection_sleep(void* user, uint32_t milliseconds) {
   ++fixture.sleeps;
 }
 
+static int read_status(void* user, uint8_t address, uint8_t* value) {
+  assert(user == &fixture && address < 64u);
+  *value = 0u;
+  return H2_FM175XX_OK;
+}
+
 int h2_fm175xx_type_a_activate_diagnostic(
     h2_fm175xx_t* reader, h2_fm175xx_type_a_card_t* card,
     h2_fm175xx_activation_diagnostics_t* diagnostics) {
@@ -93,9 +99,14 @@ int h2_fm175xx_ntag_read_ndef_diagnostic(
     h2_fm175xx_read_diagnostics_t* diagnostics) {
   *diagnostics = (h2_fm175xx_read_diagnostics_t){
       .read_count = 2u,
-      .last_reply_bits = 128u,
+      .last_reply_bits = fixture.read_result == H2_FM175XX_OK ? 128u : 96u,
       .last_page = 4u,
       .status_result = H2_FM175XX_ERR_UNAVAILABLE,
+      .rx_status_result = H2_FM175XX_OK,
+      .rx_irq = fixture.read_result == H2_FM175XX_OK ? 0x20u : 0x22u,
+      .rx_error = fixture.read_result == H2_FM175XX_OK ? 0u : 4u,
+      .rx_fifo = fixture.read_result == H2_FM175XX_OK ? 16u : 12u,
+      .rx_control = 0x10u,
       .last_result = fixture.read_result};
   return h2_fm175xx_ntag_read_ndef(reader, bytes, capacity, length);
 }
@@ -115,12 +126,25 @@ int h2_fm175xx_ntag_write_ndef_diagnostic(
   *diagnostics = (h2_fm175xx_write_diagnostics_t){
       .phase = rc == H2_FM175XX_OK                ? H2_FM175XX_WRITE_COMPLETE
                : rc == H2_FM175XX_ERR_UNAVAILABLE ? H2_FM175XX_WRITE_CC
-                                                  : H2_FM175XX_WRITE_VERIFY,
+                                                  : H2_FM175XX_WRITE_PUBLISH,
       .tag_capacity = 160u,
       .metadata_valid = 1u,
       .cc = {0xe1u, 0x10u, 18u, rc == H2_FM175XX_ERR_UNAVAILABLE ? 0x0fu : 0u},
       .first_tlv = 3u,
       .write_calls = rc == H2_FM175XX_ERR_UNAVAILABLE ? 0u : 1u,
+      .last_reply_bits = 4u,
+      .last_reply_low4 = rc == H2_FM175XX_OK ? 10u : 0u,
+      .last_reply = {rc == H2_FM175XX_OK ? 10u : 0u, 0u, 0u},
+      .rx_status_result = H2_FM175XX_OK,
+      .configuration_result = H2_FM175XX_OK,
+      .rx_irq = 0x64u,
+      .rx_fifo = 1u,
+      .rx_control = 0x14u,
+      .last_tx_mode = 0x80u,
+      .last_command_result = H2_FM175XX_OK,
+      .last_restore_result = H2_FM175XX_OK,
+      .status_result =
+          rc == H2_FM175XX_OK ? H2_FM175XX_ERR_UNAVAILABLE : H2_FM175XX_OK,
       .last_page = rc == H2_FM175XX_ERR_UNAVAILABLE ? 0u : 4u};
   return rc;
 }
@@ -161,6 +185,7 @@ static void setup(h2_esp_nfc_fm175xx_t* adapter) {
   adapter->opened = 1;
   adapter->reader.transport.user = &fixture;
   adapter->reader.transport.sleep_ms = selection_sleep;
+  adapter->reader.transport.read_reg = read_status;
 }
 
 static int read_ndef(h2_esp_nfc_fm175xx_t* adapter,
@@ -175,6 +200,99 @@ static int write_ndef(h2_esp_nfc_fm175xx_t* adapter) {
   return h2_pal_nfc_write_nfc_data(h2_esp_nfc_fm175xx_api(adapter), 201u, uid,
                                    sizeof(uid), H2_PAL_NFC_DATA_NDEF, message,
                                    sizeof(message));
+}
+
+static void test_write_read_selection(void) {
+  h2_app_test_mem_t memory;
+  h2_app_test_mem_init(&memory, NULL);
+  h2_esp_nfc_fm175xx_t adapter;
+  h2_pal_nfc_data_read_t data;
+
+  setup(&adapter);
+  assert(read_ndef(&adapter, &memory.api, &data) == H2_PAL_OK);
+  h2_pal_mem_free(&memory.api, data.bytes);
+  assert(write_ndef(&adapter) == H2_PAL_OK);
+  assert(fixture.activations == 1u && fixture.reads == 1u &&
+         fixture.writes == 1u && adapter.read_selection_valid == 0);
+  assert(strstr(fixture.diagnostics, "H2_NFC_WRITE_SELECT mode=read-session") !=
+         NULL);
+  assert(write_ndef(&adapter) == H2_PAL_OK);
+  assert(fixture.activations == 2u && fixture.writes == 2u);
+
+  setup(&adapter);
+  assert(read_ndef(&adapter, &memory.api, &data) == H2_PAL_OK);
+  h2_pal_mem_free(&memory.api, data.bytes);
+  h2_pal_nfc_scan_t scan;
+  assert(h2_pal_nfc_scan_nfc_reader(h2_esp_nfc_fm175xx_api(&adapter), 201u,
+                                    &scan) == H2_PAL_OK);
+  assert(adapter.read_selection_valid == 0);
+  assert(write_ndef(&adapter) == H2_PAL_OK);
+  assert(fixture.activations == 3u && fixture.writes == 1u);
+
+  setup(&adapter);
+  assert(read_ndef(&adapter, &memory.api, &data) == H2_PAL_OK);
+  h2_pal_mem_free(&memory.api, data.bytes);
+  fixture.read_result = H2_FM175XX_ERR_PROTOCOL;
+  assert(read_ndef(&adapter, &memory.api, &data) == H2_PAL_ERR_IO);
+  assert(adapter.read_selection_valid == 0 && data.bytes == NULL);
+  assert(write_ndef(&adapter) == H2_PAL_OK);
+  assert(fixture.activations == 3u && fixture.writes == 1u);
+
+  setup(&adapter);
+  assert(read_ndef(&adapter, &memory.api, &data) == H2_PAL_OK);
+  h2_pal_mem_free(&memory.api, data.bytes);
+  uint8_t replacement_uid[sizeof(uid)];
+  memcpy(replacement_uid, uid, sizeof(uid));
+  replacement_uid[0] ^= 1u;
+  memcpy(fixture.card.uid, replacement_uid, sizeof(replacement_uid));
+  assert(h2_pal_nfc_write_nfc_data(h2_esp_nfc_fm175xx_api(&adapter), 201u,
+                                   replacement_uid, sizeof(replacement_uid),
+                                   H2_PAL_NFC_DATA_NDEF, message,
+                                   sizeof(message)) == H2_PAL_OK);
+  assert(fixture.activations == 2u && fixture.writes == 1u);
+
+  setup(&adapter);
+  assert(read_ndef(&adapter, &memory.api, &data) == H2_PAL_OK);
+  h2_pal_mem_free(&memory.api, data.bytes);
+  assert(h2_pal_nfc_write_nfc_data(
+             h2_esp_nfc_fm175xx_api(&adapter), 201u, replacement_uid,
+             sizeof(replacement_uid), H2_PAL_NFC_DATA_NDEF, message,
+             sizeof(message)) == H2_PAL_ERR_INVALID_STATE);
+  assert(fixture.activations == 2u && fixture.writes == 0u);
+
+  setup(&adapter);
+  fixture.card.sak[0] = 0x20u;
+  assert(h2_pal_nfc_read_nfc_data(h2_esp_nfc_fm175xx_api(&adapter), 201u, uid,
+                                  sizeof(uid), H2_PAL_NFC_DATA_NTAG_PAGES,
+                                  &memory.api, &data) == H2_PAL_OK);
+  h2_pal_mem_free(&memory.api, data.bytes);
+  assert(write_ndef(&adapter) == H2_PAL_ERR_UNSUPPORTED);
+  assert(fixture.activations == 1u && fixture.writes == 0u);
+
+  setup(&adapter);
+  assert(read_ndef(&adapter, &memory.api, &data) == H2_PAL_OK);
+  h2_pal_mem_free(&memory.api, data.bytes);
+  fixture.write_result = H2_FM175XX_ERR_PROTOCOL;
+  assert(write_ndef(&adapter) == H2_PAL_ERR_IO);
+  assert(fixture.activations == 1u && fixture.writes == 1u &&
+         adapter.read_selection_valid == 0);
+
+  setup(&adapter);
+  assert(read_ndef(&adapter, &memory.api, &data) == H2_PAL_OK);
+  h2_pal_mem_free(&memory.api, data.bytes);
+  fixture.activate_result = H2_FM175XX_ERR_TIMEOUT;
+  assert(h2_pal_nfc_scan_nfc_reader(h2_esp_nfc_fm175xx_api(&adapter), 201u,
+                                    &scan) == H2_PAL_OK);
+  assert(adapter.read_selection_valid == 0);
+  assert(write_ndef(&adapter) == H2_PAL_ERR_NOT_FOUND);
+  assert(fixture.activations == 5u && fixture.writes == 0u);
+
+  setup(&adapter);
+  assert(read_ndef(&adapter, &memory.api, &data) == H2_PAL_OK);
+  h2_pal_mem_free(&memory.api, data.bytes);
+  h2_esp_nfc_fm175xx_deinit(&adapter);
+  assert(adapter.read_selection_valid == 0 && adapter.opened == 0);
+  assert(memory.live_blocks == 0u);
 }
 
 static void test_write_selection_recovery(void) {
@@ -247,6 +365,7 @@ static void test_write_selection_recovery(void) {
 }
 
 int main(void) {
+  test_write_read_selection();
   test_write_selection_recovery();
   h2_app_test_mem_t memory;
   h2_app_test_mem_init(&memory, NULL);
@@ -270,6 +389,9 @@ int main(void) {
   assert(read_ndef(&adapter, &memory.api, &data) == H2_PAL_ERR_IO);
   assert(data.bytes == NULL && fixture.reads == 0u);
   assert(strstr(fixture.diagnostics, "phase=activate fm=-6 pal_rc=-4") != NULL);
+  assert(strstr(fixture.diagnostics,
+                "H2_NFC_READ_SELECT phase=2 command=0x52 cascade=0 bits=0 "
+                "fm=-6") != NULL);
   assert(strstr(fixture.diagnostics, "phase=content") == NULL);
 
   setup(&adapter);
@@ -296,6 +418,9 @@ int main(void) {
   assert(data.bytes == NULL && fixture.reads == 1u);
   assert(memory.live_blocks == 0u);
   assert(strstr(fixture.diagnostics, "phase=content fm=-6 pal_rc=-4") != NULL);
+  assert(strstr(fixture.diagnostics,
+                "rx_status=0 rx_irq=0x22 rx_error=0x04 rx_fifo=12 "
+                "rx_control=0x10") != NULL);
 
   setup(&adapter);
   memory.fail_at = memory.calls + 1u;
@@ -325,7 +450,7 @@ int main(void) {
   assert(fixture.writes == 1u);
   assert(
       strstr(fixture.diagnostics,
-             "H2_NFC_WRITE phase=content fm=0 pal_rc=0 bytes=6 verified=1") !=
+             "H2_NFC_WRITE phase=content fm=0 pal_rc=0 bytes=6 submitted=1") !=
       NULL);
   setup(&adapter);
   fixture.write_result = H2_FM175XX_ERR_PROTOCOL;
@@ -333,7 +458,16 @@ int main(void) {
                                    sizeof(uid), H2_PAL_NFC_DATA_NDEF, message,
                                    sizeof(message)) == H2_PAL_ERR_IO);
   assert(fixture.writes == 1u);
-  assert(strstr(fixture.diagnostics, "verified=1") == NULL);
+  assert(strstr(fixture.diagnostics, "submitted=1") == NULL);
+  assert(strstr(fixture.diagnostics,
+                "H2_NFC_WRITE_REPLY page=4 bits=4 low4=0x0 "
+                "command_rc=0 restore_rc=0 status_rc=0") != NULL);
+  assert(strstr(fixture.diagnostics,
+                "H2_NFC_WRITE_FRAME bytes=000000 rx_status=0 "
+                "irq=0x64 error=0x00 fifo=1 control=0x14 "
+                "config_status=0 tx=0x80 rx=0x00 framing=0x00") != NULL);
+  assert(strstr(fixture.diagnostics, "H2_NFC_WRITE_DETAIL phase=publish") !=
+         NULL);
   setup(&adapter);
   fixture.write_result = H2_FM175XX_ERR_UNAVAILABLE;
   assert(write_ndef(&adapter) == H2_PAL_ERR_UNAVAILABLE);
@@ -342,7 +476,7 @@ int main(void) {
   assert(strstr(fixture.diagnostics, "H2_NFC_WRITE_DETAIL phase=cc fm=-2") !=
          NULL);
   assert(strstr(fixture.diagnostics, "write_calls=0") != NULL);
-  assert(strstr(fixture.diagnostics, "verified=1") == NULL);
+  assert(strstr(fixture.diagnostics, "submitted=1") == NULL);
   setup(&adapter);
   fixture.card.uid[0] ^= 1u;
   assert(h2_pal_nfc_write_nfc_data(h2_esp_nfc_fm175xx_api(&adapter), 201u, uid,

@@ -4,8 +4,10 @@ package(default_visibility = ["//visibility:public"])
 
 WOLFCRYPT_UPSTREAM_SOURCES = [
     "wolfcrypt/src/aes.c",
+    "wolfcrypt/src/asn.c",
     "wolfcrypt/src/chacha.c",
     "wolfcrypt/src/chacha20_poly1305.c",
+    "wolfcrypt/src/coding.c",
     "wolfcrypt/src/curve25519.c",
     "wolfcrypt/src/des3.c",
     "wolfcrypt/src/ecc.c",
@@ -46,11 +48,14 @@ WOLFCRYPT_UPSTREAM_HEADERS = [
     "wolfssl/wolfcrypt/libwolfssl_sources.h",
     "wolfssl/wolfcrypt/logging.h",
     "wolfssl/wolfcrypt/memory.h",
+    "wolfssl/wolfcrypt/md2.h",
     "wolfssl/wolfcrypt/md5.h",
     "wolfssl/wolfcrypt/misc.h",
     "wolfssl/wolfcrypt/oid_sum.h",
     "wolfssl/wolfcrypt/poly1305.h",
+    "wolfssl/wolfcrypt/pwdbased.h",
     "wolfssl/wolfcrypt/random.h",
+    "wolfssl/wolfcrypt/rc2.h",
     "wolfssl/wolfcrypt/settings.h",
     "wolfssl/wolfcrypt/sha256.h",
     "wolfssl/wolfcrypt/sha.h",
@@ -59,6 +64,7 @@ WOLFCRYPT_UPSTREAM_HEADERS = [
     "wolfssl/wolfcrypt/sp_int.h",
     "wolfssl/wolfcrypt/types.h",
     "wolfssl/wolfcrypt/visibility.h",
+    "wolfssl/wolfcrypt/wc_encrypt.h",
     "wolfssl/wolfcrypt/wc_port.h",
     "wolfssl/wolfcrypt/wolfmath.h",
 ]

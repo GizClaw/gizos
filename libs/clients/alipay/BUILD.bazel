@@ -253,6 +253,24 @@ cc_test(
     ],
 )
 
+cc_test(
+    name = "tap_wallet_test",
+    srcs = [
+        "src/h2_alipay_client_internal.h",
+        "tests/test_tap_wallet.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        ":alipay",
+        "//libs/sync/atomic/providers/c11",
+        "//libs/testing:testing_pal",
+        "//pal/providers/backends/wolfssl:wolfcrypt_test_support",
+    ],
+)
+
 cc_binary(
     name = "api_candidate_runner",
     testonly = True,

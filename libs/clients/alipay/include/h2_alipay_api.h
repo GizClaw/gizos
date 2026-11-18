@@ -96,9 +96,11 @@ retval_e alipay_query_last_nfc_pay_result(alipay_payment_status_e* status,
                                           char amount[32], char* ext_data,
                                           uint32_t* ext_data_length);
 
-/** Reply application bytes are borrowed only for the callback. The caller
- * performs the terminal's NDEF encoding, write and readback before returning.
- * SDK processing success alone does not establish transmission or payment. */
+/** Reply application bytes are borrowed only for the callback. Pass the
+ * payload and length unchanged to the caller-owned NFC write path. Framing
+ * and transport completion follow the terminal's qualified protocol.
+ * SDK processing status ignores the callback result; track transmission
+ * errors separately. SDK success does not establish a paid transaction. */
 typedef int (*alipay_nfc_send_data_handle_t)(const uint8_t* data,
                                              uint32_t length);
 typedef int (*alipay_ble_broadcast_data_handle_t)(const uint8_t* data,

@@ -190,6 +190,7 @@ static void initialize(fixture_t* f) {
       .time = &f->time.api,
       .pref = &f->pref.api,
       .http = &f->http,
+      .gateway_url = "https://iotapi.alipay.com/mgw.htm",
       .crypto = h2_wolfcrypt_crypto_api(),
       .identity = {"TEST_SN", "TEST_SN", "12:34:56:78:9A:BC", "H106"},
       .company = "HAIVIVI",

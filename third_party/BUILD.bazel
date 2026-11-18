@@ -53,7 +53,6 @@ filegroup(
         "yyjson.BUILD.bazel",
         "zlib.BUILD.bazel",
         "//third_party/tinyh264_patch:tinyh264.patch",
-        "//third_party/wolfsm_patch:wolfsm.patch",
     ],
 )
 

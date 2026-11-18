@@ -29,6 +29,9 @@ static int request(void* user, const h2_pal_http_request_t* request,
                    h2_pal_http_response_t* response) {
   (void)user;
   ++requests;
+  static const char gateway[] = "https://iotapi.alipay.com/mgw.htm";
+  assert(request->url.len == sizeof(gateway) - 1u);
+  assert(memcmp(request->url.data, gateway, sizeof(gateway) - 1u) == 0);
   assert(contains(request->body, request->body_len,
                   requests == 1u   ? "ALIPAY_BRAND_NAME_H106"
                   : requests == 2u ? "\"deviceModel\":\"QZ.SB.LY.HAIVIVI-H106\""

@@ -63,6 +63,7 @@ int main(void) {
       .time = &time.api,
       .pref = &pref.api,
       .http = &http,
+      .gateway_url = "https://iotapi.alipay.com/mgw.htm",
       .crypto = &crypto,
       .identity = {"TEST_SN", "TEST_SN", "12:34:56:78:9A:BC", "H106"},
       .company = "HAIVIVI",

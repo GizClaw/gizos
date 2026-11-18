@@ -17,6 +17,7 @@ typedef struct fixture {
   unsigned registrations, preparations, frees;
   int rpc_status, transport_result, crypto_result;
   const char* response;
+  const char* expected_gateway_url;
 } fixture_t;
 
 static bool equal(h2_pal_http_str_t span, const char* text) {
@@ -35,7 +36,7 @@ static int http_request(void* user, const h2_pal_http_request_t* request,
                         h2_pal_http_response_t* response) {
   fixture_t* fixture = user;
   assert(request->method == H2_PAL_HTTP_POST);
-  assert(equal(request->url, "https://iotapi.alipay.com/mgw.htm"));
+  assert(equal(request->url, fixture->expected_gateway_url));
   assert(request->retry_count == 0 && request->timeout_ms > 0 &&
          request->connect_timeout_ms > 0);
   assert(equal(header(request, "AppId"), "AlipayInside_IoTPay_NET"));
@@ -149,12 +150,14 @@ static void initialize(fixture_t* fixture) {
   };
   fixture->http = (h2_pal_http_api_t){fixture, &http};
   fixture->crypto = (h2_pal_crypto_api_t){fixture, &crypto};
+  fixture->expected_gateway_url = "https://iotapi.alipay.com/mgw.htm";
   fixture->config = (h2_alipay_client_config_t){
       .mem = &fixture->mem.api,
       .pref = &fixture->pref.api,
       .time = &fixture->time.api,
       .crypto = &fixture->crypto,
       .http = &fixture->http,
+      .gateway_url = "https://iotapi.alipay.com/mgw.htm",
       .identity =
           {
               .sn = "FACTORY_SN_001",
@@ -209,6 +212,44 @@ int main(void) {
   assert(fixture.registrations + fixture.preparations == requests);
   failure_clears(&result);
   destroy(&fixture);
+
+  initialize(&fixture);
+  fixture.config.gateway_url = "https://gateway.example.test:8443/rpc/mgw.htm";
+  fixture.expected_gateway_url =
+      "https://gateway.example.test:8443/rpc/mgw.htm";
+  assert(h2_alipay_client_get_binding_code(&fixture.config, &result) ==
+         H2_PAL_OK);
+  assert(result.registered && result.requests == 2u);
+  assert(fixture.registrations == 1u && fixture.preparations == 1u);
+  destroy(&fixture);
+
+  static const char* invalid_gateways[] = {
+      NULL,
+      "",
+      "http://gateway.example.test/mgw.htm",
+      "https://",
+      "https:///mgw.htm",
+      "https://gateway.example.test",
+      "https://gateway.example.test/",
+      "https://user@gateway.example.test/mgw.htm",
+      "https://gateway.example.test/mgw.htm?token=x",
+      "https://gateway.example.test/mgw.htm#fragment",
+      "https://gateway.example.test\\other/mgw.htm",
+      "https://gateway.example.test/mgw.htm\r\nInjected: x",
+  };
+  for (size_t index = 0u;
+       index < sizeof(invalid_gateways) / sizeof(invalid_gateways[0]);
+       ++index) {
+    initialize(&fixture);
+    fixture.config.gateway_url = invalid_gateways[index];
+    baseline_allocations = fixture.mem.calls;
+    assert(h2_alipay_client_get_binding_code(&fixture.config, &result) ==
+           H2_PAL_ERR_INVALID_ARG);
+    assert(fixture.registrations == 0u && fixture.preparations == 0u &&
+           fixture.mem.calls == baseline_allocations);
+    failure_clears(&result);
+    destroy(&fixture);
+  }
 
   initialize(&fixture);
   fixture.config.product_type = 0u;

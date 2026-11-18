@@ -67,8 +67,12 @@ typedef struct h2_pal_nfc_vtable {
                                    h2_pal_nfc_data_read_t* out_data);
   /** Blocking write to the selected tag, guarded by its exact nonempty UID.
    * NDEF bytes are a complete message, without tag-specific headers/TLVs.
-   * Success requires completed write/readback. A failed physical write may
-   * leave partial content; callers must not blindly retry a transaction.
+   * Success means the tag acknowledged the complete write. No automatic
+   * readback is required; persistence and business acceptance are not implied.
+   * A failed physical write may leave partial content; callers must not
+   * blindly retry a transaction.
+   * BUSY means no device write was started; callers may wait and retry the
+   * same request without regenerating its payload or payment context.
    * Caller serializes read/write; absent capability returns UNSUPPORTED. */
   h2_pal_result_t (*write_nfc_data)(void* user, h2_pal_periph_id_t id,
                                     const uint8_t* expected_uid,

@@ -68,6 +68,12 @@ typedef struct h2_alipay_client_config {
   /** Retained for configuration ABI compatibility; ignored. Downloaded transit
    * scripts are unsupported and no interpreter is linked. */
   size_t script_stack_limit;
+  /** Required absolute HTTPS RPC endpoint, including its path. Borrowed for
+   * each blocking call, or until facade release when configured there.
+   * The caller selects the gateway; there is no library default.
+   * Credentials, query/fragment components, whitespace and backslashes are
+   * rejected. HTTP PAL validates the remaining URL and the TLS peer. */
+  const char* gateway_url;
 } h2_alipay_client_config_t;
 
 /** Last attempted operation, retained for diagnosis without payload export. */

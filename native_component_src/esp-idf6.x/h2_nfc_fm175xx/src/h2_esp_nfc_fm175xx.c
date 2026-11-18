@@ -1,5 +1,6 @@
 #include "h2_esp_nfc_fm175xx.h"
 #include "h2_esp_nfc_fm175xx_internal.h"
+#include "h2_sha256.h"
 
 #include "esp_log.h"
 
@@ -32,6 +33,7 @@ static h2_pal_result_t ensure_open(h2_esp_nfc_fm175xx_t* adapter) {
   if (adapter->opened != 0) {
     return H2_PAL_OK;
   }
+  adapter->read_selection_valid = 0;
   h2_fm175xx_transport_t transport;
   memset(&transport, 0, sizeof(transport));
   if (adapter->transport_kind == H2_ESP_NFC_FM175XX_TRANSPORT_SPI) {
@@ -96,6 +98,7 @@ static h2_pal_result_t scan_nfc_reader(void* user, h2_pal_periph_id_t id,
   out_scan->id = id;
   out_scan->stage = H2_PAL_NFC_STAGE_ERROR;
   out_scan->result = H2_PAL_OK;
+  adapter->read_selection_valid = 0;
 
   h2_pal_result_t prc = ensure_open(adapter);
   if (prc != H2_PAL_OK) {
@@ -186,6 +189,7 @@ static h2_pal_result_t read_nfc_data(void* user, h2_pal_periph_id_t id,
 
   report_read("begin", H2_PAL_OK, INT_MIN, requested_type, expected_uid_len,
               NULL, 0u);
+  adapter->read_selection_valid = 0;
   h2_pal_result_t prc = ensure_open(adapter);
   if (prc != H2_PAL_OK) {
     report_read("open", prc, INT_MIN, requested_type, expected_uid_len, NULL,
@@ -194,7 +198,19 @@ static h2_pal_result_t read_nfc_data(void* user, h2_pal_periph_id_t id,
   }
 
   h2_fm175xx_type_a_card_t card = {0};
-  int rc = h2_fm175xx_type_a_activate(&adapter->reader, &card);
+  h2_fm175xx_activation_diagnostics_t selection;
+  int rc = h2_fm175xx_type_a_activate_diagnostic(&adapter->reader, &card,
+                                                 &selection);
+  if (rc != H2_FM175XX_OK)
+    ESP_LOGW(
+        "h2_nfc_fm175xx",
+        "H2_NFC_READ_SELECT phase=%u command=0x%02x cascade=%u bits=%zu "
+        "fm=%d status_rc=%d irq=0x%02x error=0x%02x fifo=%u control=0x%02x",
+        (unsigned)selection.phase, (unsigned)selection.command,
+        (unsigned)selection.cascade_level, selection.reply_bits, rc,
+        selection.status_result, (unsigned)selection.last_irq,
+        (unsigned)selection.last_error, (unsigned)selection.last_fifo,
+        (unsigned)selection.last_control);
   prc =
       rc == H2_FM175XX_ERR_TIMEOUT ? H2_PAL_ERR_NOT_FOUND : pal_rc_from_fm(rc);
   report_read("activate", prc, rc, requested_type, expected_uid_len, &card, 0u);
@@ -237,13 +253,17 @@ static h2_pal_result_t read_nfc_data(void* user, h2_pal_periph_id_t id,
     ESP_LOGW("h2_nfc_fm175xx",
              "H2_NFC_READ_FRAMES count=%zu crc_frames=%zu last_page=%u "
              "last_bits=%zu last_fm=%d capacity=%zu required=%zu "
-             "status_rc=%d irq=0x%02x error=0x%02x fifo=%u control=0x%02x",
+             "status_rc=%d irq=0x%02x error=0x%02x fifo=%u control=0x%02x "
+             "rx_status=%d rx_irq=0x%02x rx_error=0x%02x rx_fifo=%u "
+             "rx_control=0x%02x",
              diagnostics.read_count, diagnostics.retained_crc_frames,
              (unsigned)diagnostics.last_page, diagnostics.last_reply_bits,
              diagnostics.last_result, capacity, diagnostics.required_capacity,
              diagnostics.status_result, (unsigned)diagnostics.last_irq,
              (unsigned)diagnostics.last_error, (unsigned)diagnostics.last_fifo,
-             (unsigned)diagnostics.last_control);
+             (unsigned)diagnostics.last_control, diagnostics.rx_status_result,
+             (unsigned)diagnostics.rx_irq, (unsigned)diagnostics.rx_error,
+             (unsigned)diagnostics.rx_fifo, (unsigned)diagnostics.rx_control);
   report_read("content", pal_rc_from_fm(rc), rc, requested_type,
               expected_uid_len, &card, len);
   if (rc != H2_FM175XX_OK) {
@@ -260,13 +280,15 @@ static h2_pal_result_t read_nfc_data(void* user, h2_pal_periph_id_t id,
   out_data->type = requested_type;
   out_data->bytes = bytes;
   out_data->len = len;
+  adapter->read_selection = card;
+  adapter->read_selection_valid = 1;
   return H2_PAL_OK;
 }
 
 static void report_write(const char* phase, int result, int fm, size_t length) {
   ESP_LOGW("h2_nfc_fm175xx",
-           "H2_NFC_WRITE phase=%s fm=%d pal_rc=%d bytes=%zu verified=%u", phase,
-           fm, result, length,
+           "H2_NFC_WRITE phase=%s fm=%d pal_rc=%d bytes=%zu submitted=%u",
+           phase, fm, result, length,
            (unsigned)(strcmp(phase, "content") == 0 && result == H2_PAL_OK));
 }
 
@@ -341,13 +363,21 @@ static const char* write_phase_name(h2_fm175xx_write_phase_t phase) {
       return "payload";
     case H2_FM175XX_WRITE_PUBLISH:
       return "publish";
-    case H2_FM175XX_WRITE_VERIFY:
-      return "verify";
     case H2_FM175XX_WRITE_COMPLETE:
       return "complete";
     default:
       return "unknown";
   }
+}
+
+static void report_ndef_fingerprint(const char* phase, uint8_t valid,
+                                    size_t length, const uint8_t digest[32]) {
+  if (!valid) return;
+  char hex[65];
+  h2_sha256_hex(digest, hex);
+  ESP_LOGW("h2_nfc_fm175xx",
+           "H2_NFC_WRITE_FINGERPRINT phase=%s bytes=%zu sha256=%s", phase,
+           length, hex);
 }
 
 static h2_pal_result_t write_nfc_data(void* user, h2_pal_periph_id_t id,
@@ -369,7 +399,17 @@ static h2_pal_result_t write_nfc_data(void* user, h2_pal_periph_id_t id,
     return rc;
   }
   h2_fm175xx_type_a_card_t card;
-  rc = select_write_tag(adapter, &card, length);
+  int reuse =
+      adapter->read_selection_valid &&
+      uid_matches(&adapter->read_selection, expected_uid, expected_uid_len);
+  if (reuse) card = adapter->read_selection;
+  adapter->read_selection_valid = 0;
+  if (reuse) {
+    ESP_LOGW("h2_nfc_fm175xx", "H2_NFC_WRITE_SELECT mode=read-session fm=0");
+    report_write("activate", H2_PAL_OK, H2_FM175XX_OK, length);
+  } else {
+    rc = select_write_tag(adapter, &card, length);
+  }
   if (rc == H2_FM175XX_ERR_TIMEOUT) return H2_PAL_ERR_NOT_FOUND;
   if (rc != H2_FM175XX_OK) return pal_rc_from_fm(rc);
   if (!uid_matches(&card, expected_uid, expected_uid_len)) {
@@ -401,6 +441,36 @@ static h2_pal_result_t write_nfc_data(void* user, h2_pal_periph_id_t id,
            (unsigned)diagnostics.control_tlv[2],
            (unsigned)diagnostics.control_tlv[3],
            (unsigned)diagnostics.control_tlv[4]);
+  if (diagnostics.write_calls != 0u) {
+    ESP_LOGW("h2_nfc_fm175xx",
+             "H2_NFC_WRITE_REPLY page=%u bits=%zu low4=0x%01x "
+             "command_rc=%d restore_rc=%d status_rc=%d irq=0x%02x "
+             "error=0x%02x fifo=%u control=0x%02x crc_valid=%u",
+             (unsigned)diagnostics.last_page, diagnostics.last_reply_bits,
+             (unsigned)diagnostics.last_reply_low4,
+             diagnostics.last_command_result, diagnostics.last_restore_result,
+             diagnostics.status_result, (unsigned)diagnostics.last_irq,
+             (unsigned)diagnostics.last_error, (unsigned)diagnostics.last_fifo,
+             (unsigned)diagnostics.last_control,
+             (unsigned)diagnostics.last_reply_crc_valid);
+    ESP_LOGW(
+        "h2_nfc_fm175xx",
+        "H2_NFC_WRITE_FRAME bytes=%02x%02x%02x rx_status=%d "
+        "irq=0x%02x error=0x%02x fifo=%u control=0x%02x "
+        "config_status=%d tx=0x%02x rx=0x%02x framing=0x%02x",
+        (unsigned)diagnostics.last_reply[0],
+        (unsigned)diagnostics.last_reply[1],
+        (unsigned)diagnostics.last_reply[2], diagnostics.rx_status_result,
+        (unsigned)diagnostics.rx_irq, (unsigned)diagnostics.rx_error,
+        (unsigned)diagnostics.rx_fifo, (unsigned)diagnostics.rx_control,
+        diagnostics.configuration_result, (unsigned)diagnostics.last_tx_mode,
+        (unsigned)diagnostics.last_rx_mode, (unsigned)diagnostics.last_framing);
+  }
+  report_ndef_fingerprint("before", diagnostics.before_ndef_valid,
+                          diagnostics.before_ndef_length,
+                          diagnostics.before_ndef_sha256);
+  report_ndef_fingerprint("expected", diagnostics.expected_ndef_valid, length,
+                          diagnostics.expected_ndef_sha256);
   report_write("content", pal_rc_from_fm(rc), rc, length);
   return pal_rc_from_fm(rc);
 }
@@ -437,6 +507,8 @@ void h2_esp_nfc_fm175xx_deinit(h2_esp_nfc_fm175xx_t* adapter) {
   }
   memset(&adapter->reader, 0, sizeof(adapter->reader));
   adapter->opened = 0;
+  memset(&adapter->read_selection, 0, sizeof(adapter->read_selection));
+  adapter->read_selection_valid = 0;
 }
 
 const h2_pal_nfc_api_t* h2_esp_nfc_fm175xx_api(h2_esp_nfc_fm175xx_t* adapter) {

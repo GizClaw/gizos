@@ -123,6 +123,7 @@ static void initialize(fixture_t* f) {
       .mem = &f->mem.api,
       .time = &f->time.api,
       .http = &f->http,
+      .gateway_url = "https://iotapi.alipay.com/mgw.htm",
       .pref = &f->pref.api,
       .crypto = h2_wolfcrypt_crypto_api(),
       .identity = {"SYNTHETIC_SN", "SYNTHETIC_IMEI", "12:34:56:78:9A:BC",

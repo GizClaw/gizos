@@ -49,6 +49,8 @@ typedef struct h2_esp_nfc_fm175xx {
   int opened;
   unsigned scan_count;
   int last_scan_error;
+  h2_fm175xx_type_a_card_t read_selection;
+  int read_selection_valid;
 } h2_esp_nfc_fm175xx_t;
 
 h2_pal_result_t h2_esp_nfc_fm175xx_init(
@@ -60,6 +62,10 @@ h2_pal_result_t h2_esp_nfc_fm175xx_spi_init(
 
 void h2_esp_nfc_fm175xx_deinit(h2_esp_nfc_fm175xx_t* adapter);
 
+/** Borrow the adapter's externally serialized NFC capability. The first write
+ * after a successful read may reuse that exact selected card. A scan, another
+ * read, a write attempt, reopening or deinitializing ends that reuse window.
+ * Other writes select and check the requested UID before device writes. */
 const h2_pal_nfc_api_t* h2_esp_nfc_fm175xx_api(h2_esp_nfc_fm175xx_t* adapter);
 
 #ifdef __cplusplus

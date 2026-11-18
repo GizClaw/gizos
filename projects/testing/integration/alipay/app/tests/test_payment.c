@@ -11,7 +11,8 @@
 
 typedef struct fixture {
   unsigned writes, requests;
-  int write_rc;
+  int write_rc, network_rc;
+  const char* response;
   uint32_t entropy;
 } fixture_t;
 
@@ -27,10 +28,17 @@ static int entropy(void* user, uint8_t* output, size_t length) {
 static int request(void* user, const h2_pal_http_request_t* request,
                    h2_pal_http_response_t* response) {
   fixture_t* fixture = user;
-  (void)request;
-  (void)response;
   ++fixture->requests;
-  return H2_PAL_ERR_IO;
+  assert(fixture->writes != 0u && fixture->write_rc == 0);
+  if (fixture->network_rc != 0) return fixture->network_rc;
+  size_t length = strlen(fixture->response);
+  assert(length <= request->response_buf_cap);
+  memcpy(request->response_buf, fixture->response, length);
+  response->body = request->response_buf;
+  response->body_len = length;
+  response->status_code = 200;
+  return h2_pal_http_deliver_response_header(request, "Result-Status", 13u,
+                                             "1000", 4u);
 }
 
 static int write_reply(void* user, const uint8_t* data, size_t length) {
@@ -41,7 +49,7 @@ static int write_reply(void* user, const uint8_t* data, size_t length) {
 }
 
 int main(void) {
-  fixture_t fixture = {.entropy = 1u};
+  fixture_t fixture = {.entropy = 1u, .network_rc = H2_PAL_ERR_IO};
   h2_app_test_mem_t memory;
   h2_app_test_mem_init(&memory, NULL);
   h2_app_test_pref_t pref;
@@ -60,6 +68,7 @@ int main(void) {
       .pref = &pref.api,
       .time = &time.api,
       .http = &http,
+      .gateway_url = "https://iotapi.alipay.com/mgw.htm",
       .crypto = h2_wolfcrypt_crypto_api(),
       .identity = {"TEST_SN", "TEST_SN", "12:34:56:78:9A:BC", "H106"},
       .company = "HAIVIVI",
@@ -84,36 +93,65 @@ int main(void) {
   assert(first && sdk_rc == 0);
   assert(api->vtable->pre_init(api->user, &sdk_rc, &first) == 0);
   assert(!first && sdk_rc == 0);
-  static const uint8_t input[] =
+  static const char url[] =
       "x?scheme=x%3FpageParams%3D%7B%22k%22%3A%22"
       "0123456789abcdef_SIG_a_b_c_d_3%22%7D";
-  fixture.write_rc = H2_PAL_ERR_IO;
-  assert(payment->vtable->start_tap(payment->user, &nfc, &result) == 0);
-  assert(payment->vtable->query_tap(payment->user, &result) ==
-         H2_PAL_ERR_INVALID_STATE);
-  assert(payment->vtable->receive_ndef(payment->user, input, sizeof(input) - 1u,
-                                       &result) == H2_PAL_ERR_IO);
-  assert(result.write_attempted && !result.response_sent &&
-         fixture.writes == 1u);
-  assert(payment->vtable->receive_ndef(payment->user, input, sizeof(input) - 1u,
-                                       &result) == H2_PAL_ERR_INVALID_STATE);
-  assert(fixture.writes == 1u);
-  assert(payment->vtable->stop_tap(payment->user) == 0);
+  uint8_t input[5u + sizeof(url) - 1u] = {0xd1u, 1u, sizeof(url), 'U', 0u};
+  memcpy(input + 5u, url, sizeof(url) - 1u);
+  const int failures[] = {H2_PAL_ERR_IO, H2_PAL_ERR_BUSY, H2_PAL_ERR_TIMEOUT};
+  for (size_t index = 0u; index < sizeof(failures) / sizeof(failures[0]);
+       ++index) {
+    fixture.write_rc = failures[index];
+    assert(payment->vtable->start_tap(payment->user, &nfc, &result) == 0);
+    assert(payment->vtable->query_tap(payment->user, &result) ==
+           H2_PAL_ERR_INVALID_STATE);
+    assert(payment->vtable->receive_ndef(payment->user, input, sizeof(input),
+                                         &result) == failures[index]);
+    assert(result.sdk_rc == 0 && result.write_attempted &&
+           !result.response_sent && result.nfc_write_rc == failures[index] &&
+           result.transport_rc == failures[index] &&
+           result.processing_status == NFC_PAYMENT_STATUS_SUCCESS &&
+           result.state != H2_ALIPAY_PAYMENT_PAID && result.amount[0] == '\0' &&
+           fixture.writes == index + 1u && fixture.requests == 0u);
+    assert(payment->vtable->receive_ndef(payment->user, input, sizeof(input),
+                                         &result) == H2_PAL_ERR_INVALID_STATE);
+    assert(fixture.writes == index + 1u);
+    assert(payment->vtable->query_tap(payment->user, &result) ==
+           H2_PAL_ERR_INVALID_STATE);
+    assert(payment->vtable->stop_tap(payment->user) == 0);
+  }
   fixture.write_rc = 0;
   assert(payment->vtable->start_tap(payment->user, &nfc, &result) == 0);
-  assert(payment->vtable->receive_ndef(payment->user, input, sizeof(input) - 1u,
+  assert(payment->vtable->receive_ndef(payment->user, input, sizeof(input),
                                        &result) == 0);
   assert(result.write_attempted && result.response_sent &&
-         result.state == H2_ALIPAY_PAYMENT_PENDING && fixture.writes == 2u);
-  assert(payment->vtable->receive_ndef(payment->user, input, sizeof(input) - 1u,
+         result.processing_status == NFC_PAYMENT_STATUS_SUCCESS &&
+         result.state == H2_ALIPAY_PAYMENT_PENDING &&
+         result.amount[0] == '\0' && fixture.writes == 4u &&
+         fixture.requests == 0u);
+  assert(payment->vtable->receive_ndef(payment->user, input, sizeof(input),
                                        &result) == H2_PAL_ERR_INVALID_STATE);
-  assert(fixture.writes == 2u);
+  assert(fixture.writes == 4u);
+  assert(payment->vtable->query_tap(payment->user, &result) == 0);
+  assert(result.sdk_rc != 0 && result.state == H2_ALIPAY_PAYMENT_UNKNOWN &&
+         result.amount[0] == '\0' && fixture.requests == 1u);
+  fixture.network_rc = 0;
+  fixture.response = "{}";
+  assert(payment->vtable->query_tap(payment->user, &result) == 0);
+  assert(result.sdk_rc == 0 && result.state == H2_ALIPAY_PAYMENT_PENDING &&
+         result.amount[0] == '\0' && fixture.requests == 2u);
+  fixture.response =
+      "{\"action\":\"pay_success\",\"sdkBizData\":{\"realAmount\":\"0.00\"}}";
+  assert(payment->vtable->query_tap(payment->user, &result) == 0);
+  assert(result.sdk_rc == 0 && result.state == H2_ALIPAY_PAYMENT_PAID &&
+         strcmp(result.amount, "0.00") == 0 && fixture.requests == 4u &&
+         fixture.writes == 4u);
   assert(h2_alipay_e2e_independent_release() == 0);
-  assert(payment->vtable->receive_ndef(payment->user, input, sizeof(input) - 1u,
+  assert(payment->vtable->receive_ndef(payment->user, input, sizeof(input),
                                        &result) == H2_PAL_ERR_INVALID_STATE);
   assert(pref.active_handles == 0u);
   assert(h2_app_test_pref_deinit(&pref) == 0 && memory.live_blocks == 0u);
-  assert(fixture.requests == 0u);
+  assert(fixture.requests == 4u);
   h2_wolfcrypt_crypto_deinit();
   return 0;
 }

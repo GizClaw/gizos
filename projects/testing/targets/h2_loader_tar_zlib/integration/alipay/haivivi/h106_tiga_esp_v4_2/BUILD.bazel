@@ -66,8 +66,9 @@ firmware_lib_component(
         "//pal/providers/devices/modem/quectel:quectel_modem",
         "//projects/testing/integration/alipay/app:alipay_e2e",
         "//projects/testing/integration/alipay/app:api",
-        "//projects/testing/integration/alipay/diagnostics",
-        "//projects/testing/integration/alipay/independent",
+        "//projects/testing/integration/alipay/app:diagnostics",
+        "//projects/testing/integration/alipay/app:independent",
+        "//projects/testing/integration/alipay/app:nfc",
     ],
 )
 
@@ -197,8 +198,8 @@ cc_test(
         "//libs/testing:testing_pal",
         "//pal/providers/backends/wolfssl:wolfcrypt",
         "//projects/testing/integration/alipay/app:api",
-        "//projects/testing/integration/alipay/diagnostics",
-        "//projects/testing/integration/alipay/independent",
+        "//projects/testing/integration/alipay/app:diagnostics",
+        "//projects/testing/integration/alipay/app:independent",
     ],
 )
 
@@ -222,7 +223,7 @@ cc_test(
     deps = [
         "//libs/clients/alipay:api",
         "//libs/runtime",
-        "//projects/testing/integration/alipay/independent",
+        "//projects/testing/integration/alipay/app:independent",
     ],
 )
 
@@ -244,7 +245,7 @@ cc_test(
         "//libs/runtime",
         "//libs/testing:testing_pal",
         "//projects/testing/integration/alipay/app:api",
-        "//projects/testing/integration/alipay/diagnostics",
+        "//projects/testing/integration/alipay/app:diagnostics",
     ],
 )
 
@@ -267,6 +268,6 @@ cc_test(
         "//libs/runtime",
         "//libs/testing:testing_pal",
         "//projects/testing/integration/alipay/app:api",
-        "//projects/testing/integration/alipay/diagnostics",
+        "//projects/testing/integration/alipay/app:diagnostics",
     ],
 )
