@@ -21,6 +21,11 @@ extern "C" {
 #define H2_FRUIT_SLICE_PREF_NAMESPACE "fruit_slice"
 #define H2_FRUIT_SLICE_PREF_BEST_KEY "best"
 
+typedef enum h2_fruit_slice_language {
+  H2_FRUIT_SLICE_LANGUAGE_ZH_CN = 0, /**< Default, including zeroed configs. */
+  H2_FRUIT_SLICE_LANGUAGE_EN = 1,
+} h2_fruit_slice_language_t;
+
 typedef struct h2_fruit_slice_config {
   /** Nonzero fixes the random seed; zero derives one from the clock. */
   uint32_t seed;
@@ -41,6 +46,9 @@ typedef struct h2_fruit_slice_config {
   /** Optional nonblocking lifecycle query, called on the run thread. True
    * closes the audio track/speaker and pauses simulation until false. */
   bool (*is_paused)(void* user);
+  /** Initial UI language; zero/unknown selects Simplified Chinese. The title
+   * control switches it for this session without changing stored progress. */
+  h2_fruit_slice_language_t language;
 } h2_fruit_slice_config_t;
 
 /**
