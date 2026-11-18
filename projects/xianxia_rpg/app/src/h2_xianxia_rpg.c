@@ -47,9 +47,9 @@ typedef struct session {
   uint64_t compose_ms, push_ms, pixels_pushed;
   uint32_t max_frame_ms, slow_frames;
   /* Last logged state, so transitions are logged once. */
-  int32_t logged[10];
+  int32_t logged[12];
   /* Fingerprint of the stored save0..save3 words, kept in each journey. */
-  uint32_t chapter1_tag, chapter2_tag, chapter3_tag, chapter4_tag;
+  uint32_t chapter1_tag, chapter2_tag, chapter3_tag, chapter4_tag, chapter5_tag;
   h2_xianxia_rpg_game_t game;
   uint8_t event_payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
 } session_t;
@@ -72,8 +72,9 @@ static void load_records(session_t* s, h2_xianxia_rpg_records_t* out) {
   s->chapter2_tag = h2_xianxia_rpg_predecessor_tag(0u, NULL, 0u);
   s->chapter3_tag = h2_xianxia_rpg_predecessor_tag(0u, NULL, 0u);
   s->chapter4_tag = h2_xianxia_rpg_predecessor_tag(0u, NULL, 0u);
+  s->chapter5_tag = h2_xianxia_rpg_predecessor_tag(0u, NULL, 0u);
   int journey_rc = rc, chapters_rc = rc, journey3_rc = rc, journey4_rc = rc,
-      journey5_rc = rc;
+      journey5_rc = rc, journey6_rc = rc;
   bool migrated_hint = false;
   if (rc == H2_PAL_OK && ns != NULL) {
     for (size_t i = 0; i < H2_XIANXIA_RPG_SAVE_WORDS && rc == H2_PAL_OK; ++i) {
@@ -181,13 +182,39 @@ static void load_records(session_t* s, h2_xianxia_rpg_records_t* out) {
                               data, size, &out->journey5, &journey5_tag) &&
                           out->journey5.chapter == 5u;
       out->journey5_unreadable = !out->has_journey5;
+      s->chapter5_tag = h2_xianxia_rpg_predecessor_tag(0u, data, size);
     } else {
       out->journey5_unreadable = journey5_rc != H2_PAL_ERR_NOT_FOUND;
     }
     out->unreadable |= out->journey5_unreadable;
     h2_pal_mem_free(s->allocator, data);
+    data = NULL;
+    size = 0;
+    journey6_rc =
+        ns->get_blob != NULL
+            ? ns->get_blob(ns, s->allocator, H2_XIANXIA_RPG_PREF_JOURNEY6_KEY,
+                           &data, &size)
+            : H2_PAL_ERR_UNSUPPORTED;
+    uint32_t journey6_tag = 0;
+    if (journey6_rc == H2_PAL_OK) {
+      out->has_journey6 = h2_xianxia_rpg_journey6_decode(
+          data, size, &out->journey6, &journey6_tag);
+      out->journey6_unreadable = !out->has_journey6;
+    } else {
+      out->journey6_unreadable = journey6_rc != H2_PAL_ERR_NOT_FOUND;
+    }
+    out->unreadable |= out->journey6_unreadable;
+    h2_pal_mem_free(s->allocator, data);
     if (ns->close != NULL) (void)ns->close(ns);
     s->chapter1_tag = h2_xianxia_rpg_chapter1_tag(words, present);
+    out->journey6_latest =
+        out->has_journey6 &&
+        (journey_rc == H2_PAL_OK || journey_rc == H2_PAL_ERR_NOT_FOUND) &&
+        (journey3_rc == H2_PAL_OK || journey3_rc == H2_PAL_ERR_NOT_FOUND) &&
+        (journey4_rc == H2_PAL_OK || journey4_rc == H2_PAL_ERR_NOT_FOUND) &&
+        (journey5_rc == H2_PAL_OK || journey5_rc == H2_PAL_ERR_NOT_FOUND) &&
+        journey6_tag == (s->chapter1_tag ^ s->chapter2_tag ^ s->chapter3_tag ^
+                         s->chapter4_tag ^ s->chapter5_tag);
     out->journey5_latest =
         out->has_journey5 &&
         (journey_rc == H2_PAL_OK || journey_rc == H2_PAL_ERR_NOT_FOUND) &&
@@ -249,6 +276,12 @@ static void load_records(session_t* s, h2_xianxia_rpg_records_t* out) {
       out->has_journey5 ? 1 : 0, out->journey5_latest ? 1 : 0,
       out->has_journey5 ? (int)out->journey5.stage : -1, journey5_rc);
   log_line(s, H2_PAL_LOG_INFO, records);
+  (void)snprintf(
+      records, sizeof(records),
+      "H2_XIANXIA_RPG_JOURNEY6_LOAD valid=%d latest=%d stage=%d rc=%d",
+      out->has_journey6 ? 1 : 0, out->journey6_latest ? 1 : 0,
+      out->has_journey6 ? (int)out->journey6.stage : -1, journey6_rc);
+  log_line(s, H2_PAL_LOG_INFO, records);
 }
 
 static void store_writes(session_t* s, const h2_xianxia_rpg_writes_t* w) {
@@ -256,7 +289,7 @@ static void store_writes(session_t* s, const h2_xianxia_rpg_writes_t* w) {
   int rc = h2_pal_pref_open(s->runtime->pref, H2_XIANXIA_RPG_PREF_NAMESPACE,
                             H2_PAL_PREF_OPEN_READ_WRITE, &ns);
   int chapter1_rc = rc, journey_rc = rc, journey3_rc = rc, journey4_rc = rc,
-      journey5_rc = rc, progress_rc = rc;
+      journey5_rc = rc, journey6_rc = rc, progress_rc = rc;
   if (rc == H2_PAL_OK && ns != NULL) {
     if (w->chapter1) {
       uint32_t words[H2_XIANXIA_RPG_SAVE_WORDS];
@@ -315,6 +348,21 @@ static void store_writes(session_t* s, const h2_xianxia_rpg_writes_t* w) {
           bytes);
       journey5_rc = ns->set_blob != NULL
                         ? ns->set_blob(ns, H2_XIANXIA_RPG_PREF_JOURNEY5_KEY,
+                                       bytes, sizeof(bytes))
+                        : H2_PAL_ERR_UNSUPPORTED;
+      if (journey5_rc == H2_PAL_OK)
+        s->chapter5_tag =
+            h2_xianxia_rpg_predecessor_tag(0u, bytes, sizeof(bytes));
+    }
+    if (w->journey6) {
+      uint8_t bytes[H2_XIANXIA_RPG_JOURNEY6_BYTES];
+      h2_xianxia_rpg_journey6_encode(&w->journey6_save,
+                                     s->chapter1_tag ^ s->chapter2_tag ^
+                                         s->chapter3_tag ^ s->chapter4_tag ^
+                                         s->chapter5_tag,
+                                     bytes);
+      journey6_rc = ns->set_blob != NULL
+                        ? ns->set_blob(ns, H2_XIANXIA_RPG_PREF_JOURNEY6_KEY,
                                        bytes, sizeof(bytes))
                         : H2_PAL_ERR_UNSUPPORTED;
     }
@@ -395,6 +443,18 @@ static void store_writes(session_t* s, const h2_xianxia_rpg_writes_t* w) {
                                                          : H2_PAL_LOG_WARN,
              message);
   }
+  if (w->journey6) {
+    (void)snprintf(
+        message, sizeof(message),
+        "H2_XIANXIA_RPG_JOURNEY6_STORE stage=%u map=%u flags=0x%x facts=0x%x rc=%d",
+        (unsigned)w->journey6_save.stage, (unsigned)w->journey6_save.map,
+        (unsigned)w->journey6_save.flags, (unsigned)w->journey6_save.facts,
+        journey6_rc != H2_PAL_OK ? journey6_rc : rc);
+    log_line(s,
+             journey6_rc == H2_PAL_OK && rc == H2_PAL_OK ? H2_PAL_LOG_INFO
+                                                         : H2_PAL_LOG_WARN,
+             message);
+  }
   if (w->progress) {
     (void)snprintf(message, sizeof(message),
                    "H2_XIANXIA_RPG_PROGRESS_STORE cleared=0x%x rc=%d",
@@ -412,7 +472,7 @@ static void log_transitions(session_t* s) {
   const h2_xianxia_rpg_game_t* g = &s->game;
   /* Walking starts and stops are logged too, with the cell reached. */
   const bool walking = g->moving || g->path_pos < g->path_len;
-  const int32_t now[10] = {
+  const int32_t now[12] = {
       (int32_t)g->phase,
       (int32_t)g->map,
       (int32_t)g->stage,
@@ -422,7 +482,9 @@ static void log_transitions(session_t* s) {
       walking ? 1 : 0,
       (int32_t)g->ally_hp,
       (int32_t)g->battle.lamp_hp,
-      g->battle.ally_mend ? 1 : 0};
+      g->battle.ally_mend ? 1 : 0,
+      (int32_t)g->facts,
+      (int32_t)g->turns_taken};
   if (memcmp(now, s->logged, sizeof(now)) == 0) return;
   memcpy(s->logged, now, sizeof(now));
   const int32_t enemy = now[3] >= 0 ? (int32_t)g->battle.enemy : -1;
@@ -436,7 +498,7 @@ static void log_transitions(session_t* s) {
       " level=%u hp=%u/%u mp=%u pills=%u enemy=%" PRId32
       " enemy_hp=%u charging=%d won=%u turns=%u chapter=%u"
       " x=%" PRId32 " y=%" PRId32 " rest=%u,%" PRId32 ",%" PRId32
-      " flags=0x%x trust=%u ally=%d rapport=%u veiled=%d"
+      " flags=0x%x trust=%u ally=%d rapport=%u veiled=%d facts=0x%x"
       " sealed=%d split=%d real=%u joint=%d walking=%d stance=%u"
       " ally_hp=%u lamp=%u wave=%u beat=%u mend=%d",
       now[0], now[1], now[2], now[3], now[4], (unsigned)g->hero.level,
@@ -445,8 +507,8 @@ static void log_transitions(session_t* s) {
       b->charging ? 1 : 0, (unsigned)g->battles_won, (unsigned)g->turns_taken,
       (unsigned)g->chapter, g->tx, g->ty, (unsigned)g->rest_map, g->rest_x,
       g->rest_y, (unsigned)g->flags, (unsigned)g->trust, b->ally ? 1 : 0,
-      (unsigned)b->rapport, b->veiled ? 1 : 0, b->mp_sealed ? 1 : 0,
-      b->split ? 1 : 0, (unsigned)b->real_shadow,
+      (unsigned)b->rapport, b->veiled ? 1 : 0, (unsigned)g->facts,
+      b->mp_sealed ? 1 : 0, b->split ? 1 : 0, (unsigned)b->real_shadow,
       h2_xianxia_rpg_joint_ready(g) ? 1 : 0, walking ? 1 : 0,
       (unsigned)b->sword_stance, (unsigned)g->ally_hp, (unsigned)b->lamp_hp,
       (unsigned)b->wave, (unsigned)b->wave_turn, b->ally_mend ? 1 : 0);

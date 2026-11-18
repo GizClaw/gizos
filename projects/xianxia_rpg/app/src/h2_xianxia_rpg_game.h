@@ -36,9 +36,9 @@ extern "C" {
 #define H2_XIANXIA_RPG_ENCOUNTER_MAX 3
 /** Chapters the progress record can hold, and those this build plays. */
 #define H2_XIANXIA_RPG_CHAPTER_MAX 10u
-#define H2_XIANXIA_RPG_CHAPTERS_PLAYABLE 5u
+#define H2_XIANXIA_RPG_CHAPTERS_PLAYABLE 6u
 /** Rows of the chapter screen: playable chapters and the next one. */
-#define H2_XIANXIA_RPG_CHAPTER_ROWS 6
+#define H2_XIANXIA_RPG_CHAPTER_ROWS 7
 /** Lanterns of rapport with the companion; full rapport unlocks the joint
  * strike. */
 #define H2_XIANXIA_RPG_RAPPORT_MAX 3u
@@ -78,6 +78,8 @@ extern "C" {
 /** Blob formats of the later-chapter journey and the chapter record. */
 #define H2_XIANXIA_RPG_RECORD_VERSION 2u
 #define H2_XIANXIA_RPG_JOURNEY_BYTES 32u
+/** Chapter 6 adds a second fact word; older records keep their v2 bytes. */
+#define H2_XIANXIA_RPG_JOURNEY6_BYTES 36u
 #define H2_XIANXIA_RPG_CLEAR_BYTES 16u
 #define H2_XIANXIA_RPG_PROGRESS_BYTES \
   (4u + H2_XIANXIA_RPG_CHAPTER_MAX * H2_XIANXIA_RPG_CLEAR_BYTES + 4u)
@@ -111,6 +113,9 @@ typedef enum h2_xianxia_rpg_map {
   H2_XIANXIA_RPG_MAP_WATER_MARKET,
   H2_XIANXIA_RPG_MAP_OLD_CITY,
   H2_XIANXIA_RPG_MAP_WEN_TOWER,
+  H2_XIANXIA_RPG_MAP_HERB_HUT,
+  H2_XIANXIA_RPG_MAP_HOT_SPRING,
+  H2_XIANXIA_RPG_MAP_FROZEN_CREEK,
   H2_XIANXIA_RPG_MAP_COUNT,
 } h2_xianxia_rpg_map_t;
 
@@ -152,6 +157,12 @@ typedef enum h2_xianxia_rpg_stage {
   H2_XIANXIA_RPG_STAGE_C5_ESCORT,
   H2_XIANXIA_RPG_STAGE_C5_RETURN,
   H2_XIANXIA_RPG_STAGE_C5_CLEARED,
+  H2_XIANXIA_RPG_STAGE_C6_ARRIVE,
+  H2_XIANXIA_RPG_STAGE_C6_HERBS,
+  H2_XIANXIA_RPG_STAGE_C6_READY,
+  H2_XIANXIA_RPG_STAGE_C6_RITUAL,
+  H2_XIANXIA_RPG_STAGE_C6_RECOVERED,
+  H2_XIANXIA_RPG_STAGE_C6_CLEARED,
   H2_XIANXIA_RPG_STAGE_COUNT,
 } h2_xianxia_rpg_stage_t;
 
@@ -185,6 +196,7 @@ typedef enum h2_xianxia_rpg_actor {
   H2_XIANXIA_RPG_ACTOR_SWORD_SOUL,
   H2_XIANXIA_RPG_ACTOR_WEN_GRANDMA,
   H2_XIANXIA_RPG_ACTOR_BOAT_DOCTOR,
+  H2_XIANXIA_RPG_ACTOR_XUN,
   H2_XIANXIA_RPG_ACTOR_COUNT,
 } h2_xianxia_rpg_actor_t;
 
@@ -298,6 +310,8 @@ typedef enum h2_xianxia_rpg_effect {
   H2_XIANXIA_RPG_EFFECT_C5_EVIDENCE,
   H2_XIANXIA_RPG_EFFECT_C5_DUEL,
   H2_XIANXIA_RPG_EFFECT_C5_END,
+  H2_XIANXIA_RPG_EFFECT_C6_BRIEF,
+  H2_XIANXIA_RPG_EFFECT_C6_RITUAL,
   H2_XIANXIA_RPG_EFFECT_COUNT,
 } h2_xianxia_rpg_effect_t;
 
@@ -347,6 +361,16 @@ typedef enum h2_xianxia_rpg_effect {
 #define H2_XIANXIA_RPG_C5_STEPS_MASK (15u << 4)
 #define H2_XIANXIA_RPG_FLAG_C5_RETURN_LIGHT (1u << 30)
 #define H2_XIANXIA_RPG_FLAG_C5_SAVED (1u << 31)
+/** Chapter-6 local low byte: temperature 0..8, steady streak 0..5.
+ * The independent fact word never aliases a published flag. Its low byte
+ * also occupies ONLY the sixth clear slot's previously reserved byte. */
+#define H2_XIANXIA_RPG_C6_METER_MASK 15u
+#define H2_XIANXIA_RPG_C6_STREAK_SHIFT 4u
+#define H2_XIANXIA_RPG_FACT_C6_HOT (1u << 0)
+#define H2_XIANXIA_RPG_FACT_C6_COLD (1u << 1)
+#define H2_XIANXIA_RPG_FACT_C6_FIRST_COLD (1u << 2)
+#define H2_XIANXIA_RPG_FACT_C6_HEALED (1u << 3)
+#define H2_XIANXIA_RPG_FACT_C6_CHOSEN (1u << 4)
 /** Flags a chapter hands to the next one. */
 #define H2_XIANXIA_RPG_FLAG_CARRY                                      \
   (H2_XIANXIA_RPG_FLAG_C1_CLEARED | H2_XIANXIA_RPG_FLAG_C2_RUMOR |     \
@@ -545,6 +569,7 @@ typedef struct h2_xianxia_rpg_save {
   /** Chapter (1 for the save0..save3 record), companion trust and the rest
    * point a defeat returns to. */
   uint32_t chapter, trust, rest_map, rest_x, rest_y;
+  uint32_t facts;
 } h2_xianxia_rpg_save_t;
 
 /** Everything read from storage at start. */
@@ -568,6 +593,8 @@ typedef struct h2_xianxia_rpg_records {
   /** Chapter 5 tags all four predecessors without rewriting them. */
   bool has_journey5, journey5_latest, journey5_unreadable;
   h2_xianxia_rpg_save_t journey5;
+  bool has_journey6, journey6_latest, journey6_unreadable;
+  h2_xianxia_rpg_save_t journey6;
   h2_xianxia_rpg_progress_t progress;
   /** Each blob is missing when neither its valid nor unreadable bit is set.
    * Read errors count as unreadable: they do not prove a record is absent. */
@@ -589,6 +616,8 @@ typedef struct h2_xianxia_rpg_writes {
   h2_xianxia_rpg_save_t journey4_save;
   bool journey5;
   h2_xianxia_rpg_save_t journey5_save;
+  bool journey6;
+  h2_xianxia_rpg_save_t journey6_save;
   bool progress;
   h2_xianxia_rpg_progress_t progress_record;
 } h2_xianxia_rpg_writes_t;
@@ -612,6 +641,7 @@ typedef struct h2_xianxia_rpg_game {
   uint32_t chapter;
   h2_xianxia_rpg_stage_t stage;
   uint32_t flags;
+  uint32_t facts;
   /** Companion trust, 0..3; each lantern starts battles with rapport. */
   uint32_t trust;
   h2_xianxia_rpg_hero_t hero;
@@ -704,6 +734,20 @@ bool h2_xianxia_rpg_journey_decode(const uint8_t* data, size_t size,
  * NULL/zero represents an absent chapter-2 record. */
 uint32_t h2_xianxia_rpg_predecessor_tag(uint32_t chapter1_tag,
                                         const uint8_t* chapter2, size_t size);
+
+/** Version 3 is confined to journey6. The first 28 bytes retain the v2
+ * fields, followed by facts u32 and the checksum over all 32 body bytes. */
+void h2_xianxia_rpg_journey6_encode(const h2_xianxia_rpg_save_t* save,
+                                    uint32_t predecessor_tag,
+                                    uint8_t out[H2_XIANXIA_RPG_JOURNEY6_BYTES]);
+bool h2_xianxia_rpg_journey6_decode(const uint8_t* data, size_t size,
+                                    h2_xianxia_rpg_save_t* out_save,
+                                    uint32_t* out_tag);
+/** Rapport capacity grows only after chapter-6 recovery. Trust remains
+ * 0..3 so published completion-table decoders still accept the record. */
+uint32_t h2_xianxia_rpg_rapport_max(const h2_xianxia_rpg_game_t* game);
+/** Next ritual breath, -2 cold or +2 hot, visible before a command. */
+int32_t h2_xianxia_rpg_c6_breath(const h2_xianxia_rpg_game_t* game);
 
 /** Encode or decode the chapter record. */
 void h2_xianxia_rpg_progress_encode(const h2_xianxia_rpg_progress_t* progress,

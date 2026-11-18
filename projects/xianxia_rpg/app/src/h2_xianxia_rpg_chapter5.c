@@ -238,7 +238,7 @@ const h2_xianxia_rpg_chapter_info_t* h2_xianxia_rpg_c5_info(void) {
 const h2_xianxia_rpg_script_t* h2_xianxia_rpg_c5_script(
     h2_xianxia_rpg_script_id_t id) {
   return id >= H2_XIANXIA_RPG_SCRIPT_C5_FIRST &&
-                 id < H2_XIANXIA_RPG_SCRIPT_COUNT
+                 id < H2_XIANXIA_RPG_SCRIPT_C6_FIRST
              ? &k_scripts[id - H2_XIANXIA_RPG_SCRIPT_C5_FIRST]
              : NULL;
 }

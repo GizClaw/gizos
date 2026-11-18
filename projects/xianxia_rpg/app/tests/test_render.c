@@ -104,8 +104,8 @@ static void test_glyph_coverage(void) {
   }
   CHECK(missing == 0u);
   static const char* const titles[] = {
-      "竹溪仙缘", "竹溪灯影", "渡口迷雾",   "雨夜剑阁",
-      "万灯归山", "终",       "0123456789", "+",
+      "竹溪仙缘", "竹溪灯影", "渡口迷雾", "雨夜剑阁",   "万灯归山",
+      "照水旧城", "百草寒谷", "终",       "0123456789", "+",
   };
   for (size_t i = 0; i < sizeof(titles) / sizeof(titles[0]); ++i) {
     const char* s = titles[i];
@@ -510,6 +510,35 @@ static void test_chapter5_screens(int32_t width, int32_t height) {
   check_all_layers(&game);
 }
 
+static void test_chapter6_screens(int32_t width, int32_t height) {
+  h2_xianxia_rpg_game_init(&game, width, height, 6, NULL);
+  game.chapter = game.prologue_chapter = 6;
+  game.phase = H2_XIANXIA_RPG_PHASE_PROLOGUE;
+  check_all_layers(&game);
+  game.phase = H2_XIANXIA_RPG_PHASE_EXPLORE;
+  game.stage = H2_XIANXIA_RPG_STAGE_C6_HERBS;
+  game.flags = 4;
+  for (int m = H2_XIANXIA_RPG_MAP_HERB_HUT;
+       m <= H2_XIANXIA_RPG_MAP_FROZEN_CREEK; ++m) {
+    game.map = (h2_xianxia_rpg_map_t)m;
+    check_all_layers(&game);
+  }
+  game.stage = H2_XIANXIA_RPG_STAGE_C6_RITUAL;
+  for (uint32_t t = 0; t < 3; ++t) {
+    game.turns_taken = t;
+    game.flags = 4u | (t << 4);
+    game.facts = t == 2u ? 3u : 1u;
+    check_all_layers(&game);
+  }
+  h2_xianxia_rpg_layer_key_t before, after;
+  h2_xianxia_rpg_static_key(&game, &before);
+  ++game.turns_taken;
+  h2_xianxia_rpg_static_key(&game, &after);
+  CHECK(memcmp(&before, &after, sizeof(before)) != 0);
+  game.phase = H2_XIANXIA_RPG_PHASE_ENDING;
+  check_all_layers(&game);
+}
+
 int main(void) {
   test_glyph_coverage();
   test_keys();
@@ -522,6 +551,7 @@ int main(void) {
     test_chapter3_screens(sizes[i][0], sizes[i][1]);
     test_chapter4_screens(sizes[i][0], sizes[i][1]);
     test_chapter5_screens(sizes[i][0], sizes[i][1]);
+    test_chapter6_screens(sizes[i][0], sizes[i][1]);
   }
   printf("xianxia_rpg render tests passed\n");
   return 0;
