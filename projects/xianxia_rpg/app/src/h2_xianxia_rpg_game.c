@@ -181,9 +181,9 @@ static void compute_layout(h2_xianxia_rpg_game_t* game) {
              button_w, button_h);
 
   /* Chapter screen: a heading, one row per chapter and a way back. */
-  const int32_t row_h = h < 300 ? 26 : h < 400 ? 36 : 48;
-  const int32_t row_gap = h < 400 ? 2 : 6;
-  const int32_t head_h = LINE_PX + 8;
+  const int32_t row_h = h < 300 ? 23 : h < 400 ? 32 : 44;
+  const int32_t row_gap = h < 400 ? 1 : 6;
+  const int32_t head_h = h < 300 ? LINE_PX : LINE_PX + 8;
   const int32_t back_h = row_h;
   const int32_t panel_w = w - 16 < 560 ? w - 16 : 560;
   const int32_t panel_h = 10 + head_h +
@@ -259,6 +259,8 @@ static bool npc_at(const h2_xianxia_rpg_game_t* game, int32_t x, int32_t y,
 bool h2_xianxia_rpg_walkable(const h2_xianxia_rpg_game_t* game,
                              h2_xianxia_rpg_map_t map, int32_t x, int32_t y) {
   const char tile = h2_xianxia_rpg_tile(map, x, y);
+  if (h2_xianxia_rpg_map_chapter(map) == 5u)
+    return h2_xianxia_rpg_c5_walkable(game, tile);
   if (h2_xianxia_rpg_map_chapter(map) == 4u)
     return tile == '.' || tile == ',' || tile == '=' || tile == 'b' ||
            tile == '_' || tile == 'w';
@@ -556,6 +558,23 @@ static void place_hero(h2_xianxia_rpg_game_t* game, h2_xianxia_rpg_map_t map,
   place_ally(game);
 }
 
+static uint32_t dialogue_page_length(const h2_xianxia_rpg_game_t* game) {
+  const h2_xianxia_rpg_dialogue_t* d = &game->dialogue;
+  const h2_xianxia_rpg_line_t* line = &d->script->lines[d->index];
+  const uint32_t remaining =
+      h2_xianxia_rpg_utf8_length(line->text + d->page_offset);
+  if (game->chapter != 5u) return remaining;
+  /* The body font is 18 px; using that full advance for every codepoint is
+   * conservative for ASCII. Keep every chapter-5 instruction readable on
+   * the supported 320-pixel display instead of clipping its last lines. */
+  const uint32_t cols = (uint32_t)(game->layout.dialog.w - 28) / 18u;
+  const uint32_t rows =
+      (uint32_t)game->layout.dialog_lines +
+      (line->speaker == H2_XIANXIA_RPG_ACTOR_NARRATOR ? 1u : 0u);
+  const uint32_t capacity = cols * rows;
+  return remaining < capacity ? remaining : capacity;
+}
+
 static void start_dialogue(h2_xianxia_rpg_game_t* game,
                            h2_xianxia_rpg_script_id_t id) {
   const h2_xianxia_rpg_script_t* script = h2_xianxia_rpg_script(id);
@@ -564,7 +583,7 @@ static void start_dialogue(h2_xianxia_rpg_game_t* game,
   memset(d, 0, sizeof(*d));
   d->active = true;
   d->script = script;
-  d->total = h2_xianxia_rpg_utf8_length(script->lines[0].text);
+  d->total = dialogue_page_length(game);
 }
 
 static void request_save(h2_xianxia_rpg_game_t* game) {
@@ -620,7 +639,8 @@ static const char* text(h2_xianxia_rpg_text_id_t id) {
 }
 
 static bool is_boss(h2_xianxia_rpg_enemy_t enemy) {
-  return enemy == H2_XIANXIA_RPG_ENEMY_INK_TIDE ||
+  return enemy == H2_XIANXIA_RPG_ENEMY_WENZHOU ||
+         enemy == H2_XIANXIA_RPG_ENEMY_INK_TIDE ||
          enemy == H2_XIANXIA_RPG_ENEMY_DRAGON ||
          enemy == H2_XIANXIA_RPG_ENEMY_SWORD_SOUL ||
          enemy == H2_XIANXIA_RPG_ENEMY_FOG_WRAITH;
@@ -639,6 +659,9 @@ static void start_fight(h2_xianxia_rpg_game_t* game,
   b->no_flee = b->boss || tutorial;
   b->enemy_hp = b->enemy_hp_max = tutorial ? TUTORIAL_GHOST_HP : info->hp;
   b->enemy_attack = info->attack;
+  if (enemy == H2_XIANXIA_RPG_ENEMY_TIDE_OTTER &&
+      (game->flags & H2_XIANXIA_RPG_FLAG_C5_HIGH))
+    b->enemy_attack = b->enemy_attack * 120u / 100u;
   b->enemy_defense = info->defense;
   if (enemy == H2_XIANXIA_RPG_ENEMY_INK_TIDE) {
     b->lamp_battle = true;
@@ -944,7 +967,8 @@ static void enemy_turn(h2_xianxia_rpg_game_t* game) {
     lamp_enemy_turn(game);
     return;
   }
-  if (b->enemy == H2_XIANXIA_RPG_ENEMY_SWORD_SOUL) {
+  if (b->enemy == H2_XIANXIA_RPG_ENEMY_SWORD_SOUL ||
+      b->enemy == H2_XIANXIA_RPG_ENEMY_WENZHOU) {
     sword_turn(game);
     return;
   }
@@ -1035,7 +1059,8 @@ static void ally_turn(h2_xianxia_rpg_game_t* game) {
     b->steadied = true;
     battle_say(game, "%s", text(H2_XIANXIA_RPG_TEXT_ALLY_STEADY));
     gain_rapport(game);
-  } else if (b->enemy == H2_XIANXIA_RPG_ENEMY_SWORD_SOUL &&
+  } else if ((b->enemy == H2_XIANXIA_RPG_ENEMY_SWORD_SOUL ||
+              b->enemy == H2_XIANXIA_RPG_ENEMY_WENZHOU) &&
              b->sword_stance == 2u) {
     b->ally_action = H2_XIANXIA_RPG_ALLY_POLE;
     battle_say(game, "%s", text(H2_XIANXIA_RPG_TEXT_C3_POLE_WAIT));
@@ -1080,6 +1105,14 @@ static void victory(h2_xianxia_rpg_game_t* game) {
   }
   /* A reload after a story fight keeps it won. */
   switch (b->enemy) {
+    case H2_XIANXIA_RPG_ENEMY_WENZHOU:
+      advance_stage(game, H2_XIANXIA_RPG_STAGE_C5_RESCUE);
+      game->flags = (game->flags | H2_XIANXIA_RPG_FLAG_C5_HIGH) &
+                    ~H2_XIANXIA_RPG_C5_STEPS_MASK;
+      place_hero(game, H2_XIANXIA_RPG_MAP_OLD_CITY, 3, 4);
+      rest_here(game);
+      battle_say(game, "%s", text(H2_XIANXIA_RPG_TEXT_C5_WON));
+      break;
     case H2_XIANXIA_RPG_ENEMY_INK_TIDE:
       if (game->ally_hp == 0u) game->ally_hp = 1u;
       advance_stage(game, H2_XIANXIA_RPG_STAGE_C4_RETURN);
@@ -1286,7 +1319,9 @@ static void strike_with(h2_xianxia_rpg_game_t* game,
       }
       break;
   }
-  if (b->enemy == H2_XIANXIA_RPG_ENEMY_SWORD_SOUL && b->sword_stance == 2u &&
+  if ((b->enemy == H2_XIANXIA_RPG_ENEMY_SWORD_SOUL ||
+       b->enemy == H2_XIANXIA_RPG_ENEMY_WENZHOU) &&
+      b->sword_stance == 2u &&
       (command == H2_XIANXIA_RPG_COMMAND_ATTACK ||
        command == H2_XIANXIA_RPG_COMMAND_SKILL)) {
     b->sword_counter = true;
@@ -1340,6 +1375,9 @@ static void apply_hits(h2_xianxia_rpg_game_t* game) {
     const uint32_t damage = b->hits[b->hits_applied];
     if (b->hit_on_enemy) {
       b->enemy_hp = damage < b->enemy_hp ? b->enemy_hp - damage : 0u;
+      if (b->enemy == H2_XIANXIA_RPG_ENEMY_WENZHOU &&
+          b->enemy_hp < b->enemy_hp_max / 2u)
+        b->enemy_hp = b->enemy_hp_max / 2u;
       b->enemy_flash_ms = H2_XIANXIA_RPG_FLASH_MS;
     } else if (b->lamp_battle && b->hit_target == 1u) {
       game->ally_hp = damage < game->ally_hp ? game->ally_hp - damage : 0u;
@@ -1352,6 +1390,11 @@ static void apply_hits(h2_xianxia_rpg_game_t* game) {
     popup(game, b->hit_on_enemy, false, damage, (int32_t)b->hits_applied);
     ++b->hits_applied;
   }
+}
+
+static bool duel_yielded(const h2_xianxia_rpg_battle_t* b) {
+  return b->enemy == H2_XIANXIA_RPG_ENEMY_WENZHOU &&
+         (b->enemy_hp <= b->enemy_hp_max / 2u || b->turn >= 6u);
 }
 
 static void battle_step(h2_xianxia_rpg_game_t* game, uint32_t dt_ms) {
@@ -1375,7 +1418,7 @@ static void battle_step(h2_xianxia_rpg_game_t* game, uint32_t dt_ms) {
     case H2_XIANXIA_RPG_BATTLE_HERO_ACT:
       apply_hits(game);
       if (b->state_ms >= act_duration(b)) {
-        if (b->enemy_hp == 0u)
+        if (b->enemy_hp == 0u || duel_yielded(b))
           lamp_wave_end(game);
         else if (b->ally)
           ally_turn(game);
@@ -1386,7 +1429,7 @@ static void battle_step(h2_xianxia_rpg_game_t* game, uint32_t dt_ms) {
     case H2_XIANXIA_RPG_BATTLE_ALLY_ACT:
       apply_hits(game);
       if (b->state_ms >= act_duration(b)) {
-        if (b->enemy_hp == 0u)
+        if (b->enemy_hp == 0u || duel_yielded(b))
           lamp_wave_end(game);
         else
           enemy_turn(game);
@@ -1400,7 +1443,8 @@ static void battle_step(h2_xianxia_rpg_game_t* game, uint32_t dt_ms) {
         b->steadied = false;
         ++b->turn;
         if (b->lamp_battle) ++b->wave_turn;
-        if (b->enemy == H2_XIANXIA_RPG_ENEMY_SWORD_SOUL) {
+        if (b->enemy == H2_XIANXIA_RPG_ENEMY_SWORD_SOUL ||
+            b->enemy == H2_XIANXIA_RPG_ENEMY_WENZHOU) {
           b->sword_stance = (uint8_t)((b->sword_stance + 1u) % 3u);
           b->charging = b->sword_stance == 1u;
           b->sword_counter = false;
@@ -1411,6 +1455,8 @@ static void battle_step(h2_xianxia_rpg_game_t* game, uint32_t dt_ms) {
                      text(b->lamp_battle && b->lamp_hp == 0u
                               ? H2_XIANXIA_RPG_TEXT_C4_LOST
                               : H2_XIANXIA_RPG_TEXT_DEFEAT));
+        } else if (duel_yielded(b)) {
+          victory(game);
         } else if (b->lamp_battle && b->wave_turn >= 3u) {
           lamp_wave_end(game);
         } else {
@@ -1434,7 +1480,9 @@ static void battle_finish(h2_xianxia_rpg_game_t* game) {
   if (b->state == H2_XIANXIA_RPG_BATTLE_VICTORY) {
     enter_phase(game, H2_XIANXIA_RPG_PHASE_EXPLORE);
     reset_encounter(game);
-    if (b->lamp_battle)
+    if (b->enemy == H2_XIANXIA_RPG_ENEMY_WENZHOU)
+      start_dialogue(game, H2_XIANXIA_RPG_SCRIPT_C5_FLOOD);
+    else if (b->lamp_battle)
       start_dialogue(game, H2_XIANXIA_RPG_SCRIPT_C4_HOME);
     else if (b->tutorial)
       start_dialogue(game, H2_XIANXIA_RPG_SCRIPT_C2_JIANGLI_JOIN);
@@ -1451,7 +1499,8 @@ static void battle_finish(h2_xianxia_rpg_game_t* game) {
     game->facing = H2_XIANXIA_RPG_FACING_DOWN;
     place_hero(game, game->rest_map, game->rest_x, game->rest_y);
     enter_phase(game, H2_XIANXIA_RPG_PHASE_EXPLORE);
-    start_dialogue(game, game->chapter == 4u   ? H2_XIANXIA_RPG_SCRIPT_C4_REVIVE
+    start_dialogue(game, game->chapter == 5u   ? H2_XIANXIA_RPG_SCRIPT_C5_REVIVE
+                         : game->chapter == 4u ? H2_XIANXIA_RPG_SCRIPT_C4_REVIVE
                          : game->chapter == 3u ? H2_XIANXIA_RPG_SCRIPT_C3_REVIVE
                          : b->enemy == H2_XIANXIA_RPG_ENEMY_FOG_WRAITH
                              ? H2_XIANXIA_RPG_SCRIPT_C2_REVIVE_BOSS
@@ -1548,7 +1597,9 @@ static void record_clear(h2_xianxia_rpg_game_t* game) {
       .flags = game->flags,
       .trust = game->trust,
   };
-  game->progress_pending = true;
+  /* An unreadable future table is opaque, even when this chapter clears.
+   * Its own journey still records the result without destroying that table. */
+  game->progress_pending = !game->records.progress_unreadable;
 }
 
 static void apply_effect(h2_xianxia_rpg_game_t* game,
@@ -1591,6 +1642,26 @@ static void apply_effect(h2_xianxia_rpg_game_t* game,
       enter_phase(game, H2_XIANXIA_RPG_PHASE_ENDING);
       break;
     }
+    case H2_XIANXIA_RPG_EFFECT_C5_BRIEF:
+      if (game->stage == H2_XIANXIA_RPG_STAGE_C5_ARRIVE)
+        advance_stage(game, H2_XIANXIA_RPG_STAGE_C5_PAGE);
+      rest_here(game);
+      break;
+    case H2_XIANXIA_RPG_EFFECT_C5_QUESTION:
+      advance_stage(game, H2_XIANXIA_RPG_STAGE_C5_CHOICE);
+      rest_here(game);
+      break;
+    case H2_XIANXIA_RPG_EFFECT_C5_EVIDENCE:
+      advance_stage(game, H2_XIANXIA_RPG_STAGE_C5_DUEL);
+      rest_here(game);
+      start_dialogue(game, H2_XIANXIA_RPG_SCRIPT_C5_EVIDENCE);
+      break;
+    case H2_XIANXIA_RPG_EFFECT_C5_DUEL:
+      start_battle(game, H2_XIANXIA_RPG_ENEMY_WENZHOU);
+      break;
+    case H2_XIANXIA_RPG_EFFECT_C5_END:
+      apply_effect(game, H2_XIANXIA_RPG_EFFECT_ENDING);
+      break;
     case H2_XIANXIA_RPG_EFFECT_C4_JOIN:
       game->flags |= H2_XIANXIA_RPG_FLAG_C4_JOINED;
       restore_party(game);
@@ -1756,11 +1827,21 @@ static void advance_dialogue(h2_xianxia_rpg_game_t* game) {
     d->reveal_ms = d->total * H2_XIANXIA_RPG_REVEAL_MS_PER_CHAR;
     return;
   }
+  const char* page_end = d->script->lines[d->index].text + d->page_offset;
+  for (uint32_t i = 0; i < d->total; ++i)
+    (void)h2_xianxia_rpg_utf8_next(&page_end);
+  if (*page_end != '\0') {
+    d->page_offset = (uint32_t)(page_end - d->script->lines[d->index].text);
+    d->revealed = d->reveal_ms = 0;
+    d->total = dialogue_page_length(game);
+    return;
+  }
   if ((uint32_t)d->index + 1u < d->script->count) {
     ++d->index;
+    d->page_offset = 0;
     d->revealed = 0;
     d->reveal_ms = 0;
-    d->total = h2_xianxia_rpg_utf8_length(d->script->lines[d->index].text);
+    d->total = dialogue_page_length(game);
     return;
   }
   const h2_xianxia_rpg_effect_t effect =
@@ -1780,8 +1861,15 @@ static void interact(h2_xianxia_rpg_game_t* game, int32_t x, int32_t y) {
   game->facing = facing_toward(x - game->tx, y - game->ty);
   h2_xianxia_rpg_npc_t npc;
   if (npc_at(game, x, y, &npc)) {
-    start_dialogue(game, h2_xianxia_rpg_talk_script(
-                             game, (h2_xianxia_rpg_actor_t)npc.actor));
+    const h2_xianxia_rpg_script_id_t speech =
+        h2_xianxia_rpg_talk_script(game, (h2_xianxia_rpg_actor_t)npc.actor);
+    if (game->chapter == 5u && speech == H2_XIANXIA_RPG_SCRIPT_C5_PICKUP) {
+      advance_stage(game, H2_XIANXIA_RPG_STAGE_C5_ESCORT);
+      game->flags = (game->flags & ~H2_XIANXIA_RPG_C5_STEPS_MASK) |
+                    (14u << H2_XIANXIA_RPG_C5_STEPS_SHIFT);
+      request_save(game);
+    }
+    start_dialogue(game, speech);
     return;
   }
   const char tile = h2_xianxia_rpg_tile(game->map, x, y);
@@ -1805,6 +1893,21 @@ static void interact(h2_xianxia_rpg_game_t* game, int32_t x, int32_t y) {
   }
   const h2_xianxia_rpg_script_id_t script =
       h2_xianxia_rpg_tile_script(game, x, y);
+  if (game->chapter == 5u) {
+    if (tile == 'B') {
+      game->flags ^= H2_XIANXIA_RPG_FLAG_C5_HIGH;
+      /* The bell always returns the party to its permanent landing. */
+      place_hero(game, game->map,
+                 game->map == H2_XIANXIA_RPG_MAP_OLD_CITY ? 3 : 4, 4);
+      rest_here(game);
+      particles_reset(game);
+    } else if (tile == 'p') {
+      game->flags |= H2_XIANXIA_RPG_FLAG_C5_PAGE;
+      if (game->stage == H2_XIANXIA_RPG_STAGE_C5_PAGE)
+        advance_stage(game, H2_XIANXIA_RPG_STAGE_C5_TOWER);
+      request_save(game);
+    }
+  }
   /* The visible fire/lamp and its checkpoint change on the player's tap,
    * before the accompanying news says it is lit and saved. */
   if (game->chapter == 4u) {
@@ -1822,6 +1925,22 @@ static void interact(h2_xianxia_rpg_game_t* game, int32_t x, int32_t y) {
 }
 
 static void arrive(h2_xianxia_rpg_game_t* game) {
+  if (game->chapter == 5u && game->stage == H2_XIANXIA_RPG_STAGE_C5_ESCORT &&
+      !(game->flags & H2_XIANXIA_RPG_FLAG_C5_HIGH)) {
+    uint32_t remaining = (game->flags & H2_XIANXIA_RPG_C5_STEPS_MASK) >>
+                         H2_XIANXIA_RPG_C5_STEPS_SHIFT;
+    if (remaining > 0u) --remaining;
+    game->flags = (game->flags & ~H2_XIANXIA_RPG_C5_STEPS_MASK) |
+                  (remaining << H2_XIANXIA_RPG_C5_STEPS_SHIFT);
+    if (remaining == 0u) {
+      advance_stage(game, H2_XIANXIA_RPG_STAGE_C5_RESCUE);
+      game->flags |= H2_XIANXIA_RPG_FLAG_C5_HIGH;
+      place_hero(game, H2_XIANXIA_RPG_MAP_OLD_CITY, 3, 4);
+      rest_here(game);
+      start_dialogue(game, H2_XIANXIA_RPG_SCRIPT_C5_RETRY);
+      return;
+    }
+  }
   if (game->chapter == 4u && game->stage < H2_XIANXIA_RPG_STAGE_C4_RETURN &&
       (game->flags & H2_XIANXIA_RPG_FLAG_C4_FIRE) &&
       h2_xianxia_rpg_tile(game->map, game->tx, game->ty) == 'w') {
@@ -1849,6 +1968,15 @@ static void arrive(h2_xianxia_rpg_game_t* game) {
     }
     place_hero(game, to_map, to_x, to_y);
     particles_reset(game);
+    if (game->chapter == 5u && game->stage == H2_XIANXIA_RPG_STAGE_C5_ESCORT &&
+        to_map == H2_XIANXIA_RPG_MAP_WATER_MARKET) {
+      advance_stage(game, H2_XIANXIA_RPG_STAGE_C5_RETURN);
+      game->flags = (game->flags | H2_XIANXIA_RPG_FLAG_C5_SAVED) &
+                    ~H2_XIANXIA_RPG_C5_STEPS_MASK;
+      rest_here(game);
+      start_dialogue(game, H2_XIANXIA_RPG_SCRIPT_C5_SAFE);
+      return;
+    }
     start_dialogue(game, h2_xianxia_rpg_enter_script(game, to_map));
     return;
   }
@@ -1929,6 +2057,34 @@ static void explore_tap(h2_xianxia_rpg_game_t* game, float x, float y) {
     return;
   }
   const h2_xianxia_rpg_layout_t* l = &game->layout;
+  if (game->chapter == 5u && !game->moving) {
+    if (game->stage == H2_XIANXIA_RPG_STAGE_C5_CHOICE) {
+      for (int i = 0; i < 2; ++i) {
+        if (!inside(&l->escort_actions[i], x, y)) continue;
+        if (i)
+          game->flags |= H2_XIANXIA_RPG_FLAG_C5_RETURN_LIGHT;
+        else
+          game->flags &= ~H2_XIANXIA_RPG_FLAG_C5_RETURN_LIGHT;
+        /* Commit the choice and checkpoint before showing the evidence. */
+        advance_stage(game, H2_XIANXIA_RPG_STAGE_C5_DUEL);
+        rest_here(game);
+        start_dialogue(game, i ? H2_XIANXIA_RPG_SCRIPT_C5_RETURN_LIGHT
+                               : H2_XIANXIA_RPG_SCRIPT_C5_TAKE);
+      }
+      return;
+    }
+    if (inside(&l->escort_actions[1], x, y)) {
+      clear_path(game);
+      start_dialogue(game, H2_XIANXIA_RPG_SCRIPT_C5_HELP);
+      return;
+    }
+    if (inside(&l->escort_actions[0], x, y) &&
+        game->map == H2_XIANXIA_RPG_MAP_OLD_CITY &&
+        game->stage < H2_XIANXIA_RPG_STAGE_C5_RESCUE) {
+      start_battle(game, H2_XIANXIA_RPG_ENEMY_TIDE_OTTER);
+      return;
+    }
+  }
   if (game->chapter == 4u && !game->moving) {
     if (inside(&l->escort_actions[0], x, y)) {
       clear_path(game);
@@ -2025,6 +2181,8 @@ static void start_chapter(h2_xianxia_rpg_game_t* game, uint32_t chapter,
   if (chapter == 3u)
     game->flags = (game->flags & ~H2_XIANXIA_RPG_C3_POST_BITS) |
                   H2_XIANXIA_RPG_C3_POST_INITIAL;
+  if (chapter == 5u)
+    game->flags |= H2_XIANXIA_RPG_FLAG_C4_JOINED | H2_XIANXIA_RPG_FLAG_C4_BOOK;
   game->chapter = chapter;
   restore_party(game);
   game->stage = info->first_stage;
@@ -2077,6 +2235,14 @@ static void continue_journey(h2_xianxia_rpg_game_t* game,
     x = info->rest_x;
     y = info->rest_y;
   }
+  if (game->chapter == 5u &&
+      (game->stage == H2_XIANXIA_RPG_STAGE_C5_RESCUE ||
+       game->stage == H2_XIANXIA_RPG_STAGE_C5_ESCORT) &&
+      map != H2_XIANXIA_RPG_MAP_OLD_CITY) {
+    map = H2_XIANXIA_RPG_MAP_OLD_CITY;
+    x = 3;
+    y = 4;
+  }
   place_hero(game, map, x, y);
   if (cell_usable(game, s->rest_map, s->rest_x, s->rest_y)) {
     game->rest_map = (h2_xianxia_rpg_map_t)s->rest_map;
@@ -2097,6 +2263,10 @@ static void continue_journey(h2_xianxia_rpg_game_t* game,
 static const h2_xianxia_rpg_save_t* continue_target(
     const h2_xianxia_rpg_game_t* game) {
   const h2_xianxia_rpg_records_t* r = &game->records;
+  if (r->has_journey5 &&
+      (r->journey5_latest || (!r->has_journey4 && !r->has_journey3 &&
+                              !r->has_journey && !r->has_chapter1)))
+    return &r->journey5;
   if (r->has_journey4 &&
       (r->journey4_latest ||
        (!r->has_journey3 && !r->has_journey && !r->has_chapter1)))
@@ -2121,7 +2291,8 @@ const h2_xianxia_rpg_save_t* h2_xianxia_rpg_unfinished(
       h2_xianxia_rpg_chapter_info(chapter);
   if (info == NULL) return NULL;
   const h2_xianxia_rpg_save_t* s =
-      chapter == 4u   ? (r->has_journey4 ? &r->journey4 : NULL)
+      chapter == 5u   ? (r->has_journey5 ? &r->journey5 : NULL)
+      : chapter == 4u ? (r->has_journey4 ? &r->journey4 : NULL)
       : chapter == 3u ? (r->has_journey3 ? &r->journey3 : NULL)
       : chapter == 1u ? (r->has_chapter1 ? &r->chapter1 : NULL)
                       : (r->has_journey ? &r->journey : NULL);
@@ -2245,6 +2416,14 @@ void h2_xianxia_rpg_game_init(h2_xianxia_rpg_game_t* game, int32_t width,
                                                       &r->journey4, NULL) &&
                         r->journey4.chapter == 4u;
     }
+    if (r->has_journey5) {
+      uint8_t bytes[H2_XIANXIA_RPG_JOURNEY_BYTES];
+      h2_xianxia_rpg_journey_encode(&records->journey5, 0u, bytes);
+      r->has_journey5 = h2_xianxia_rpg_journey_decode(bytes, sizeof(bytes),
+                                                      &r->journey5, NULL) &&
+                        r->journey5.chapter == 5u;
+    }
+    if (!r->has_journey5) r->journey5_latest = false;
     if (!r->has_journey4) r->journey4_latest = false;
     if (!r->has_journey3) r->journey3_latest = false;
     if (!r->has_journey) r->journey_latest = false;
@@ -2331,8 +2510,14 @@ bool h2_xianxia_rpg_game_take_writes(h2_xianxia_rpg_game_t* game,
         .rest_x = (uint32_t)game->rest_x,
         .rest_y = (uint32_t)game->rest_y,
     };
-    if (game->chapter != 4u) r->journey4_latest = false;
-    if (game->chapter == 4u) {
+    if (game->chapter != 5u) r->journey5_latest = false;
+    if (game->chapter < 4u) r->journey4_latest = false;
+    if (game->chapter == 5u) {
+      writes.journey5 = true;
+      writes.journey5_save = save;
+      r->has_journey5 = r->journey5_latest = true;
+      r->journey5 = save;
+    } else if (game->chapter == 4u) {
       writes.journey4 = true;
       writes.journey4_save = save;
       r->has_journey4 = r->journey4_latest = true;
@@ -2552,6 +2737,7 @@ void h2_xianxia_rpg_progress_encode(
     at[0] = (uint8_t)(clear->level & 0xFFu);
     at[1] = (uint8_t)(clear->pills & 0xFFu);
     at[2] = (uint8_t)(clear->trust & 0xFFu);
+    at[3] = progress->reserved[c];
     put_u32(at + 4, clear->exp);
     put_u32(at + 8, clear->flags);
     put_u16(at + 12, clamp_u16(clear->battles));
@@ -2576,6 +2762,7 @@ bool h2_xianxia_rpg_progress_decode(const uint8_t* data, size_t size,
   for (uint32_t c = 0; c < H2_XIANXIA_RPG_CHAPTER_MAX; ++c) {
     const uint8_t* at = data + 4u + c * H2_XIANXIA_RPG_CLEAR_BYTES;
     h2_xianxia_rpg_clear_t* clear = &progress.chapters[c];
+    progress.reserved[c] = at[3];
     *clear = (h2_xianxia_rpg_clear_t){.level = at[0],
                                       .pills = at[1],
                                       .trust = at[2],

@@ -39,6 +39,8 @@ extern "C" {
 /** Chapter-4 journey, same 32-byte layout. Its tag covers save0..3,
  * journey and journey3; released builds keep their own records on rollback. */
 #define H2_XIANXIA_RPG_PREF_JOURNEY4_KEY "journey4"
+/** Chapter-5 journey; preserves every older journey for rollback. */
+#define H2_XIANXIA_RPG_PREF_JOURNEY5_KEY "journey5"
 /** Blob with the cleared chapters and the hero at each clear, used to enter
  * the next chapter; a v0.1 chapter-1 clear is copied into it on start. */
 #define H2_XIANXIA_RPG_PREF_CHAPTERS_KEY "chapters"

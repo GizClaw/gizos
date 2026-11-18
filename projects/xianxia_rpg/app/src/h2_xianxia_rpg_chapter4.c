@@ -236,7 +236,7 @@ const char* h2_xianxia_rpg_c4_map_name(h2_xianxia_rpg_map_t map) {
 const h2_xianxia_rpg_script_t* h2_xianxia_rpg_c4_script(
     h2_xianxia_rpg_script_id_t id) {
   return id >= H2_XIANXIA_RPG_SCRIPT_C4_FIRST &&
-                 id < H2_XIANXIA_RPG_SCRIPT_COUNT
+                 id < H2_XIANXIA_RPG_SCRIPT_C5_FIRST
              ? &k_scripts[id - H2_XIANXIA_RPG_SCRIPT_C4_FIRST]
              : NULL;
 }

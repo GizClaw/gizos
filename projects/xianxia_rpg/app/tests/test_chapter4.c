@@ -252,7 +252,16 @@ static void battle_and_ending(const h2_xianxia_rpg_records_t* checkpoint) {
   CHECK(!h2_xianxia_rpg_game_take_writes(&g, &w));
   step(1600);
   tap(320, 200);
-  CHECK(g.phase == H2_XIANXIA_RPG_PHASE_TITLE);
+  CHECK(g.phase == H2_XIANXIA_RPG_PHASE_PROLOGUE && g.prologue_chapter == 5u &&
+        g.prologue_carry);
+  const uint32_t carried_level = g.hero.level, carried_pills = g.hero.pills;
+  step(1000);
+  tap(320, 200);
+  dialog();
+  CHECK(g.chapter == 5u && g.hero.level == carried_level &&
+        g.hero.pills == carried_pills);
+  CHECK((g.flags & H2_XIANXIA_RPG_FLAG_C4_BOOK) &&
+        (g.flags & H2_XIANXIA_RPG_FLAG_C4_FAINT));
 }
 static void early_wave_kill(const h2_xianxia_rpg_records_t* checkpoint) {
   h2_xianxia_rpg_game_init(&g, 640, 480, 91, checkpoint);
