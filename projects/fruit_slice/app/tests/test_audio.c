@@ -192,6 +192,11 @@ static void test_bursts_backpressure_and_partial_failure(void) {
   unsigned writes = f.writes;
   CHECK(h2_fruit_slice_audio_pump(&audio, 100000) == 0);
   CHECK(f.writes == writes + 1); /* No long catch-up after a stall. */
+  f.write_result = H2_PAL_OK;
+  CHECK(h2_fruit_slice_audio_pump(&audio, 100020) == H2_PAL_OK);
+  CHECK(audio.available && audio.track != NULL && f.opens == 1u);
+  f.write_result = H2_PAL_ERR_IO;
+  CHECK(h2_fruit_slice_audio_pump(&audio, 100040) == H2_PAL_ERR_IO);
   CHECK(h2_fruit_slice_audio_suspend(&audio) == 0);
   CHECK(active(&audio) == 0 && !audio.track && !audio.speaker_started);
   f.create_result = H2_PAL_ERR_NO_MEMORY;

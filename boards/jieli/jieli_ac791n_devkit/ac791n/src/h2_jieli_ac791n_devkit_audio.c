@@ -117,7 +117,9 @@ static int audio_lock(uint32_t start, uint32_t budget) {
   for (;;) {
     rc = h2_pal_mutex_try_lock(sync, audio_state.mutex);
     if (rc == H2_PAL_OK) return H2_AUDIO_OK;
-    if (rc != H2_PAL_ERR_TIMEOUT && rc != H2_PAL_ERR_BUSY)
+    /* WL82's nonblocking mutex reports normal contention as WOULD_BLOCK. */
+    if (rc != H2_PAL_ERR_WOULD_BLOCK && rc != H2_PAL_ERR_TIMEOUT &&
+        rc != H2_PAL_ERR_BUSY)
       return H2_AUDIO_ERR_IO;
     if (audio_remaining(start, budget) == 0u) return H2_AUDIO_ERR_WOULD_BLOCK;
     h2_jieli_sdk_sleep_ms(1u);
