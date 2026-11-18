@@ -30,6 +30,17 @@ TARGET = "//projects/fruit_slice/targets/h2_loader_tar_zlib/jieli/jieli_ac791n_d
 IDENTITY = {"board": "jieli_ac791n_devkit", "target": "wl82", "role": "app"}
 
 
+def validate_compilation_mode(mode: str, receipt: dict | None = None) -> str:
+    if mode not in ("fastbuild", "opt"):
+        raise ValueError("unsupported delivery compilation mode")
+    if receipt is None:
+        if mode != "fastbuild":
+            raise ValueError("opt delivery requires a configured-target mode receipt")
+    elif receipt != {"requested": mode, "observed": mode}:
+        raise ValueError("configured target compilation mode mismatch")
+    return mode
+
+
 def digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
@@ -80,7 +91,10 @@ def upload(name: str, data: bytes, token: str, content_type: str) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--outputs", type=Path, required=True)
+    parser.add_argument("--mode-receipt", type=Path)
     args = parser.parse_args()
+    mode_receipt = json.loads(args.mode_receipt.read_text()) if args.mode_receipt else None
+    mode = validate_compilation_mode(os.environ.get("DELIVERY_COMPILATION_MODE", "fastbuild"), mode_receipt)
     source = os.environ["SOURCE_SHA"]
     workflow = os.environ["WORKFLOW_SHA"]
     for value in (source, workflow):
@@ -109,7 +123,8 @@ def main() -> None:
         "source_sha": source, "workflow_sha": workflow,
         "run_url": f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{run}",
         "run_attempt": attempt, "created_utc": datetime.now(timezone.utc).isoformat(),
-        "target": TARGET, "config": "ac791n", "compilation_mode": "fastbuild",
+        "target": TARGET, "config": "ac791n", "compilation_mode": mode,
+        "compilation_mode_receipt": mode_receipt,
         "remote_download_outputs": "all", "package_manifest": manifest,
         "files": [{"name": name, "size": len(data), "sha256": digest(data)}
                   for name, data in sorted(files.items())],

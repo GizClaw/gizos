@@ -22,6 +22,12 @@ on:
         required: false
         type: string
         default: 0.2.0-ac791n-devkit.1
+      jieli_compilation_mode:
+        description: Bazel compilation mode for private delivery
+        required: false
+        type: choice
+        options: [fastbuild, opt]
+        default: fastbuild
 
 permissions:
   actions: read
@@ -1056,8 +1062,11 @@ jobs:
         if: inputs.jieli_delivery
         env:
           SOURCE_SHA: ${{ inputs.checkout_sha }}
+          COMPILATION_MODE: ${{ inputs.jieli_compilation_mode || 'fastbuild' }}
         run: |
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          case "$COMPILATION_MODE" in fastbuild|opt) ;; *) exit 1 ;; esac
+          printf 'DELIVERY_COMPILATION_MODE=%s\n' "$COMPILATION_MODE" >> "$GITHUB_ENV"
           cp delivery-tools/tools/bazel/h2loader/internal_delivery.py "$RUNNER_TEMP/internal_delivery.py"
 
       - name: Check out GizOS
@@ -1287,15 +1296,26 @@ jobs:
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
           git diff --quiet HEAD
           python3 - <<'PY'
-          import os, subprocess
+          import json, os, subprocess
           from scripts.common.bazel import cache_options, graph_options
           target = '//projects/fruit_slice/targets/h2_loader_tar_zlib/jieli/jieli_ac791n_devkit:package'
-          options = ['--config=ac791n', '--lockfile_mode=off', *cache_options(), *graph_options()]
+          mode = os.environ['DELIVERY_COMPILATION_MODE']
+          if mode not in ('fastbuild', 'opt'):
+              raise ValueError('unsupported delivery compilation mode')
+          options = ['--config=ac791n', '--compilation_mode=' + mode, '--lockfile_mode=off', *cache_options(), *graph_options()]
           bazel = os.environ['BAZEL_BIN']
           subprocess.run([bazel, 'build', *options, '--remote_download_outputs=all', target], check=True)
           result = subprocess.check_output([bazel, 'cquery', *options, target, '--output=files'], text=True)
           with open(os.environ['RUNNER_TEMP'] + '/delivery-outputs.txt', 'w') as output:
               output.write(result)
+          observed = subprocess.check_output([
+              bazel, 'cquery', *options, target, '--output=starlark',
+              '--starlark:expr=str(build_options(target)["//command_line_option:compilation_mode"])',
+          ], text=True).strip()
+          if observed != mode:
+              raise ValueError('configured target compilation mode mismatch')
+          with open(os.environ['RUNNER_TEMP'] + '/delivery-mode.json', 'w') as output:
+              json.dump({'requested': mode, 'observed': observed}, output)
           PY
 
       - name: Authenticate private delivery
@@ -1315,7 +1335,7 @@ jobs:
           EXPECTED_VERSION: ${{ inputs.jieli_version }}
           DELIVERY_TOKEN: ${{ steps.jieli-delivery-auth.outputs.access_token }}
           WORKFLOW_SHA: ${{ github.workflow_sha }}
-        run: python3 "$RUNNER_TEMP/internal_delivery.py" --outputs "$RUNNER_TEMP/delivery-outputs.txt"
+        run: python3 "$RUNNER_TEMP/internal_delivery.py" --outputs "$RUNNER_TEMP/delivery-outputs.txt" --mode-receipt "$RUNNER_TEMP/delivery-mode.json"
 
       - name: Save AC791N SDK LFS cache seed
         if: >-
