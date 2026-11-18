@@ -678,21 +678,26 @@ static void test_rounded_rect_spans(void) {
             .pixels = pixels, .width = 80, .height = 64, .stride_pixels = 80};
         h2_fruit_slice_draw_rounded_rect(&canvas, x0, y0, x1, y1, radius,
                                          0xfb84u, alphas[a]);
-        for (int y = (int)floorf(fmaxf(0.0f, y0)); y < (int)ceilf(fminf(64.0f, y1)); ++y)
-          for (int x = (int)floorf(fmaxf(0.0f, x0)); x < (int)ceilf(fminf(80.0f, x1)); ++x) {
+        for (int y = (int)floorf(fmaxf(0.0f, y0));
+             y < (int)ceilf(fminf(64.0f, y1)); ++y)
+          for (int x = (int)floorf(fmaxf(0.0f, x0));
+               x < (int)ceilf(fminf(80.0f, x1)); ++x) {
             const float dx = fmaxf(fmaxf(x0 + radius - ((float)x + 0.5f),
-                                         (float)x + 0.5f - (x1 - radius)), 0.0f);
+                                         (float)x + 0.5f - (x1 - radius)),
+                                   0.0f);
             const float dy = fmaxf(fmaxf(y0 + radius - ((float)y + 0.5f),
-                                         (float)y + 0.5f - (y1 - radius)), 0.0f);
+                                         (float)y + 0.5f - (y1 - radius)),
+                                   0.0f);
             float cover = 1.0f;
             if (dx > 0.0f && dy > 0.0f)
-              cover = fminf(1.0f, fmaxf(0.0f, radius + 0.5f - sqrtf(dx * dx + dy * dy)));
+              cover = fminf(
+                  1.0f, fmaxf(0.0f, radius + 0.5f - sqrtf(dx * dx + dy * dy)));
             else if (dx > radius || dy > radius)
               cover = 0.0f;
             if (cover > 0.0f)
-              background[y * 80 + x] = h2_fruit_slice_blend(
-                  background[y * 80 + x], 0xfb84u,
-                  (uint32_t)(cover * (float)alphas[a]));
+              background[y * 80 + x] =
+                  h2_fruit_slice_blend(background[y * 80 + x], 0xfb84u,
+                                       (uint32_t)(cover * (float)alphas[a]));
           }
         CHECK(memcmp(pixels, background, 80u * 64u * sizeof(*pixels)) == 0);
       }

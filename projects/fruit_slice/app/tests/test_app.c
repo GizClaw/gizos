@@ -402,7 +402,8 @@ static int audio_write(h2_pal_audio_track_t* track,
   CHECK(!(f->frames >= f->pause_from && f->frames < f->pause_until));
   ++f->audio_writes;
   if (f->paced_clock) {
-    const uint64_t elapsed = f->sink_started ? f->clock_ms - f->sink_updated_ms : 0u;
+    const uint64_t elapsed =
+        f->sink_started ? f->clock_ms - f->sink_updated_ms : 0u;
     f->sink_started = true;
     f->sink_updated_ms = f->clock_ms;
     if (elapsed > f->sink_queued_ms) {
@@ -545,11 +546,12 @@ static h2_pal_result_t accelerated_clock(void* user, uint64_t* out_ms) {
 }
 
 /* Model the real SDK's early tick timeout, without sleeping the host. */
-static h2_pal_result_t paced_recv(void* user, h2_pal_queue_t* queue,
-                                  void* item, uint32_t timeout_ms) {
+static h2_pal_result_t paced_recv(void* user, h2_pal_queue_t* queue, void* item,
+                                  uint32_t timeout_ms) {
   const h2_pal_queue_api_t* real = h2_desktop_platform_queue_api();
   const h2_pal_result_t rc = real->vtable->recv(user, queue, item, 0u);
-  if ((rc == H2_PAL_ERR_WOULD_BLOCK || rc == H2_PAL_ERR_TIMEOUT) && timeout_ms) {
+  if ((rc == H2_PAL_ERR_WOULD_BLOCK || rc == H2_PAL_ERR_TIMEOUT) &&
+      timeout_ms) {
     CHECK(timeout_ms != UINT32_MAX);
     const uint32_t ticks = timeout_ms / 10u;
     fx.clock_ms += ticks ? ticks * 10u : 1u;
@@ -618,16 +620,18 @@ static h2_pal_result_t run(void) {
   config.video_decoder = h2_pal_unsupported_video_decoder_api();
   h2_runtime_t* runtime = NULL;
   CHECK(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
-  const h2_fruit_slice_config_t game = {
-      .seed = fx.seed,
-      .brightness_percent = 80u,
-      .frame_period_ms = fx.paced_clock ? 25u : fx.fast_clock ? 1u : 10u,
-      .ready = ready,
-      .should_exit = should_exit,
-      .is_paused = is_paused,
-      .language = fx.language,
-      .prewarm_audio = fx.prewarm_audio,
-      .user = &fx};
+  const h2_fruit_slice_config_t game = {.seed = fx.seed,
+                                        .brightness_percent = 80u,
+                                        .frame_period_ms = fx.paced_clock ? 25u
+                                                           : fx.fast_clock
+                                                               ? 1u
+                                                               : 10u,
+                                        .ready = ready,
+                                        .should_exit = should_exit,
+                                        .is_paused = is_paused,
+                                        .language = fx.language,
+                                        .prewarm_audio = fx.prewarm_audio,
+                                        .user = &fx};
   const h2_pal_result_t rc = h2_fruit_slice_run(runtime, &game);
   CHECK(h2_runtime_destroy(&runtime) == H2_PAL_OK);
   CHECK(fx.allocations == fx.frees);
@@ -1011,9 +1015,10 @@ static void test_paced_audio_through_public_entry(bool prewarm) {
   fx.touch.script[fx.touch.script_count++] =
       (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_UP, 20, 160};
   CHECK(run() == H2_PAL_OK);
-  printf("public-entry simulated 480x320: elapsed=%llu starvation=%u full=%u writes=%u\n",
-         (unsigned long long)fx.clock_ms, fx.sink_starved_ms,
-         fx.sink_full_writes, fx.audio_successful_writes);
+  printf(
+      "public-entry simulated 480x320: elapsed=%llu starvation=%u full=%u writes=%u\n",
+      (unsigned long long)fx.clock_ms, fx.sink_starved_ms, fx.sink_full_writes,
+      fx.audio_successful_writes);
   CHECK(fx.clock_ms == 200u * 25u + fx.audio_open_cost_ms);
   CHECK(fx.sink_starved_ms == 0u && fx.sink_full_writes == 0u);
   CHECK(fx.audio_opens == 1u && fx.audio_closes == 1u);

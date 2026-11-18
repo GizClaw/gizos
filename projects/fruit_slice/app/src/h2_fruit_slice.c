@@ -312,7 +312,8 @@ static h2_pal_result_t service_audio(session_t* s, uint64_t now) {
     const uint64_t ended = clock_ms(s);
     const uint32_t elapsed = ended >= now ? (uint32_t)(ended - now) : 0u;
     if (elapsed > s->audio_max_ms) s->audio_max_ms = elapsed;
-    if (opening && elapsed > s->audio_open_max_ms) s->audio_open_max_ms = elapsed;
+    if (opening && elapsed > s->audio_open_max_ms)
+      s->audio_open_max_ms = elapsed;
   }
   if (played == H2_PAL_OK) return H2_PAL_OK;
   char message[80];
@@ -543,8 +544,8 @@ static void report_stats(session_t* s, uint64_t now) {
       "interval_max_ms=%u save_ms=%u save_max_ms=%u phases=0x%x reveals=%u",
       (unsigned)interval_percentile(s, 95u),
       (unsigned)interval_percentile(s, 99u), (unsigned)s->interval_max_ms,
-      (unsigned)s->save_ms, (unsigned)s->save_max_ms,
-      (unsigned)s->phase_mask, (unsigned)s->reveal_frames);
+      (unsigned)s->save_ms, (unsigned)s->save_max_ms, (unsigned)s->phase_mask,
+      (unsigned)s->reveal_frames);
   log_line(s, H2_PAL_LOG_INFO, message);
   (void)snprintf(message, sizeof(message),
                  "H2_FRUIT_SLICE_AUDIO_TIMING gap_ms=%u writes=%u blocked=%u "
@@ -586,10 +587,11 @@ static h2_pal_result_t play(session_t* s) {
     if (rc != H2_PAL_OK) return rc;
     const uint64_t frame_start = now;
     if (s->frames != 0u && !s->audio_paused) {
-      const uint64_t gap = now >= s->last_frame_ms ? now - s->last_frame_ms : 0u;
+      const uint64_t gap =
+          now >= s->last_frame_ms ? now - s->last_frame_ms : 0u;
       const uint32_t interval = gap > UINT32_MAX ? UINT32_MAX : (uint32_t)gap;
-      unsigned bucket = interval / INTERVAL_BUCKET_MS +
-                        (interval % INTERVAL_BUCKET_MS != 0u);
+      unsigned bucket =
+          interval / INTERVAL_BUCKET_MS + (interval % INTERVAL_BUCKET_MS != 0u);
       if (bucket >= INTERVAL_BUCKETS) bucket = INTERVAL_BUCKETS - 1u;
       ++s->intervals[bucket];
       ++s->interval_count;

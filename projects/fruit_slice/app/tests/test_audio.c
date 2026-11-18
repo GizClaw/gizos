@@ -401,8 +401,8 @@ static void test_pcm_deadline_lookahead(void) {
       h2_fruit_slice_audio_emit(&audio, H2_FRUIT_SLICE_SOUND_SLICE, f.now_ms);
     CHECK(h2_fruit_slice_audio_pump(&audio, f.now_ms) == H2_PAL_OK);
   }
-  printf("pcm simulated 3000ms: starvation=%u full=%u queue=%u\n",
-         f.starved_ms, f.full_writes, f.queued_ms);
+  printf("pcm simulated 3000ms: starvation=%u full=%u queue=%u\n", f.starved_ms,
+         f.full_writes, f.queued_ms);
   CHECK(f.starved_ms == 0u && f.full_writes == 0u);
   CHECK(f.queued_ms <= 40u && audio.max_pump_gap_ms == 30u);
   CHECK(h2_fruit_slice_audio_close(&audio) == H2_PAL_OK);

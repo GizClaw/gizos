@@ -214,7 +214,8 @@ int h2_fruit_slice_audio_pump(h2_fruit_slice_audio_t* audio, uint64_t now_ms) {
    * Keep the two-frame queue and its bounded interaction latency. */
   const uint64_t ahead_ms =
       ((uint64_t)audio->format.frame_samples_per_channel * 1000u +
-       audio->format.sample_rate_hz - 1u) / audio->format.sample_rate_hz;
+       audio->format.sample_rate_hz - 1u) /
+      audio->format.sample_rate_hz;
   for (unsigned frame_index = 0; frame_index < 3u && due <= now_ms + ahead_ms;
        ++frame_index) {
     mix_frame(audio);
