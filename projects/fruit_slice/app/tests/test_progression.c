@@ -462,7 +462,106 @@ static void test_legacy_and_invalid_formats(void) {
                                         sizeof(bad_legacy)));
 }
 
+static void test_expanded_fruit_task_and_card_integration(void) {
+  CHECK(H2_FRUIT_SLICE_BOMB == 5 && H2_FRUIT_SLICE_FRUIT_KINDS == 9u);
+  const unsigned mixed[] = {H2_FRUIT_SLICE_WATERMELON,
+                            H2_FRUIT_SLICE_STRAWBERRY, H2_FRUIT_SLICE_GRAPES,
+                            H2_FRUIT_SLICE_BANANA};
+  start(&game);
+  for (unsigned i = 0u; i < 3u; ++i) cut(mixed[i]);
+  CHECK(game.progress.challenge_credit[0] == 0u);
+  cut(H2_FRUIT_SLICE_BOMB);
+  CHECK(game.phase == H2_FRUIT_SLICE_PHASE_GAME_OVER);
+  CHECK(game.sliced_total == 3u && game.progress.fruit_credit == 3u);
+  CHECK(game.progress.challenge_credit[0] == 0u);
+  CHECK(game.run_kinds ==
+        ((1u << mixed[0]) | (1u << mixed[1]) | (1u << mixed[2])));
+
+  start(&game);
+  for (unsigned i = 0u; i < 4u; ++i) cut(mixed[i]);
+  CHECK(game.progress.challenge_credit[0] == 1u);
+  cut(H2_FRUIT_SLICE_PINEAPPLE);
+  cut(H2_FRUIT_SLICE_GRAPES);
+  CHECK(game.progress.challenge_credit[0] == 1u);
+  finish_run();
+  tap(&game, H2_FRUIT_SLICE_BUTTON_START);
+  CHECK(game.phase == H2_FRUIT_SLICE_PHASE_PLAYING && game.run_kinds == 0u);
+  CHECK(game.progress.challenge_credit[0] == 1u);
+  for (unsigned i = 0u; i < 4u; ++i) cut(mixed[i]);
+  CHECK(game.progress.challenge_credit[0] == 2u);
+  uint8_t bytes[H2_FRUIT_SLICE_PROGRESS_BYTES];
+  h2_fruit_slice_progress_encode(&game.progress, bytes);
+  h2_fruit_slice_progress_t restored = {0};
+  CHECK(h2_fruit_slice_progress_decode(&restored, bytes, sizeof(bytes)));
+  CHECK(restored.challenge_credit[0] == 2u);
+
+  start(&game);
+  cut(H2_FRUIT_SLICE_GRAPES);
+  CHECK(game.score == 1u && game.sliced_total == 1u &&
+        game.progress.fruit_credit == 1u && game.cards.run_slices == 1u);
+  stroke(&game, 80, 180, 400, 180); /* The inactive bunch cannot count again. */
+  CHECK(game.score == 1u && game.progress.fruit_credit == 1u);
+  scene(&game);
+  place(&game, 0u, H2_FRUIT_SLICE_GRAPES, 180, 180);
+  place(&game, 1u, H2_FRUIT_SLICE_GRAPES, 300, 180);
+  stroke(&game, 80, 180, 400, 180);
+  CHECK(game.sliced_total == 3u && game.progress.fruit_credit == 3u &&
+        game.cards.run_slices == 3u);
+  CHECK(game.run_kinds == (1u << H2_FRUIT_SLICE_GRAPES));
+  CHECK(game.progress.challenge_credit[0] == 0u);
+
+  for (unsigned weapon = 0u; weapon < H2_FRUIT_SLICE_WEAPONS; ++weapon) {
+    start(&game);
+    game.progress.owned = 63u;
+    game.progress.equipped = weapon;
+    for (unsigned i = 0u; i < 10u; ++i) cut(H2_FRUIT_SLICE_GRAPES);
+    CHECK(game.score == 10u && game.progress.fruit_credit == 10u &&
+          game.cards.run_slices == 10u);
+    for (unsigned old = 0u; old < 3u; ++old)
+      CHECK(game.cards.counts[H2_FRUIT_SLICE_CARD_CLASSIC_KNIFE + old] ==
+            (weapon == old ? 1u : 0u));
+  }
+}
+
+static void test_new_weapons_use_new_fruit_geometry(void) {
+  for (unsigned kind = H2_FRUIT_SLICE_STRAWBERRY;
+       kind < H2_FRUIT_SLICE_KIND_COUNT; ++kind) {
+    start(&game);
+    const float radius =
+        h2_fruit_slice_game_radius(&game, (h2_fruit_slice_kind_t)kind);
+    CHECK(hit(H2_FRUIT_SLICE_WEAPON_STORM, true, radius * 1.15f, radius * 2.0f,
+              kind));
+    CHECK(!hit(H2_FRUIT_SLICE_WEAPON_STORM, false, radius * 1.15f,
+               radius * 2.0f, kind));
+    CHECK(!hit(H2_FRUIT_SLICE_WEAPON_FROST, false, 0, 11, kind));
+    CHECK(hit(H2_FRUIT_SLICE_WEAPON_FROST, false, 0, 14, kind));
+  }
+  /* A circular fallback would wrongly fill the banana's visible notch. */
+  start(&game);
+  game.progress.equipped = H2_FRUIT_SLICE_WEAPON_BAMBOO;
+  place(&game, 0u, H2_FRUIT_SLICE_BANANA, 240, 180);
+  const float notch_y = 180.0f - game.fruits[0].radius * 0.42f;
+  stroke(&game, 238, notch_y, 242, notch_y);
+  CHECK(game.fruits[0].active && game.score == 0u);
+
+  const unsigned weapons[] = {H2_FRUIT_SLICE_WEAPON_BAMBOO,
+                              H2_FRUIT_SLICE_WEAPON_STORM};
+  const unsigned kinds[] = {H2_FRUIT_SLICE_BANANA, H2_FRUIT_SLICE_GRAPES};
+  for (unsigned weapon = 0u; weapon < 2u; ++weapon) {
+    for (unsigned kind = 0u; kind < 2u; ++kind) {
+      start(&game);
+      game.progress.equipped = weapons[weapon];
+      place(&game, 0u, kinds[kind], 240, 180);
+      game.fruits[0].radius = 1.0f;
+      stroke(&game, 236, 182, 244, 182);
+      CHECK(game.fruits[0].active && game.score == 0u);
+    }
+  }
+}
+
 int main(void) {
+  test_expanded_fruit_task_and_card_integration();
+  test_new_weapons_use_new_fruit_geometry();
   test_challenge_events_and_claims();
   test_run_resets_and_required_weapon();
   test_pages_and_all_purchases();

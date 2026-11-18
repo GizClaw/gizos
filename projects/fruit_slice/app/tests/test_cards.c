@@ -260,6 +260,38 @@ static void test_pending_collection_merge(void) {
   CHECK(h2_fruit_slice_cards_take_cue(&c) == H2_FRUIT_SLICE_CARD_CUE_NONE);
 }
 
+static void test_new_fruit_card_mapping(void) {
+  h2_fruit_slice_cards_t c;
+  h2_fruit_slice_cards_init(&c, 480, 320, 42u);
+  h2_fruit_slice_cards_run_start(&c);
+  CHECK(H2_FRUIT_SLICE_CARD_COUNT == 16 && H2_FRUIT_SLICE_CARDS_BYTES == 32u);
+  for (unsigned kind = 0u; kind < H2_FRUIT_SLICE_KIND_COUNT; ++kind) {
+    const int card = h2_fruit_slice_card_for_fruit(kind);
+    CHECK(card == (kind < 5u ? (int)kind : -1));
+  }
+  CHECK(h2_fruit_slice_card_for_fruit(255u) == -1);
+  for (unsigned i = 0; i < 40u; ++i)
+    h2_fruit_slice_cards_on_slice(&c, 6u + i % 4u, 1u, 0u, 120, 120);
+  CHECK(c.run_slices == 40u);
+  for (unsigned id = 0u; id < H2_FRUIT_SLICE_CARD_COUNT; ++id)
+    CHECK(c.counts[id] == (id == H2_FRUIT_SLICE_CARD_FRUIT_SALAD ? 1u : 0u));
+  h2_fruit_slice_cards_on_slice(&c, H2_FRUIT_SLICE_BOMB, 1u, 0u, 120, 120);
+  h2_fruit_slice_cards_on_slice(&c, 255u, 1u, 0u, 120, 120);
+  CHECK(c.run_slices == 40u);
+  for (unsigned kind = 0u; kind < 5u; ++kind) {
+    c.pity[kind] = H2_FRUIT_SLICE_CARD_DROP_PITY - 1u;
+    h2_fruit_slice_cards_on_slice(&c, kind, 1u, 0u, 120, 120);
+    CHECK(c.counts[kind] == 1u);
+  }
+  uint8_t bytes[H2_FRUIT_SLICE_CARDS_BYTES], again[H2_FRUIT_SLICE_CARDS_BYTES];
+  h2_fruit_slice_cards_encode(&c, bytes);
+  h2_fruit_slice_cards_t restored;
+  h2_fruit_slice_cards_init(&restored, 160, 160, 1u);
+  CHECK(h2_fruit_slice_cards_decode(&restored, bytes, sizeof(bytes)));
+  h2_fruit_slice_cards_encode(&restored, again);
+  CHECK(memcmp(bytes, again, sizeof(bytes)) == 0);
+}
+
 static void test_album_reserves_back_target(void) {
   const int32_t sizes[][2] = {
       {160, 160}, {240, 240}, {480, 320}, {368, 448}, {480, 800}};
@@ -313,6 +345,7 @@ static void test_album_reserves_back_target(void) {
 }
 
 int main(void) {
+  test_new_fruit_card_mapping();
   test_album_reserves_back_target();
   test_pending_collection_merge();
   test_play_awards_and_rare_sound();

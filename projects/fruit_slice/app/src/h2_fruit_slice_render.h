@@ -25,11 +25,12 @@ extern "C" {
 /** One bit per band: supports heights up to 64 * 16 = 1024 rows. */
 #define H2_FRUIT_SLICE_MAX_BANDS 64
 /** Cached fruit textures; more distinct sizes fall back to flat drawing. */
-#define H2_FRUIT_SLICE_SPRITE_CAPACITY 32
+#define H2_FRUIT_SLICE_SPRITE_CAPACITY 40
 
 /** Cache of per-kind, per-radius fruit textures in a fruit-local frame.
  * Whole-fruit textures hold unlit color, lit per pixel in screen space; half
- * textures hold the cut face. Textures are built on first use. */
+ * textures hold the cut face. New silhouettes use full fruit-local cut masks
+ * with transparent texels. Textures are built on first use. */
 typedef struct h2_fruit_slice_sprites h2_fruit_slice_sprites_t;
 
 typedef struct h2_fruit_slice_canvas {

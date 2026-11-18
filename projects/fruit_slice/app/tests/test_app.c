@@ -301,6 +301,9 @@ static h2_pal_result_t touch_poll(void* user, h2_pal_touch_event_t* out) {
       out->x = leg % 2u == 0u ? 0 : w;
       out->y = (int32_t)((float)h * (0.25f + 0.10f * (float)leg));
     }
+    /* Map layout-space strokes to the configured Touch coordinate range. */
+    out->x = out->x * fx.touch.info.width / w;
+    out->y = out->y * fx.touch.info.height / h;
     return H2_PAL_OK;
   }
   /* Finish naturally earned reveals after autoplay stops, without slicing
@@ -1129,10 +1132,12 @@ static void test_cards_transient_sqlite_read(void) {
     /* The third case recovers after real play has already earned duplicates
      * and a new bomb, exercising pending increments in the public App. */
     card_fault.recover_after_frame = failure == 2u ? 330u : 0u;
-    reset(400u);
+    /* Variety changes deterministic wave choices. 520 frames reaches the
+     * weapon's 10-point duplicate as well as the first bomb with seed 42. */
+    reset(520u);
     fx.pref_override = &recovering_api;
     fx.fast_clock = true;
-    fx.autoplay_until = 400u;
+    fx.autoplay_until = 520u;
     CHECK(run() == H2_PAL_OK);
     CHECK(card_fault.successful_reads == 1u);
     CHECK(failure == 2u ? card_fault.reads > 2u : card_fault.reads == 2u);
@@ -1317,6 +1322,43 @@ static void test_bilingual_last_page_claim_and_purchase(void) {
       CHECK(saved.challenge_credit[3] == 0u);
       h2_sqlite_destroy(storage);
       CHECK(remove(database) == 0);
+    }
+  }
+}
+
+static void test_variety_actual_frames(void) {
+  const int sizes[][2] = {{480, 320}, {160, 160}};
+  for (unsigned size = 0; size < 2u; ++size) {
+    uint32_t expected_slices = 0u;
+    for (unsigned language = 0; language < 2u; ++language) {
+      memset(&pref, 0, sizeof(pref));
+      reset(1200u);
+      fx.use_pref = true;
+      fx.display.info.width = fx.touch.info.width = sizes[size][0];
+      fx.display.info.height = fx.touch.info.height = sizes[size][1];
+      fx.language = (h2_fruit_slice_language_t)language;
+      fx.fast_clock = true;
+      fx.autoplay_until = 1200u;
+      /* Let a normal mid-run wave rise intact before resuming real strokes. */
+      fx.autoplay_pause_from = 580u;
+      fx.autoplay_pause_until = 610u;
+      char name[96];
+      (void)snprintf(name, sizeof(name), "variety-actual-app-%s-%dx%d",
+                     language ? "en" : "zh", sizes[size][0], sizes[size][1]);
+      fx.capture_name = name;
+      fx.capture_from = 20u;
+      fx.capture_until = 1200u;
+      fx.capture_every = 20u;
+      CHECK(run() == H2_PAL_OK);
+      CHECK(fx.display.presents > 100u && fx.allocations == fx.frees);
+      h2_fruit_slice_progress_t earned;
+      CHECK(pref.exists && h2_fruit_slice_progress_decode(&earned, pref.saved,
+                                                          sizeof(pref.saved)));
+      CHECK(earned.fruit_credit >= 20u);
+      if (language == 0u)
+        expected_slices = earned.fruit_credit;
+      else
+        CHECK(earned.fruit_credit == expected_slices);
     }
   }
 }
@@ -1571,6 +1613,9 @@ static void test_challenge_claim_retry_sqlite(void) {
 }
 
 static void prepare_natural_result_profile(void) {
+  /* With nine fruit kinds, seed 20 preserves the natural 12-point/two-card
+   * result in both language routes without changing the award assertions. */
+  fx.seed = 20u;
   memset(&pref, 0, sizeof(pref));
   pref.best_value = 1u;
   const h2_fruit_slice_progress_t initial = {.owned = 1u};
@@ -1822,6 +1867,7 @@ int main(void) {
   test_bilingual_last_page_claim_and_purchase();
   test_020_sqlite_profile_upgrade();
   test_challenge_claim_retry_sqlite();
+  test_variety_actual_frames();
   for (unsigned language = 0; language < 2u; ++language) {
     const h2_fruit_slice_language_t value = language == 0u
                                                 ? H2_FRUIT_SLICE_LANGUAGE_ZH_CN
