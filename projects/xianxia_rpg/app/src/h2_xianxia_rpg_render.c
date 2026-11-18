@@ -1664,7 +1664,7 @@ static void c7_tile_art(canvas_t* canvas, const game_t* game, char tile,
                 ? H2_XIANXIA_RPG_TEXT_C7_EXIT
                 : H2_XIANXIA_RPG_TEXT_C7_BACK;
   }
-  if (label != H2_XIANXIA_RPG_TEXT_COUNT) {
+  if (label != H2_XIANXIA_RPG_TEXT_COUNT && t >= 36.0f) {
     const char* word = h2_xianxia_rpg_text[label];
     const int32_t width = h2_xianxia_rpg_text_width(false, word);
     fill_rect(canvas, x + t * .5f - (float)width * .5f - 2, y + t * .55f,
@@ -2106,6 +2106,35 @@ static void map_background(canvas_t* canvas, const game_t* game) {
     fill_rect(canvas, (float)l->map_x, (float)l->map_y, (float)(COLS * l->tile),
               (float)(ROWS * l->tile), RGB(14, 22, 46),
               game->map == H2_XIANXIA_RPG_MAP_NIGHT_VILLAGE ? 110u : 48u);
+  }
+  if (game->chapter == 7u && l->tile < 36) {
+    /* Small tiles cannot contain an 18px glyph below their icon. Paint
+     * names after the entire grid, centered on the object, so the next row
+     * cannot erase the lower half of a label. */
+    for (int row = 0; row < ROWS; ++row) {
+      for (int col = 0; col < COLS; ++col) {
+        const char tile = h2_xianxia_rpg_tile(game->map, col, row);
+        const h2_xianxia_rpg_text_id_t id =
+            tile == 'M'   ? H2_XIANXIA_RPG_TEXT_C7_STONE
+            : tile == 'L' ? H2_XIANXIA_RPG_TEXT_C7_LAMP
+            : tile == 'W' ? H2_XIANXIA_RPG_TEXT_C7_WATER
+            : tile == 'A' ? H2_XIANXIA_RPG_TEXT_C7_TREATY
+            : tile == 'H' ? H2_XIANXIA_RPG_TEXT_C7_HEART
+            : tile == 'E' ? (game->map == H2_XIANXIA_RPG_MAP_MIRROR_SHORE
+                                 ? H2_XIANXIA_RPG_TEXT_C7_EXIT
+                                 : H2_XIANXIA_RPG_TEXT_C7_BACK)
+                          : H2_XIANXIA_RPG_TEXT_COUNT;
+        if (id == H2_XIANXIA_RPG_TEXT_COUNT) continue;
+        const float cx = (float)l->map_x + ((float)col + .5f) * (float)l->tile;
+        const int y = l->map_y + row * l->tile + (l->tile - LINE_PX) / 2;
+        const float tw =
+            (float)h2_xianxia_rpg_text_width(false, h2_xianxia_rpg_text[id]);
+        fill_rect(canvas, cx - tw * .5f - 1, (float)y, tw + 2, LINE_PX,
+                  RGB(20, 33, 43), 256u);
+        text_centered(canvas, false, h2_xianxia_rpg_text[id], cx, y, C_TEXT,
+                      256u);
+      }
+    }
   }
   river_fog(canvas, game);
   exit_marks(canvas, game);
@@ -3558,7 +3587,8 @@ static void draw_battle_static(canvas_t* canvas, const game_t* game) {
     const char* line = h2_xianxia_rpg_text[hint];
     const float tw = (float)h2_xianxia_rpg_text_width(false, line);
     const float cx = (float)w * 0.5f,
-                y = (b->lamp_battle || game->chapter == 5u) &&
+                y = (b->lamp_battle || game->chapter == 5u ||
+                     game->chapter == 7u) &&
                             game->height >= 300
                         ? 88.0f
                         : (float)(2 * LINE_PX + 24);
@@ -3570,7 +3600,8 @@ static void draw_battle_static(canvas_t* canvas, const game_t* game) {
     text_centered(canvas, false, line, cx, (int32_t)y + 5, C_TEXT, 256u);
   }
   /* The companion's next action above her head. */
-  if (b->ally && choosing && !b->lamp_battle && game->chapter != 5u) {
+  if (b->ally && choosing && !b->lamp_battle && game->chapter != 5u &&
+      !(game->chapter == 7u && game->height < 360)) {
     const h2_xianxia_rpg_ally_action_t intent =
         h2_xianxia_rpg_ally_intent(game);
     char bubble[48];
@@ -4048,7 +4079,8 @@ static void battle_scene(canvas_t* canvas, const game_t* game) {
   const float w = (float)canvas->width;
   const float sh = (float)l->stage.h;
   const float u = game->unit;
-  const bool compact = b->lamp_battle || game->chapter == 5u;
+  const bool compact =
+      b->lamp_battle || game->chapter == 5u || game->chapter == 7u;
   if (compact && l->stage.h <= 122) return;
   const float s = compact && sh < 260.0f ? (sh - 122.0f) * 0.65f
                                          : fminf(sh * 0.5f, w * 0.26f);
