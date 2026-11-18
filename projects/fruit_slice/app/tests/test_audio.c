@@ -293,10 +293,14 @@ static void test_actual_game_transitions(void) {
   CHECK(game.sound_count == H2_FRUIT_SLICE_SOUND_QUEUE);
   h2_fruit_slice_game_init(&game, 480, 480, 42, 0);
   h2_fruit_slice_game_pointer(&game, H2_FRUIT_SLICE_POINTER_DOWN, 320, 20);
-  CHECK(game.audio_mute == H2_FRUIT_SLICE_MUTE_SFX);
+  CHECK(game.audio_mute == 0u); /* A drag out of settings never toggles. */
   h2_fruit_slice_game_pointer(&game, H2_FRUIT_SLICE_POINTER_MOVE, 420, 288);
   h2_fruit_slice_game_pointer(&game, H2_FRUIT_SLICE_POINTER_UP, 420, 288);
   CHECK(game.phase == H2_FRUIT_SLICE_PHASE_TITLE); /* Settings never slice. */
+  CHECK(game.audio_mute == 0u);
+  h2_fruit_slice_game_pointer(&game, H2_FRUIT_SLICE_POINTER_DOWN, 320, 20);
+  h2_fruit_slice_game_pointer(&game, H2_FRUIT_SLICE_POINTER_UP, 320, 20);
+  CHECK(game.audio_mute == H2_FRUIT_SLICE_MUTE_SFX);
 }
 
 static void tap_control(h2_fruit_slice_game_t* game, uint32_t button) {
