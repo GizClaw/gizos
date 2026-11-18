@@ -3010,13 +3010,16 @@ static void draw_lamp_status(canvas_t* canvas, const game_t* game) {
                  h2_xianxia_rpg_text[H2_XIANXIA_RPG_TEXT_C4_LAMP],
                  (unsigned)b->lamp_hp, (unsigned)b->wave,
                  (unsigned)b->wave_turn, (unsigned)b->enemy_hp);
-  fill_rect(canvas, 8, 58, (float)game->width - 16, 26, RGB(20, 16, 24), 256u);
-  text_centered(canvas, false, line, (float)game->width * 0.5f, 58, C_GOLD,
+  const int32_t lamp_y = game->height < 300 ? 44 : 58;
+  fill_rect(canvas, 8, (float)lamp_y, (float)game->width - 16, 26,
+            RGB(20, 16, 24), 256u);
+  text_centered(canvas, false, line, (float)game->width * 0.5f, lamp_y, C_GOLD,
                 256u);
-  fill_rect(canvas, 10, 82, (float)game->width - 20, 4, RGB(66, 52, 44), 256u);
+  fill_rect(canvas, 10, (float)lamp_y + 24, (float)game->width - 20, 4,
+            RGB(66, 52, 44), 256u);
   if (b->lamp_max > 0u)
     fill_rect(
-        canvas, 10, 82,
+        canvas, 10, (float)lamp_y + 24,
         ((float)game->width - 20) * (float)b->lamp_hp / (float)b->lamp_max, 4,
         RGB(240, 174, 70), 256u);
 }
@@ -3142,8 +3145,9 @@ static void draw_battle_static(canvas_t* canvas, const game_t* game) {
   if (hint != H2_XIANXIA_RPG_TEXT_COUNT) {
     const char* line = h2_xianxia_rpg_text[hint];
     const float tw = (float)h2_xianxia_rpg_text_width(false, line);
-    const float cx = (float)w * 0.5f,
-                y = b->lamp_battle ? 88.0f : (float)(2 * LINE_PX + 24);
+    const float cx = (float)w * 0.5f, y = b->lamp_battle && game->height >= 300
+                                              ? 88.0f
+                                              : (float)(2 * LINE_PX + 24);
     rounded_rect(canvas, cx - tw * 0.5f - 14.0f, y, cx + tw * 0.5f + 14.0f,
                  y + (float)LINE_PX + 10.0f, 8.0f, C_GOLD, 230u);
     rounded_rect(canvas, cx - tw * 0.5f - 12.0f, y + 2.0f,
@@ -3498,10 +3502,16 @@ static void battle_scene(canvas_t* canvas, const game_t* game) {
   const float w = (float)canvas->width;
   const float sh = (float)l->stage.h;
   const float u = game->unit;
-  const float s = fminf(sh * 0.5f, w * 0.26f);
+  if (b->lamp_battle && l->stage.h <= 122) return;
+  const float s = b->lamp_battle && sh < 260.0f ? (sh - 122.0f) * 0.65f
+                                                : fminf(sh * 0.5f, w * 0.26f);
+  const float lamp_y = b->lamp_battle && sh < 260.0f
+                           ? 122.0f + (sh - 122.0f) * 0.15f
+                           : sh * 0.62f;
   clip_to(canvas, 0, b->lamp_battle ? 122 : 2 * LINE_PX + 20, canvas->width,
           l->stage.h);
-  float ex = w * 0.68f, ey = sh * 0.6f;
+  float ex = w * 0.68f,
+        ey = b->lamp_battle && sh < 260.0f ? (122.0f + sh) * 0.5f : sh * 0.6f;
   float hx = w * 0.26f;
   float ax = w * 0.1f;
   const float hfeet = sh * 0.94f;
@@ -3532,7 +3542,7 @@ static void battle_scene(canvas_t* canvas, const game_t* game) {
   if (b->hero_flash_ms > 0u) hx += shake;
 
   if (b->lamp_battle)
-    lamp_post(canvas, w * 0.39f, sh * 0.62f, s * 0.65f, b->lamp_hp > 0u);
+    lamp_post(canvas, w * 0.39f, lamp_y, s * 0.65f, b->lamp_hp > 0u);
   /* Enemy, or its dispersal after defeat. */
   if (b->state != H2_XIANXIA_RPG_BATTLE_VICTORY && b->split) {
     /* Two shadows; the companion's lantern rings the real one. */
@@ -3610,7 +3620,7 @@ static void battle_scene(canvas_t* canvas, const game_t* game) {
       glow(canvas, lx, ly, s * (0.4f + 0.3f * fade), RGB(200, 255, 236),
            (uint32_t)(220.0f * fade));
       const float to_x = b->lamp_battle ? w * 0.39f + s * 0.325f : ex;
-      const float to_y = b->lamp_battle ? sh * 0.62f + s * 0.18f : ey;
+      const float to_y = b->lamp_battle ? lamp_y + s * 0.18f : ey;
       capsule(canvas, lx, ly, to_x, to_y, s * 0.08f, RGB(220, 255, 240),
               (uint32_t)(110.0f * fade));
       glow(canvas, to_x, to_y, s * 0.7f, RGB(230, 255, 245),
@@ -3714,7 +3724,7 @@ static void battle_scene(canvas_t* canvas, const game_t* game) {
   /* Damage and healing numbers float upward. */
   for (unsigned i = 0; i < H2_XIANXIA_RPG_MAX_POPUPS; ++i) {
     const h2_xianxia_rpg_popup_t* p = &b->popups[i];
-    if (!p->active) continue;
+    if (!p->active || (b->lamp_battle && l->stage.h < 170)) continue;
     const float t = (float)p->age_ms / (float)H2_XIANXIA_RPG_POPUP_MS;
     char value[16];
     (void)snprintf(value, sizeof(value), p->heal ? "+%u" : "%u",
@@ -3724,7 +3734,7 @@ static void battle_scene(canvas_t* canvas, const game_t* game) {
                                             : hx;
     const float px = (p->on_enemy ? ex : owner_x) + (float)p->slot * s * 0.18f;
     float py = (p->on_enemy       ? ey - s * 0.5f
-                : p->target == 2u ? sh * 0.62f
+                : p->target == 2u ? lamp_y
                                   : hfeet - s * 1.1f) -
                t * s * 0.35f;
     if (b->lamp_battle) py = fmaxf(py, 126.0f);

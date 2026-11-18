@@ -222,8 +222,10 @@ static void compute_layout(h2_xianxia_rpg_game_t* game) {
   const int32_t action_w = (w - 24) / 2;
   l->escort_actions[0] = rect(8, h - 48, action_w, 40);
   l->escort_actions[1] = rect(16 + action_w, h - 48, action_w, 40);
-  l->party[0] = rect(8, 6, action_w, 48);
-  l->party[1] = rect(16 + action_w, 6, action_w, 48);
+  const int32_t party_y = h < 300 ? 0 : 6;
+  const int32_t party_h = h < 300 ? 44 : 48;
+  l->party[0] = rect(8, party_y, action_w, party_h);
+  l->party[1] = rect(16 + action_w, party_y, action_w, party_h);
 
   /* The renderer draws the shadows of a split boss inside these boxes. */
   const float sh = (float)l->stage.h;
