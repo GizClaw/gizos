@@ -29,6 +29,7 @@ lvgl_font(
     ranges = ["0x20-0x7E"],
     symbol_sources = [
         "src/h2_xianxia_rpg_chapter2.c",
+        "src/h2_xianxia_rpg_chapter3.c",
         "src/h2_xianxia_rpg_story.c",
     ],
 )
@@ -65,6 +66,7 @@ cc_library(
     srcs = _PRIVATE_HEADERS + [
         "src/h2_xianxia_rpg.c",
         "src/h2_xianxia_rpg_chapter2.c",
+        "src/h2_xianxia_rpg_chapter3.c",
         "src/h2_xianxia_rpg_game.c",
         "src/h2_xianxia_rpg_render.c",
         "src/h2_xianxia_rpg_story.c",

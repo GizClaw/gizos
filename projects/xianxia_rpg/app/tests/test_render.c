@@ -104,7 +104,7 @@ static void test_glyph_coverage(void) {
   }
   CHECK(missing == 0u);
   static const char* const titles[] = {
-      "竹溪仙缘", "竹溪灯影", "渡口迷雾", "终", "0123456789", "+",
+      "竹溪仙缘", "竹溪灯影", "渡口迷雾", "雨夜剑阁", "终", "0123456789", "+",
   };
   for (size_t i = 0; i < sizeof(titles) / sizeof(titles[0]); ++i) {
     const char* s = titles[i];
@@ -381,6 +381,38 @@ static void test_keys(void) {
   CHECK(h2_xianxia_rpg_all_bands(0) == 0u);
 }
 
+static void test_chapter3_screens(int32_t width, int32_t height) {
+  h2_xianxia_rpg_game_init(&game, width, height, 33u, NULL);
+  game.chapter = game.prologue_chapter = 3u;
+  game.phase = H2_XIANXIA_RPG_PHASE_PROLOGUE;
+  check_all_layers(&game);
+  game.phase = H2_XIANXIA_RPG_PHASE_EXPLORE;
+  game.stage = H2_XIANXIA_RPG_STAGE_C3_ARRAY;
+  for (int m = H2_XIANXIA_RPG_MAP_RAIN_PATH; m <= H2_XIANXIA_RPG_MAP_SWORD_HALL;
+       ++m) {
+    game.map = (h2_xianxia_rpg_map_t)m;
+    for (uint32_t state = 0; state < 4; ++state) {
+      game.flags = state | state << 2 | state << 4;
+      if (state == 3u) game.flags |= H2_XIANXIA_RPG_FLAG_C3_OPEN;
+      check_all_layers(&game);
+    }
+  }
+  game.phase = H2_XIANXIA_RPG_PHASE_BATTLE;
+  game.battle.enemy = H2_XIANXIA_RPG_ENEMY_SWORD_SOUL;
+  game.battle.boss = game.battle.ally = true;
+  game.battle.state = H2_XIANXIA_RPG_BATTLE_COMMAND;
+  game.battle.enemy_hp = game.battle.enemy_hp_max = 520u;
+  for (uint8_t stance = 0; stance < 3; ++stance) {
+    game.battle.sword_stance = stance;
+    game.flags = 0u;
+    check_all_layers(&game);
+    game.flags = H2_XIANXIA_RPG_FLAG_C3_STELE1 << stance;
+    check_all_layers(&game);
+  }
+  game.phase = H2_XIANXIA_RPG_PHASE_ENDING;
+  check_all_layers(&game);
+}
+
 int main(void) {
   test_glyph_coverage();
   test_keys();
@@ -390,6 +422,7 @@ int main(void) {
   for (size_t i = 0; i < sizeof(sizes) / sizeof(sizes[0]); ++i) {
     test_screens(sizes[i][0], sizes[i][1]);
     test_chapter2_screens(sizes[i][0], sizes[i][1]);
+    test_chapter3_screens(sizes[i][0], sizes[i][1]);
   }
   printf("xianxia_rpg render tests passed\n");
   return 0;

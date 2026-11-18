@@ -254,47 +254,48 @@ static const h2_xianxia_rpg_line_t k_berth[] = {
 };
 
 static const h2_xianxia_rpg_script_t
-    k_scripts[H2_XIANXIA_RPG_SCRIPT_COUNT - H2_XIANXIA_RPG_SCRIPT_C2_FIRST] = {
+    k_scripts[H2_XIANXIA_RPG_SCRIPT_C3_FIRST - H2_XIANXIA_RPG_SCRIPT_C2_FIRST] =
+        {
 #define AT(id) [H2_XIANXIA_RPG_SCRIPT_##id - H2_XIANXIA_RPG_SCRIPT_C2_FIRST]
-        AT(C2_INTRO) = SCRIPT(k_intro, NONE),
-        AT(C2_MASTER_BRIEF) = SCRIPT(k_master_brief, C2_BRIEFED),
-        AT(C2_MASTER_WAIT) = SCRIPT(k_master_wait, NONE),
-        AT(C2_MASTER_LATER) = SCRIPT(k_master_later, NONE),
-        AT(C2_MASTER_REPORT) = SCRIPT(k_master_report, ENDING),
-        AT(C2_JIANGLI_MEET) = SCRIPT(k_jiangli_meet, C2_TUTORIAL),
-        AT(C2_JIANGLI_JOIN) = SCRIPT(k_jiangli_join, C2_JOINED),
-        AT(C2_TEA_FIRST) = SCRIPT(k_tea_first, C2_TEA),
-        AT(C2_TEA_REST) = SCRIPT(k_tea_rest, REST),
-        AT(C2_TEA_CLEAR) = SCRIPT(k_tea_clear, REST),
-        AT(C2_TRAVELER) = SCRIPT(k_traveler, NONE),
-        AT(C2_TRAVELER_CLEAR) = SCRIPT(k_traveler_clear, NONE),
-        AT(C2_SIGN) = SCRIPT(k_sign, NONE),
-        AT(C2_DOCK_CLOSED) = SCRIPT(k_dock_closed, NONE),
-        AT(C2_REEDS_TIP) = SCRIPT(k_reeds_tip, C2_REEDS_TIP),
-        AT(C2_FOG_WALL) = SCRIPT(k_fog_wall, NONE),
-        AT(C2_POST1) = SCRIPT(k_post1, C2_LIGHT_POST1),
-        AT(C2_POST2) = SCRIPT(k_post2, C2_LIGHT_POST2),
-        AT(C2_POST_REST) = SCRIPT(k_post_rest, REST),
-        AT(C2_FISHER) = SCRIPT(k_fisher, C2_FISHER),
-        AT(C2_FISHER_LATER) = SCRIPT(k_fisher_later, NONE),
-        AT(C2_ROPE_C1) = SCRIPT(k_rope_c1, C2_ROPE),
-        AT(C2_ROPE) = SCRIPT(k_rope, C2_ROPE),
-        AT(C2_ROPE_LATER) = SCRIPT(k_rope_later, NONE),
-        AT(C2_TRUST) = SCRIPT(k_trust, NONE),
-        AT(C2_BASKET) = SCRIPT(k_basket, C2_BASKET),
-        AT(C2_BASKET_EMPTY) = SCRIPT(k_basket_empty, NONE),
-        AT(C2_FOUND_BOAT) = SCRIPT(k_found_boat, C2_FOUND_BOAT),
-        AT(C2_SAIL) = SCRIPT(k_sail, C2_SAIL),
-        AT(C2_WRECK_LAND) = SCRIPT(k_wreck_land, C2_LIGHT_POST4),
-        AT(C2_GUARD) = SCRIPT(k_guard, C2_GUARD_BATTLE),
-        AT(C2_GUARD_DOWN) = SCRIPT(k_guard_down, NONE),
-        AT(C2_WRAITH) = SCRIPT(k_wraith, C2_WRAITH_BATTLE),
-        AT(C2_RELIT) = SCRIPT(k_relit, C2_HOME),
-        AT(C2_REVIVE_BOSS) = SCRIPT(k_revive_boss, NONE),
-        AT(C2_BOAT_STAY) = SCRIPT(k_boat_stay, NONE),
-        AT(C2_SAIL_HOME) = SCRIPT(k_sail_home, C2_HOME),
-        AT(C2_LAMP_LIT) = SCRIPT(k_lamp_lit, NONE),
-        AT(C2_BERTH) = SCRIPT(k_berth, NONE),
+            AT(C2_INTRO) = SCRIPT(k_intro, NONE),
+            AT(C2_MASTER_BRIEF) = SCRIPT(k_master_brief, C2_BRIEFED),
+            AT(C2_MASTER_WAIT) = SCRIPT(k_master_wait, NONE),
+            AT(C2_MASTER_LATER) = SCRIPT(k_master_later, NONE),
+            AT(C2_MASTER_REPORT) = SCRIPT(k_master_report, ENDING),
+            AT(C2_JIANGLI_MEET) = SCRIPT(k_jiangli_meet, C2_TUTORIAL),
+            AT(C2_JIANGLI_JOIN) = SCRIPT(k_jiangli_join, C2_JOINED),
+            AT(C2_TEA_FIRST) = SCRIPT(k_tea_first, C2_TEA),
+            AT(C2_TEA_REST) = SCRIPT(k_tea_rest, REST),
+            AT(C2_TEA_CLEAR) = SCRIPT(k_tea_clear, REST),
+            AT(C2_TRAVELER) = SCRIPT(k_traveler, NONE),
+            AT(C2_TRAVELER_CLEAR) = SCRIPT(k_traveler_clear, NONE),
+            AT(C2_SIGN) = SCRIPT(k_sign, NONE),
+            AT(C2_DOCK_CLOSED) = SCRIPT(k_dock_closed, NONE),
+            AT(C2_REEDS_TIP) = SCRIPT(k_reeds_tip, C2_REEDS_TIP),
+            AT(C2_FOG_WALL) = SCRIPT(k_fog_wall, NONE),
+            AT(C2_POST1) = SCRIPT(k_post1, C2_LIGHT_POST1),
+            AT(C2_POST2) = SCRIPT(k_post2, C2_LIGHT_POST2),
+            AT(C2_POST_REST) = SCRIPT(k_post_rest, REST),
+            AT(C2_FISHER) = SCRIPT(k_fisher, C2_FISHER),
+            AT(C2_FISHER_LATER) = SCRIPT(k_fisher_later, NONE),
+            AT(C2_ROPE_C1) = SCRIPT(k_rope_c1, C2_ROPE),
+            AT(C2_ROPE) = SCRIPT(k_rope, C2_ROPE),
+            AT(C2_ROPE_LATER) = SCRIPT(k_rope_later, NONE),
+            AT(C2_TRUST) = SCRIPT(k_trust, NONE),
+            AT(C2_BASKET) = SCRIPT(k_basket, C2_BASKET),
+            AT(C2_BASKET_EMPTY) = SCRIPT(k_basket_empty, NONE),
+            AT(C2_FOUND_BOAT) = SCRIPT(k_found_boat, C2_FOUND_BOAT),
+            AT(C2_SAIL) = SCRIPT(k_sail, C2_SAIL),
+            AT(C2_WRECK_LAND) = SCRIPT(k_wreck_land, C2_LIGHT_POST4),
+            AT(C2_GUARD) = SCRIPT(k_guard, C2_GUARD_BATTLE),
+            AT(C2_GUARD_DOWN) = SCRIPT(k_guard_down, NONE),
+            AT(C2_WRAITH) = SCRIPT(k_wraith, C2_WRAITH_BATTLE),
+            AT(C2_RELIT) = SCRIPT(k_relit, C2_HOME),
+            AT(C2_REVIVE_BOSS) = SCRIPT(k_revive_boss, NONE),
+            AT(C2_BOAT_STAY) = SCRIPT(k_boat_stay, NONE),
+            AT(C2_SAIL_HOME) = SCRIPT(k_sail_home, C2_HOME),
+            AT(C2_LAMP_LIT) = SCRIPT(k_lamp_lit, NONE),
+            AT(C2_BERTH) = SCRIPT(k_berth, NONE),
 #undef AT
 };
 
@@ -318,7 +319,7 @@ static const h2_xianxia_rpg_chapter_info_t k_info = {
     .title = "渡口迷雾",
     .ending = {"雾散渡开，丙三号回到了青萍渡的泊位。",
                "雨纹剑穗指向西山剑阁，江篱与你同行。"},
-    .next = "第二章 完 · 下一章《雨夜剑阁》敬请期待",
+    .next = "第二章 完 · 下一章《雨夜剑阁》",
     .recap =
         "竹溪溪水一夜发黑，沈青崖北上墨溪古祠，重新封住了墨蛟。祭坛边落着一枚"
         "“青萍渡·丙三”铜牌，旧符纸被人一剑削开。过了溪灯节，他带着铜牌顺流而下，"
@@ -326,7 +327,7 @@ static const h2_xianxia_rpg_chapter_info_t k_info = {
 };
 
 static bool c2_map(h2_xianxia_rpg_map_t map) {
-  return map >= H2_XIANXIA_RPG_MAP_DOCK && map < H2_XIANXIA_RPG_MAP_COUNT;
+  return map >= H2_XIANXIA_RPG_MAP_DOCK && map <= H2_XIANXIA_RPG_MAP_WRECK;
 }
 
 char h2_xianxia_rpg_c2_tile(h2_xianxia_rpg_map_t map, int32_t x, int32_t y) {
@@ -342,7 +343,8 @@ const char* h2_xianxia_rpg_c2_map_name(h2_xianxia_rpg_map_t map) {
 
 const h2_xianxia_rpg_script_t* h2_xianxia_rpg_c2_script(
     h2_xianxia_rpg_script_id_t id) {
-  if (id < H2_XIANXIA_RPG_SCRIPT_C2_FIRST || id >= H2_XIANXIA_RPG_SCRIPT_COUNT)
+  if (id < H2_XIANXIA_RPG_SCRIPT_C2_FIRST ||
+      id >= H2_XIANXIA_RPG_SCRIPT_C3_FIRST)
     return NULL;
   return &k_scripts[id - H2_XIANXIA_RPG_SCRIPT_C2_FIRST];
 }
