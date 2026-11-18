@@ -49,6 +49,16 @@ cc_test(
 )
 
 cc_test(
+    name = "progression_test",
+    srcs = _PRIVATE_HEADERS + ["tests/test_progression.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [":fruit_slice"],
+)
+
+cc_test(
     name = "cards_test",
     srcs = _PRIVATE_HEADERS + ["tests/test_cards.c"],
     conlyopts = H2_C11_OPTS,

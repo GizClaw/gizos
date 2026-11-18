@@ -614,7 +614,12 @@ static void script_tap_at(unsigned frame, int32_t x, int32_t y) {
 
 static void test_progress_persists_across_sessions(void) {
   memset(&pref, 0, sizeof(pref));
-  const h2_fruit_slice_progress_t initial = {80u, 10u, 0u, 1u, 1u, 0u};
+  const h2_fruit_slice_progress_t initial = {.coins = 80u,
+                                             .fruit_credit = 10u,
+                                             .combo_credit = 0u,
+                                             .score_task = 1u,
+                                             .owned = 1u,
+                                             .equipped = 0u};
   h2_fruit_slice_progress_encode(&initial, pref.saved);
   pref.exists = true;
   pref.failed_commits = 1u;
@@ -663,7 +668,12 @@ static void test_progress_persists_across_sessions(void) {
 
 static void test_unreadable_progress_is_preserved(void) {
   memset(&pref, 0, sizeof(pref));
-  const h2_fruit_slice_progress_t initial = {72u, 10u, 2u, 2u, 3u, 1u};
+  const h2_fruit_slice_progress_t initial = {.coins = 72u,
+                                             .fruit_credit = 10u,
+                                             .combo_credit = 2u,
+                                             .score_task = 2u,
+                                             .owned = 3u,
+                                             .equipped = 1u};
   h2_fruit_slice_progress_encode(&initial, pref.saved);
   pref.exists = true;
   for (unsigned failure = 0; failure < 2u; ++failure) {
@@ -671,7 +681,7 @@ static void test_unreadable_progress_is_preserved(void) {
       pref.read_result = H2_PAL_ERR_IO;
     else {
       pref.read_result = H2_PAL_OK;
-      pref.saved[4] = 2u; /* A newer format must never be overwritten. */
+      pref.saved[4] = 3u; /* A newer format must never be overwritten. */
     }
     uint8_t before[H2_FRUIT_SLICE_PROGRESS_BYTES];
     memcpy(before, pref.saved, sizeof(before));
@@ -826,7 +836,7 @@ static void test_fresh_sqlite_storage(void) {
   for (unsigned invalid = 0; invalid < 2u; ++invalid) {
     uint8_t bytes[H2_FRUIT_SLICE_PROGRESS_BYTES];
     h2_fruit_slice_progress_encode(&saved, bytes);
-    bytes[invalid == 0u ? 4u : 0u] = invalid == 0u ? 2u : 0u;
+    bytes[invalid == 0u ? 4u : 0u] = invalid == 0u ? 3u : 0u;
     CHECK(h2_pal_pref_open(h2_sqlite_pref_api(storage),
                            H2_FRUIT_SLICE_PREF_NAMESPACE,
                            H2_PAL_PREF_OPEN_READ_WRITE, &ns) == H2_PAL_OK);
@@ -1139,7 +1149,290 @@ static void test_cards_write_retry_and_read_error(void) {
   CHECK(memcmp(saved, pref.cards_saved, sizeof(saved)) == 0);
 }
 
+static void script_control(h2_fruit_slice_game_t* ui, uint32_t button) {
+  h2_fruit_slice_rect_t r;
+  CHECK(h2_fruit_slice_game_button_rect(ui, button, &r));
+  const int32_t x = (int32_t)((r.x0 + r.x1) * 0.5f);
+  const int32_t y = (int32_t)((r.y0 + r.y1) * 0.5f);
+  script_tap(x, y);
+  h2_fruit_slice_game_pointer(ui, H2_FRUIT_SLICE_POINTER_DOWN, (float)x,
+                              (float)y);
+  h2_fruit_slice_game_pointer(ui, H2_FRUIT_SLICE_POINTER_UP, (float)x,
+                              (float)y);
+}
+
+static void script_visit(h2_fruit_slice_game_t* ui, uint32_t button) {
+  h2_fruit_slice_rect_t r;
+  for (unsigned i = 0; i < H2_FRUIT_SLICE_TASKS; ++i) {
+    if (h2_fruit_slice_game_button_rect(ui, button, &r)) return;
+    script_control(ui, H2_FRUIT_SLICE_BUTTON_NEXT);
+  }
+  CHECK(false);
+}
+
+static h2_fruit_slice_progress_t sqlite_progress(h2_sqlite_t* storage,
+                                                 size_t expected_size) {
+  h2_pal_pref_namespace_t* ns = NULL;
+  CHECK(h2_pal_pref_open(h2_sqlite_pref_api(storage),
+                         H2_FRUIT_SLICE_PREF_NAMESPACE,
+                         H2_PAL_PREF_OPEN_READ_ONLY, &ns) == H2_PAL_OK);
+  void* data = NULL;
+  size_t size = 0u;
+  CHECK(ns->get_blob(ns, h2_desktop_platform_default_allocator(), "progress_v1",
+                     &data, &size) == H2_PAL_OK);
+  CHECK(size == expected_size);
+  h2_fruit_slice_progress_t result = {0};
+  CHECK(h2_fruit_slice_progress_decode(&result, data, size));
+  h2_pal_mem_free(h2_desktop_platform_default_allocator(), data);
+  CHECK(ns->close(ns) == H2_PAL_OK);
+  return result;
+}
+
+static void test_020_sqlite_profile_upgrade(void) {
+  const char* temporary = getenv("TEST_TMPDIR");
+  CHECK(temporary != NULL);
+  /* Real original v1 bytes: 500 coins, 20 fruit, 3 combos, already-claimed
+   * 20-point task, all old weapons, flame equipped. No v2 serializer involved.
+   */
+  const uint8_t old_progress[32] = {
+      0x46, 0x53, 0x50, 0x31, 1, 0, 0, 0, 0xf4, 1, 0, 0, 20, 0, 0, 0,
+      3,    0,    0,    0,    2, 0, 0, 0, 7,    0, 0, 0, 2,  0, 0, 0};
+  const uint8_t old_cards[32] = {0x46, 0x53, 0x43, 0x31, 1, 0, 0, 0, 2, 0, 0,
+                                 0,    16,   0,    0,    0, 5, 2, 0, 0, 0, 0,
+                                 1,    2,    3,    0,    0, 0, 0, 0, 0, 0};
+  /* Check this immutable v1 fixture against the current unchanged card wire
+   * decoder before any App run, rather than accepting a silently new format. */
+  h2_fruit_slice_cards_t collection;
+  h2_fruit_slice_cards_init(&collection, 480, 480, 1u);
+  CHECK(h2_fruit_slice_cards_decode(&collection, old_cards, sizeof(old_cards)));
+  const int sizes[][2] = {{160, 160}, {240, 240}, {480, 320}};
+  for (unsigned scenario = 0; scenario < 3u; ++scenario) {
+    char database[512];
+    (void)snprintf(database, sizeof(database), "%s/020-upgrade-%u.sqlite",
+                   temporary, scenario);
+    const h2_sqlite_config_t config = {.path = database};
+    h2_sqlite_t* storage = NULL;
+    CHECK(h2_sqlite_create(&config, &storage) == H2_PAL_OK);
+    h2_pal_pref_namespace_t* ns = NULL;
+    CHECK(h2_pal_pref_open(h2_sqlite_pref_api(storage),
+                           H2_FRUIT_SLICE_PREF_NAMESPACE,
+                           H2_PAL_PREF_OPEN_READ_WRITE, &ns) == H2_PAL_OK);
+    uint8_t legacy[32];
+    memcpy(legacy, old_progress, sizeof(legacy));
+    /* All old claimed states and equipment combinations survive migration. */
+    legacy[20] = (uint8_t)scenario;
+    legacy[24] = (uint8_t)((1u << (scenario + 1u)) - 1u);
+    legacy[28] = (uint8_t)scenario;
+    CHECK(ns->set_blob(ns, "progress_v1", legacy, sizeof(legacy)) == H2_PAL_OK);
+    CHECK(ns->set_blob(ns, "cards_v1", old_cards, sizeof(old_cards)) ==
+          H2_PAL_OK);
+    CHECK(ns->set_u32(ns, "best", 141u) == H2_PAL_OK);
+    CHECK(ns->set_u32(ns, "audio_v1", 0x41550103u) == H2_PAL_OK);
+    CHECK(ns->commit(ns) == H2_PAL_OK && ns->close(ns) == H2_PAL_OK);
+    reset(4u);
+    fx.pref_override = h2_sqlite_pref_api(storage);
+    fx.fast_clock = true;
+    CHECK(run() == H2_PAL_OK);
+    h2_fruit_slice_progress_t restored = sqlite_progress(storage, 32u);
+    CHECK(restored.coins == 500u && restored.fruit_credit == 20u &&
+          restored.combo_credit == 3u);
+    CHECK(restored.score_task == scenario &&
+          restored.owned == (1u << (scenario + 1u)) - 1u &&
+          restored.equipped == scenario);
+    for (unsigned i = 0; i < H2_FRUIT_SLICE_CHALLENGES; ++i)
+      CHECK(restored.challenge_credit[i] == 0u);
+
+    reset(40u);
+    fx.display.info.width = fx.touch.info.width = (uint32_t)sizes[scenario][0];
+    fx.display.info.height = fx.touch.info.height =
+        (uint32_t)sizes[scenario][1];
+    fx.pref_override = h2_sqlite_pref_api(storage);
+    fx.fast_clock = true;
+    fx.use_audio = true;
+    fx.touch_from_frame = 2u;
+    fx.capture_name = scenario == 0u   ? "progression-160"
+                      : scenario == 1u ? "progression-240"
+                                       : "progression-480x320";
+    fx.capture_every = 2u;
+    h2_fruit_slice_game_t ui;
+    h2_fruit_slice_game_init(&ui, sizes[scenario][0], sizes[scenario][1], 1u,
+                             141u);
+    ui.progress = restored;
+    script_control(&ui, H2_FRUIT_SLICE_BUTTON_TASKS);
+    script_visit(&ui, H2_FRUIT_SLICE_BUTTON_CLAIM);
+    script_control(&ui, H2_FRUIT_SLICE_BUTTON_CLAIM);
+    script_control(&ui, H2_FRUIT_SLICE_BUTTON_BACK);
+    script_control(&ui, H2_FRUIT_SLICE_BUTTON_SHOP);
+    for (unsigned weapon = 3u; weapon < H2_FRUIT_SLICE_WEAPONS; ++weapon) {
+      script_visit(&ui, H2_FRUIT_SLICE_BUTTON_WEAPON + weapon);
+      script_control(&ui, H2_FRUIT_SLICE_BUTTON_WEAPON + weapon);
+    }
+    /* An owned active weapon tap must not charge a second time. */
+    script_control(&ui,
+                   H2_FRUIT_SLICE_BUTTON_WEAPON + H2_FRUIT_SLICE_WEAPON_STORM);
+    CHECK(run() == H2_PAL_OK);
+    CHECK(fx.touch.script_next == fx.touch.script_count &&
+          fx.audio_opens == 0u); /* Both mute bits survived. */
+    h2_sqlite_destroy(storage);
+    CHECK(h2_sqlite_create(&config, &storage) == H2_PAL_OK);
+    restored = sqlite_progress(storage, H2_FRUIT_SLICE_PROGRESS_BYTES);
+    CHECK(restored.coins == 265u && restored.fruit_credit == 10u &&
+          restored.combo_credit == 3u);
+    CHECK(restored.score_task == scenario && restored.equipped == 5u &&
+          restored.owned == (((1u << (scenario + 1u)) - 1u) | 56u));
+    CHECK(h2_pal_pref_open(h2_sqlite_pref_api(storage),
+                           H2_FRUIT_SLICE_PREF_NAMESPACE,
+                           H2_PAL_PREF_OPEN_READ_ONLY, &ns) == H2_PAL_OK);
+    uint32_t value = 0u;
+    CHECK(ns->get_u32(ns, "best", &value) == H2_PAL_OK && value == 141u);
+    CHECK(ns->get_u32(ns, "audio_v1", &value) == H2_PAL_OK &&
+          value == 0x41550103u);
+    void* bytes = NULL;
+    size_t size = 0u;
+    CHECK(ns->get_blob(ns, h2_desktop_platform_default_allocator(), "cards_v1",
+                       &bytes, &size) == H2_PAL_OK);
+    CHECK(size == sizeof(old_cards) && memcmp(bytes, old_cards, size) == 0);
+    h2_pal_mem_free(h2_desktop_platform_default_allocator(), bytes);
+    CHECK(ns->close(ns) == H2_PAL_OK);
+    h2_sqlite_destroy(storage);
+    CHECK(remove(database) == 0);
+  }
+}
+
+static struct {
+  const h2_pal_pref_api_t* real;
+  h2_pal_pref_namespace_set_blob_fn set_blob;
+  h2_pal_pref_namespace_commit_fn commit;
+  bool writing_progress;
+  unsigned write_failures, commit_failures, writes;
+} profile_fault;
+
+static int profile_set(h2_pal_pref_namespace_t* ns, const char* key,
+                       const void* data, size_t size) {
+  profile_fault.writing_progress = strcmp(key, "progress_v1") == 0;
+  if (profile_fault.writing_progress) {
+    ++profile_fault.writes;
+    if (profile_fault.write_failures) {
+      --profile_fault.write_failures;
+      return H2_PAL_ERR_IO;
+    }
+  }
+  return profile_fault.set_blob(ns, key, data, size);
+}
+static int profile_commit(h2_pal_pref_namespace_t* ns) {
+  if (profile_fault.writing_progress && profile_fault.commit_failures) {
+    --profile_fault.commit_failures;
+    return H2_PAL_ERR_IO;
+  }
+  return profile_fault.commit(ns);
+}
+static int profile_open(void* user, const char* name,
+                        h2_pal_pref_open_mode_t mode,
+                        h2_pal_pref_namespace_t** ns) {
+  (void)user;
+  const int rc = h2_pal_pref_open(profile_fault.real, name, mode, ns);
+  if (rc == H2_PAL_OK) {
+    profile_fault.writing_progress = false;
+    profile_fault.set_blob = (*ns)->set_blob;
+    profile_fault.commit = (*ns)->commit;
+    (*ns)->set_blob = profile_set;
+    (*ns)->commit = profile_commit;
+  }
+  return rc;
+}
+static const h2_pal_pref_vtable_t profile_fault_vtable = {.open = profile_open};
+static const h2_pal_pref_api_t profile_fault_api = {.vtable =
+                                                        &profile_fault_vtable};
+
+static void test_challenge_claim_retry_sqlite(void) {
+  const char* temporary = getenv("TEST_TMPDIR");
+  CHECK(temporary != NULL);
+  char database[512];
+  (void)snprintf(database, sizeof(database), "%s/challenge-retry.sqlite",
+                 temporary);
+  h2_sqlite_t* storage = NULL;
+  const h2_sqlite_config_t config = {.path = database};
+  CHECK(h2_sqlite_create(&config, &storage) == H2_PAL_OK);
+  h2_fruit_slice_game_t ui;
+  h2_fruit_slice_game_init(&ui, WIDTH, HEIGHT, 1u, 0u);
+  for (unsigned i = 0; i < H2_FRUIT_SLICE_CHALLENGES; ++i)
+    ui.progress.challenge_credit[i] = 1u;
+  uint8_t bytes[H2_FRUIT_SLICE_PROGRESS_BYTES];
+  h2_fruit_slice_progress_encode(&ui.progress, bytes);
+  h2_pal_pref_namespace_t* ns = NULL;
+  CHECK(h2_pal_pref_open(h2_sqlite_pref_api(storage),
+                         H2_FRUIT_SLICE_PREF_NAMESPACE,
+                         H2_PAL_PREF_OPEN_READ_WRITE, &ns) == H2_PAL_OK);
+  CHECK(ns->set_blob(ns, "progress_v1", bytes, sizeof(bytes)) == H2_PAL_OK);
+  CHECK(ns->commit(ns) == H2_PAL_OK && ns->close(ns) == H2_PAL_OK);
+  memset(&profile_fault, 0, sizeof(profile_fault));
+  profile_fault.real = h2_sqlite_pref_api(storage);
+  profile_fault.write_failures = profile_fault.commit_failures = 1u;
+  reset(28u);
+  fx.fast_clock = true;
+  fx.touch_from_frame = 2u;
+  fx.pref_override = &profile_fault_api;
+  script_control(&ui, H2_FRUIT_SLICE_BUTTON_TASKS);
+  for (unsigned id = 3u; id < H2_FRUIT_SLICE_TASKS; ++id) {
+    script_visit(&ui, H2_FRUIT_SLICE_BUTTON_CLAIM + id);
+    script_control(&ui, H2_FRUIT_SLICE_BUTTON_CLAIM + id);
+    script_control(&ui, H2_FRUIT_SLICE_BUTTON_CLAIM + id);
+  }
+  CHECK(run() == H2_PAL_OK);
+  CHECK(fx.touch.script_next == fx.touch.script_count);
+  CHECK(profile_fault.writes >= 4u && profile_fault.write_failures == 0u &&
+        profile_fault.commit_failures == 0u);
+  h2_sqlite_destroy(storage);
+  CHECK(h2_sqlite_create(&config, &storage) == H2_PAL_OK);
+  h2_fruit_slice_progress_t saved =
+      sqlite_progress(storage, H2_FRUIT_SLICE_PROGRESS_BYTES);
+  CHECK(saved.coins == 105u);
+  for (unsigned i = 0; i < H2_FRUIT_SLICE_CHALLENGES; ++i)
+    CHECK(saved.challenge_credit[i] == 0u);
+  reset(28u);
+  fx.fast_clock = true;
+  fx.touch_from_frame = 2u;
+  fx.pref_override = h2_sqlite_pref_api(storage);
+  h2_fruit_slice_game_init(&ui, WIDTH, HEIGHT, 1u, 0u);
+  ui.progress = saved;
+  script_control(&ui, H2_FRUIT_SLICE_BUTTON_TASKS);
+  for (unsigned id = 3u; id < H2_FRUIT_SLICE_TASKS; ++id) {
+    script_visit(&ui, H2_FRUIT_SLICE_BUTTON_CLAIM + id);
+    script_control(&ui, H2_FRUIT_SLICE_BUTTON_CLAIM + id);
+  }
+  CHECK(run() == H2_PAL_OK);
+  CHECK(sqlite_progress(storage, H2_FRUIT_SLICE_PROGRESS_BYTES).coins == 105u);
+
+  /* A failed debit save and a failed retry commit must not debit again. */
+  memset(&profile_fault, 0, sizeof(profile_fault));
+  profile_fault.real = h2_sqlite_pref_api(storage);
+  profile_fault.write_failures = profile_fault.commit_failures = 1u;
+  reset(90u);
+  fx.fast_clock = true;
+  fx.touch_from_frame = 2u;
+  fx.pref_override = &profile_fault_api;
+  h2_fruit_slice_game_init(&ui, WIDTH, HEIGHT, 1u, 0u);
+  ui.progress = saved;
+  script_control(&ui, H2_FRUIT_SLICE_BUTTON_SHOP);
+  script_visit(&ui, H2_FRUIT_SLICE_BUTTON_WEAPON + 3u);
+  script_control(&ui, H2_FRUIT_SLICE_BUTTON_WEAPON + 3u);
+  script_control(&ui, H2_FRUIT_SLICE_BUTTON_WEAPON + 3u);
+  script_control(&ui,
+                 H2_FRUIT_SLICE_BUTTON_WEAPON + 4u); /* 50 is not enough. */
+  CHECK(run() == H2_PAL_OK);
+  CHECK(profile_fault.writes >= 3u && profile_fault.write_failures == 0u &&
+        profile_fault.commit_failures == 0u);
+  h2_sqlite_destroy(storage);
+  CHECK(h2_sqlite_create(&config, &storage) == H2_PAL_OK);
+  saved = sqlite_progress(storage, H2_FRUIT_SLICE_PROGRESS_BYTES);
+  CHECK(saved.coins == 50u && saved.owned == 9u && saved.equipped == 3u);
+  h2_sqlite_destroy(storage);
+  CHECK(remove(database) == 0);
+}
+
 int main(void) {
+  test_020_sqlite_profile_upgrade();
+  test_challenge_claim_retry_sqlite();
   test_cards_transient_sqlite_read();
   test_cards_write_retry_and_read_error();
   test_fresh_sqlite_storage();
