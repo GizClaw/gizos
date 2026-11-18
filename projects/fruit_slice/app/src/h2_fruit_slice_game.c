@@ -721,12 +721,14 @@ static void slice_segment(h2_fruit_slice_game_t* game, float x0, float y0,
   for (unsigned i = 0; i < H2_FRUIT_SLICE_MAX_FRUITS; ++i) {
     const h2_fruit_slice_fruit_t* fruit = &game->fruits[i];
     if (!fruit->active) continue;
-    const float reach =
-        fruit->radius * 0.95f +
-        (fruit->menu ? 0.0f
-                     : (fabsf(dy) >= 2.0f * fabsf(dx) ? weapon->vertical_reach
-                                                      : weapon->reach) *
-                           game->unit);
+    const float extra =
+        fruit->menu ? 0.0f
+                    : (fabsf(dy) >= 2.0f * fabsf(dx) ? weapon->vertical_reach
+                                                     : weapon->reach) *
+                          game->unit;
+    /* Negative reach narrows small bodies; it must never reflect through
+     * zero into a positive collision radius when squared. */
+    const float reach = fmaxf(0.0f, fruit->radius * 0.95f + extra);
     if (segment_distance2(x0, y0, x1, y1, fruit->body.x, fruit->body.y) <=
         reach * reach)
       slice_fruit(game, i, ux, uy);

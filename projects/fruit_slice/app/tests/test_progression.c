@@ -357,6 +357,21 @@ static void test_weapon_tradeoffs_and_cards(void) {
   }
 }
 
+static void test_negative_reach_clamps_at_zero(void) {
+  const unsigned weapons[] = {H2_FRUIT_SLICE_WEAPON_BAMBOO,
+                              H2_FRUIT_SLICE_WEAPON_STORM};
+  for (unsigned i = 0; i < 2u; ++i) {
+    start(&game);
+    game.progress.equipped = weapons[i];
+    place(&game, 0u, H2_FRUIT_SLICE_APPLE, 240, 180);
+    game.fruits[0].radius = 1.0f;
+    stroke(&game, 80, 181, 400, 181);
+    CHECK(game.fruits[0].active && game.score == 0u);
+    stroke(&game, 80, 180, 400, 180);
+    CHECK(!game.fruits[0].active && game.score == 1u);
+  }
+}
+
 static void test_exact_funds_and_claim_limits(void) {
   for (unsigned id = 1u; id < H2_FRUIT_SLICE_WEAPONS; ++id) {
     h2_fruit_slice_game_init(&game, 160, 160, 51u, 0u);
@@ -452,6 +467,7 @@ int main(void) {
   test_run_resets_and_required_weapon();
   test_pages_and_all_purchases();
   test_weapon_tradeoffs_and_cards();
+  test_negative_reach_clamps_at_zero();
   test_exact_funds_and_claim_limits();
   test_legacy_and_invalid_formats();
   puts("progression 0.3 tests passed");

@@ -7,12 +7,12 @@ python3 projects/fruit_slice/app/resources/generate_audio.py
 python3 projects/fruit_slice/app/resources/generate_audio.py --preview-dir /tmp/fruit-slice-audio
 ```
 
-The checked-in `src/h2_fruit_slice_audio_bank.c` is an explicit input to the App's Bazel library and is linked into every artifact through the normal firmware/App graph. There are no external runtime file paths or unpacked sidecar assets. [`audio_manifest.json`](audio_manifest.json) records each signed PCM8 clip's sample count and SHA-256. WAV previews are optional unsigned PCM8 exports and should remain outside the source tree. The bank is 98,704 bytes of read-only PCM, including 64,000 bytes for music. Frames expand and linearly interpolate the 8 kHz mono bank into the Audio PAL's native S16 PCM format (8–48 kHz, one or two channels); there is no runtime decoder or floating-point synthesis.
+The checked-in `src/h2_fruit_slice_audio_bank.c` is an explicit input to the App's Bazel library and is linked into every artifact through the normal firmware/App graph. There are no external runtime file paths or unpacked sidecar assets. [`audio_manifest.json`](audio_manifest.json) records each signed PCM8 clip's sample count and SHA-256. WAV previews are optional unsigned PCM8 exports and should remain outside the source tree. The bank is 98,384 bytes of read-only PCM, including 64,000 bytes for music. Frames expand and linearly interpolate the 8 kHz mono bank into the Audio PAL's native S16 PCM format (8–48 kHz, one or two channels); there is no runtime decoder or floating-point synthesis.
 
 | Event | Design |
 | --- | --- |
 | SWING | 75 ms shaped noise sweep |
-| SLICE | Wet noise transient and falling pitched impact |
+| SLICE | 60 ms unpitched peel snap with a short filtered pulp texture |
 | COMBO | Ascending three-note chime |
 | BOMB | 420 ms low-passed noise and falling bass impact |
 | MISS | Short descending warning |
@@ -26,6 +26,8 @@ The checked-in `src/h2_fruit_slice_audio_bank.c` is an explicit input to the App
 | RARE | Longer five-note rare-card fanfare |
 | CHEER | Original 420 ms formant-synthesized, nonverbal “woo” |
 | Music | Original 8-second, four-bar, 120 BPM C–Am–F–G arcade loop |
+
+The SLICE generator uses 480 samples at 8 kHz, seeded noise (`0x534C4943`), two cascaded 1.4 kHz low-pass stages and a 220 Hz low-frequency subtraction. A 3.6 ms snap decay sits over a 12 ms pulp decay, with small noise grains at 7/12/20 ms and smoothed onset/end. Its source multiplier is 1.9 before the existing shared PCM8 quantizer; playback still uses the unchanged SFX gain. There is no pitched oscillator, frequency glide, reverb or sampled recording. Band limiting targets a compact DAC/speaker path without spending headroom on sub-bass or the 8 kHz bank's Nyquist edge; actual speaker listening remains necessary to judge the result.
 
 The cheer is robotic vowel synthesis, not recorded speech or a TTS word prompt. This change does not claim Mandarin/English phrase narration. The local machine provided macOS `say` and ffmpeg, but no installed open TTS engine; system voice redistribution was not assumed. The bank's generator defines every oscillator, deterministic noise seed, note, envelope and vowel formant directly.
 

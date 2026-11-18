@@ -21,7 +21,7 @@
 
 #define WIDTH 480
 #define HEIGHT 480
-#define SCRIPT_MAX 32
+#define SCRIPT_MAX 64
 
 typedef struct fake_display {
   h2_display_info_t info;
@@ -1194,6 +1194,74 @@ static h2_fruit_slice_progress_t sqlite_progress(h2_sqlite_t* storage,
   return result;
 }
 
+static void test_bilingual_last_page_claim_and_purchase(void) {
+  const char* temporary = getenv("TEST_TMPDIR");
+  CHECK(temporary != NULL);
+  const int sizes[][2] = {{160, 160}, {240, 240}, {480, 320}};
+  for (unsigned variant = 0; variant < 3u; ++variant) {
+    for (unsigned language = 0; language < 2u; ++language) {
+      char database[512], capture[64];
+      (void)snprintf(database, sizeof(database), "%s/last-page-%u-%u.sqlite",
+                     temporary, variant, language);
+      const h2_sqlite_config_t config = {.path = database};
+      h2_sqlite_t* storage = NULL;
+      CHECK(h2_sqlite_create(&config, &storage) == H2_PAL_OK);
+      h2_fruit_slice_game_t ui;
+      h2_fruit_slice_game_init(&ui, sizes[variant][0], sizes[variant][1], 1u,
+                               141u);
+      ui.language = (h2_fruit_slice_language_t)language;
+      ui.progress.coins = 100u;
+      ui.progress.challenge_credit[H2_FRUIT_SLICE_TASK_CLASSIC_COMBO -
+                                   H2_FRUIT_SLICE_TASK_VARIETY] = 1u;
+      uint8_t bytes[H2_FRUIT_SLICE_PROGRESS_BYTES];
+      h2_fruit_slice_progress_encode(&ui.progress, bytes);
+      h2_pal_pref_namespace_t* ns = NULL;
+      CHECK(h2_pal_pref_open(h2_sqlite_pref_api(storage),
+                             H2_FRUIT_SLICE_PREF_NAMESPACE,
+                             H2_PAL_PREF_OPEN_READ_WRITE, &ns) == H2_PAL_OK);
+      CHECK(ns->set_blob(ns, "progress_v1", bytes, sizeof(bytes)) == H2_PAL_OK);
+      CHECK(ns->commit(ns) == H2_PAL_OK && ns->close(ns) == H2_PAL_OK);
+      reset(60u);
+      fx.display.info.width = fx.touch.info.width = (uint32_t)sizes[variant][0];
+      fx.display.info.height = fx.touch.info.height =
+          (uint32_t)sizes[variant][1];
+      fx.pref_override = h2_sqlite_pref_api(storage);
+      fx.fast_clock = true;
+      fx.touch_from_frame = 2u;
+      fx.language = (h2_fruit_slice_language_t)language;
+      (void)snprintf(capture, sizeof(capture), "last-page-%s-%dx%d",
+                     language == H2_FRUIT_SLICE_LANGUAGE_EN ? "en" : "zh",
+                     sizes[variant][0], sizes[variant][1]);
+      fx.capture_name = capture;
+      script_control(&ui, H2_FRUIT_SLICE_BUTTON_TASKS);
+      script_visit(
+          &ui, H2_FRUIT_SLICE_BUTTON_CLAIM + H2_FRUIT_SLICE_TASK_CLASSIC_COMBO);
+      script_control(
+          &ui, H2_FRUIT_SLICE_BUTTON_CLAIM + H2_FRUIT_SLICE_TASK_CLASSIC_COMBO);
+      script_control(
+          &ui, H2_FRUIT_SLICE_BUTTON_CLAIM + H2_FRUIT_SLICE_TASK_CLASSIC_COMBO);
+      script_control(&ui, H2_FRUIT_SLICE_BUTTON_BACK);
+      script_control(&ui, H2_FRUIT_SLICE_BUTTON_SHOP);
+      script_visit(&ui,
+                   H2_FRUIT_SLICE_BUTTON_WEAPON + H2_FRUIT_SLICE_WEAPON_STORM);
+      script_control(
+          &ui, H2_FRUIT_SLICE_BUTTON_WEAPON + H2_FRUIT_SLICE_WEAPON_STORM);
+      CHECK(run() == H2_PAL_OK);
+      CHECK(fx.touch.script_next == fx.touch.script_count);
+      h2_sqlite_destroy(storage);
+      CHECK(h2_sqlite_create(&config, &storage) == H2_PAL_OK);
+      const h2_fruit_slice_progress_t saved =
+          sqlite_progress(storage, H2_FRUIT_SLICE_PROGRESS_BYTES);
+      CHECK(saved.coins == 20u &&
+            saved.equipped == H2_FRUIT_SLICE_WEAPON_STORM &&
+            saved.owned == 33u);
+      CHECK(saved.challenge_credit[3] == 0u);
+      h2_sqlite_destroy(storage);
+      CHECK(remove(database) == 0);
+    }
+  }
+}
+
 static void test_020_sqlite_profile_upgrade(void) {
   const char* temporary = getenv("TEST_TMPDIR");
   CHECK(temporary != NULL);
@@ -1479,6 +1547,7 @@ static void test_natural_result_text(void) {
 }
 
 int main(void) {
+  test_bilingual_last_page_claim_and_purchase();
   test_020_sqlite_profile_upgrade();
   test_challenge_claim_retry_sqlite();
   test_natural_result_text();
