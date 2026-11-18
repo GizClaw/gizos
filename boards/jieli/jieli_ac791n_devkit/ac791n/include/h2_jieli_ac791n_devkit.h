@@ -94,6 +94,13 @@ const h2_pal_button_api_t* h2_jieli_ac791n_devkit_button_api(void);
 /* On-chip MIC1 ADC and DAC/PA on the development board. */
 const h2_pal_audio_api_t* h2_jieli_ac791n_devkit_audio_api(void);
 
+/* Task-context, nonblocking snapshot for low-rate diagnostic logging. text
+ * needs >=256 bytes. Counters are cumulative for currently open tracks;
+ * empty waits measure PCM supply pressure, not downstream DAC underruns.
+ * Returns WOULD_BLOCK on contention, UNAVAILABLE before audio initialization.
+ * Does not log or reset counters and never runs from the DAC/VFS callback. */
+int h2_jieli_ac791n_devkit_audio_diagnostics(char* text, size_t capacity);
+
 typedef struct h2_jieli_ac791n_devkit_audio_idle {
   uint32_t open_tracks;         /* tracks not in the free state */
   uint32_t retained_operations; /* referenced writers, drainers, volume requests

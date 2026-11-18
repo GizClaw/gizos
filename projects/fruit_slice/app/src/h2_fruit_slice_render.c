@@ -333,7 +333,28 @@ static void rounded_rect(h2_fruit_slice_canvas_t* canvas, float x0, float y0,
     uint16_t* row = row_at(canvas, py);
     const float fy = (float)py + 0.5f;
     const float dy = fmaxf(fmaxf(y0 + radius - fy, fy - (y1 - radius)), 0.0f);
+    /* Most card/panel pixels are in straight spans. Their coverage is
+     * exactly one; reserve float distance work for the rounded corners. */
+    int32_t middle0 = g.x0, middle1 = g.x1;
+    if (dy > 0.0f) {
+      middle0 = (int32_t)ceilf(x0 + radius - 0.5f);
+      middle1 = (int32_t)floorf(x1 - radius - 0.5f) + 1;
+    } else {
+      middle0 = (int32_t)ceilf(x0 - 0.5f);
+      middle1 = (int32_t)floorf(x1 - 0.5f) + 1;
+    }
+    if (dy > radius) middle1 = middle0;
+    if (middle0 < g.x0) middle0 = g.x0;
+    if (middle0 > g.x1) middle0 = g.x1;
+    if (middle1 < middle0) middle1 = middle0;
+    if (middle1 > g.x1) middle1 = g.x1;
+    for (int32_t px = middle0; px < middle1; ++px)
+      row[px] = blend(row[px], color, alpha);
     for (int32_t px = g.x0; px < g.x1; ++px) {
+      if (px == middle0 && middle1 > middle0) {
+        px = middle1 - 1;
+        continue;
+      }
       const float fx = (float)px + 0.5f;
       const float dx = fmaxf(fmaxf(x0 + radius - fx, fx - (x1 - radius)), 0.0f);
       float cover = 1.0f;

@@ -56,6 +56,10 @@ typedef struct fixture {
   unsigned touch_from_frame;
   uint16_t probe_before;
   bool use_pref, fast_clock, layout_sweep;
+  bool paced_clock, prewarm_audio, sink_started;
+  uint32_t present_cost_ms, sink_queued_ms, sink_starved_ms, audio_open_cost_ms;
+  uint64_t sink_updated_ms;
+  unsigned sink_full_writes;
   unsigned autoplay_from, autoplay_until, autoplay_pause_from,
       autoplay_pause_until, reveal_until;
   uint64_t clock_ms;
@@ -226,6 +230,7 @@ static int display_present(void* user) {
   fake_display_t* d = user;
   CHECK(d->opened);
   ++d->presents;
+  if (fx.paced_clock) fx.clock_ms += fx.present_cost_ms;
   return H2_PAL_OK;
 }
 static int display_brightness(void* user, uint32_t percent) {
@@ -396,6 +401,23 @@ static int audio_write(h2_pal_audio_track_t* track,
   CHECK(f->audio_active && timeout == 0u && frame->bytes == 640u);
   CHECK(!(f->frames >= f->pause_from && f->frames < f->pause_until));
   ++f->audio_writes;
+  if (f->paced_clock) {
+    const uint64_t elapsed =
+        f->sink_started ? f->clock_ms - f->sink_updated_ms : 0u;
+    f->sink_started = true;
+    f->sink_updated_ms = f->clock_ms;
+    if (elapsed > f->sink_queued_ms) {
+      f->sink_starved_ms += (uint32_t)(elapsed - f->sink_queued_ms);
+      f->sink_queued_ms = 0u;
+    } else {
+      f->sink_queued_ms -= (uint32_t)elapsed;
+    }
+    if (f->sink_queued_ms > 20u) {
+      ++f->sink_full_writes;
+      return H2_PAL_ERR_WOULD_BLOCK;
+    }
+    f->sink_queued_ms += 20u;
+  }
   if (f->audio_block_writes != 0u) {
     --f->audio_block_writes;
     return H2_PAL_ERR_WOULD_BLOCK;
@@ -415,6 +437,10 @@ static int audio_create(void* user, const h2_audio_track_config_t* config,
   fixture_t* f = user;
   CHECK(!f->audio_active && config->buffer_frames == 2u);
   f->audio_active = true;
+  if (f->paced_clock) f->clock_ms += f->audio_open_cost_ms;
+  f->sink_started = false;
+  f->sink_queued_ms = 0u;
+  f->sink_updated_ms = f->clock_ms;
   ++f->audio_opens;
   f->audio_track = (h2_pal_audio_track_t){
       .user = f, .write = audio_write, .close = audio_track_close};
@@ -491,6 +517,10 @@ static h2_pal_result_t ready(void* user) {
   /* The first frame is complete and visible before readiness. */
   CHECK(f->display.presents == 1u);
   CHECK(f->display.rows_drawn == (size_t)f->display.info.height);
+  if (f->prewarm_audio) {
+    CHECK(f->audio_opens == 1u && f->audio_writes == 0u);
+    CHECK(f->clock_ms == f->audio_open_cost_ms + f->present_cost_ms);
+  }
   return f->ready_result;
 }
 
@@ -510,12 +540,31 @@ static void reset(unsigned exit_after) {
 
 static h2_pal_result_t accelerated_clock(void* user, uint64_t* out_ms) {
   (void)user;
-  fx.clock_ms += 10u;
+  if (!fx.paced_clock) fx.clock_ms += 10u;
   *out_ms = fx.clock_ms;
   return H2_PAL_OK;
 }
 
+/* Model the real SDK's early tick timeout, without sleeping the host. */
+static h2_pal_result_t paced_recv(void* user, h2_pal_queue_t* queue, void* item,
+                                  uint32_t timeout_ms) {
+  const h2_pal_queue_api_t* real = h2_desktop_platform_queue_api();
+  const h2_pal_result_t rc = real->vtable->recv(user, queue, item, 0u);
+  if ((rc == H2_PAL_ERR_WOULD_BLOCK || rc == H2_PAL_ERR_TIMEOUT) &&
+      timeout_ms) {
+    CHECK(timeout_ms != UINT32_MAX);
+    const uint32_t ticks = timeout_ms / 10u;
+    fx.clock_ms += ticks ? ticks * 10u : 1u;
+    return H2_PAL_ERR_TIMEOUT;
+  }
+  return rc;
+}
+
 static h2_pal_result_t run(void) {
+  const h2_pal_queue_api_t* real_queue = h2_desktop_platform_queue_api();
+  h2_pal_queue_vtable_t queue_vtable = *real_queue->vtable;
+  queue_vtable.recv = paced_recv;
+  const h2_pal_queue_api_t queue_api = {real_queue->user, &queue_vtable};
   const h2_pal_time_api_t* real_time = h2_desktop_platform_time_api();
   h2_pal_time_vtable_t time_vtable = *real_time->vtable;
   time_vtable.get_monotonic_ms = accelerated_clock;
@@ -528,10 +577,10 @@ static h2_pal_result_t run(void) {
   config.firmware_info = h2_pal_unsupported_firmware_info_api();
   config.mem = &fx.mem_api;
   config.log = h2_desktop_platform_log_api();
-  config.time = fx.fast_clock ? &time_api : real_time;
+  config.time = fx.fast_clock || fx.paced_clock ? &time_api : real_time;
   config.timer = h2_pal_unsupported_timer_api();
   config.task = h2_desktop_platform_task_api();
-  config.queue = h2_desktop_platform_queue_api();
+  config.queue = fx.paced_clock ? &queue_api : real_queue;
   config.sync = h2_desktop_platform_sync_api();
   config.fs = h2_pal_unsupported_fs_api();
   config.disk = h2_pal_unsupported_disk_api();
@@ -571,15 +620,18 @@ static h2_pal_result_t run(void) {
   config.video_decoder = h2_pal_unsupported_video_decoder_api();
   h2_runtime_t* runtime = NULL;
   CHECK(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
-  const h2_fruit_slice_config_t game = {
-      .seed = fx.seed,
-      .brightness_percent = 80u,
-      .frame_period_ms = fx.fast_clock ? 1u : 10u,
-      .ready = ready,
-      .should_exit = should_exit,
-      .is_paused = is_paused,
-      .language = fx.language,
-      .user = &fx};
+  const h2_fruit_slice_config_t game = {.seed = fx.seed,
+                                        .brightness_percent = 80u,
+                                        .frame_period_ms = fx.paced_clock ? 25u
+                                                           : fx.fast_clock
+                                                               ? 1u
+                                                               : 10u,
+                                        .ready = ready,
+                                        .should_exit = should_exit,
+                                        .is_paused = is_paused,
+                                        .language = fx.language,
+                                        .prewarm_audio = fx.prewarm_audio,
+                                        .user = &fx};
   const h2_pal_result_t rc = h2_fruit_slice_run(runtime, &game);
   CHECK(h2_runtime_destroy(&runtime) == H2_PAL_OK);
   CHECK(fx.allocations == fx.frees);
@@ -947,6 +999,29 @@ static void test_fresh_sqlite_storage(void) {
   }
   h2_sqlite_destroy(storage);
   CHECK(remove(database) == 0);
+}
+
+static void test_paced_audio_through_public_entry(bool prewarm) {
+  reset(200u);
+  fx.prewarm_audio = prewarm;
+  fx.audio_open_cost_ms = prewarm ? 500u : 0u;
+  fx.display.info.height = 320;
+  fx.touch.info.height = 320;
+  fx.paced_clock = fx.use_audio = true;
+  fx.present_cost_ms = 8u;
+  fx.touch_from_frame = 5u;
+  fx.touch.script[fx.touch.script_count++] =
+      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_DOWN, 20, 160};
+  fx.touch.script[fx.touch.script_count++] =
+      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_UP, 20, 160};
+  CHECK(run() == H2_PAL_OK);
+  printf(
+      "public-entry simulated 480x320: elapsed=%llu starvation=%u full=%u writes=%u\n",
+      (unsigned long long)fx.clock_ms, fx.sink_starved_ms, fx.sink_full_writes,
+      fx.audio_successful_writes);
+  CHECK(fx.clock_ms == 200u * 25u + fx.audio_open_cost_ms);
+  CHECK(fx.sink_starved_ms == 0u && fx.sink_full_writes == 0u);
+  CHECK(fx.audio_opens == 1u && fx.audio_closes == 1u);
 }
 
 static void test_audio_gesture_pause_and_exit(void) {
@@ -1864,6 +1939,8 @@ static void test_layout_claim_buy_and_back(int32_t width, int32_t height,
 }
 
 int main(void) {
+  test_paced_audio_through_public_entry(false);
+  test_paced_audio_through_public_entry(true);
   test_bilingual_last_page_claim_and_purchase();
   test_020_sqlite_profile_upgrade();
   test_challenge_claim_retry_sqlite();

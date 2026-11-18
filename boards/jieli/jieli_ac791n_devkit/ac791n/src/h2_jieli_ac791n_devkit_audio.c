@@ -17,6 +17,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+#include "generic/printf.h"
 
 enum {
   H2_AUDIO_SAMPLE_RATE = 16000,
@@ -51,6 +52,10 @@ typedef struct jieli_audio_track {
   uint64_t accepted;
   uint64_t consumed;
   uint32_t volume_factor_milli;
+  /* Decoder empty-ring waits are supply pressure, not DAC underruns: the
+   * SDK may still own buffered samples downstream. Never log in the VFS. */
+  uint32_t empty_waits, empty_wait_ms, empty_max_ms;
+  uint32_t refill_last_ms, refill_max_ms, full_writes;
   int mic_monitor;
 } jieli_audio_track_t;
 typedef struct jieli_audio_state {
@@ -227,6 +232,11 @@ static int track_vfs_read(void* file, void* data, uint32_t length) {
   }
   ++track->operations;
   int result = 0;
+  /* Exclude deliberate silent prewarming before the first accepted PCM. */
+  const int empty = track->state == AUDIO_OPEN && track->ring.count == 0u &&
+                    track->accepted != 0u;
+  const uint32_t waiting_since = empty ? timer_get_ms() : 0u;
+  if (empty) ++track->empty_waits;
   while (track->generation == (uintptr_t)file && track->state == AUDIO_OPEN &&
          track->ring.count == 0u) {
     if (audio_wait(0u, UINT32_MAX) != H2_AUDIO_OK) goto finished;
@@ -252,6 +262,11 @@ static int track_vfs_read(void* file, void* data, uint32_t length) {
   }
   result = (int)(count * 2u);
 finished:
+  if (empty) {
+    const uint32_t waited = timer_get_ms() - waiting_since;
+    track->empty_wait_ms += waited;
+    if (waited > track->empty_max_ms) track->empty_max_ms = waited;
+  }
   /* STOP must not kill a decoder while its stack-owned condition waiter is
    * still linked. Retire VFS users alongside writers before any SDK teardown.
    */
@@ -516,10 +531,16 @@ static int track_write(h2_pal_audio_track_t* pal_track,
       } else {
         ring_write(&track->ring, frame->data, (uint32_t)frame->bytes);
       }
+      const uint32_t refill = timer_get_ms();
+      if (track->accepted != 0u &&
+          refill - track->refill_last_ms > track->refill_max_ms)
+        track->refill_max_ms = refill - track->refill_last_ms;
+      track->refill_last_ms = refill;
       track->accepted += frame->bytes;
       rc = H2_AUDIO_OK;
       break;
     }
+    ++track->full_writes;
     rc = audio_wait(start, wait_ms);
     if (rc != H2_AUDIO_OK) break;
   }
@@ -883,11 +904,47 @@ const h2_pal_audio_api_t* h2_jieli_ac791n_devkit_audio_api(void) {
   return &api;
 }
 
+int h2_jieli_ac791n_devkit_audio_diagnostics(char* text, size_t capacity) {
+  if (text == NULL || capacity < 256u) return H2_AUDIO_ERR_INVALID_ARG;
+  if (h2_jieli_atomic_load_u32(&audio_state.initialized) != 2u)
+    return H2_AUDIO_ERR_UNAVAILABLE;
+  int rc = audio_lock(timer_get_ms(), 0u);
+  if (rc != H2_AUDIO_OK) return rc;
+  uint32_t waits = 0u, waited = 0u, maximum = 0u, refill = 0u, full = 0u;
+  uint32_t queued = 0u, tracks = 0u;
+  for (unsigned i = 0; i < H2_AUDIO_MAX_TRACKS; ++i) {
+    const jieli_audio_track_t* t = &audio_state.tracks[i];
+    if (t->state != AUDIO_OPEN) continue;
+    ++tracks;
+    waits += t->empty_waits;
+    waited += t->empty_wait_ms;
+    full += t->full_writes;
+    queued += t->ring.count;
+    if (t->empty_max_ms > maximum) maximum = t->empty_max_ms;
+    if (t->refill_max_ms > refill) refill = t->refill_max_ms;
+  }
+  audio_unlock();
+  (void)snprintf(text, capacity,
+                 "H2_JIELI_PCM_STATS tracks=%u queued_bytes=%u "
+                 "empty_waits=%u empty_wait_ms=%u empty_max_ms=%u "
+                 "refill_max_ms=%u full_waits=%u",
+                 (unsigned)tracks, (unsigned)queued, (unsigned)waits,
+                 (unsigned)waited, (unsigned)maximum, (unsigned)refill,
+                 (unsigned)full);
+  return H2_AUDIO_OK;
+}
+
 #else
 
 #include "h2_jieli_ac791n_devkit.h"
 
 extern const h2_pal_audio_api_t* h2_pal_unsupported_audio_api(void);
+
+int h2_jieli_ac791n_devkit_audio_diagnostics(char* text, size_t capacity) {
+  (void)text;
+  (void)capacity;
+  return H2_AUDIO_ERR_UNSUPPORTED;
+}
 
 int h2_jieli_ac791n_devkit_audio_idle_probe(
     h2_jieli_ac791n_devkit_audio_idle_t* out) {

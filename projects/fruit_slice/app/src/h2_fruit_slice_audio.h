@@ -25,6 +25,10 @@ typedef struct h2_fruit_slice_audio {
   h2_fruit_slice_audio_voice_t voices[H2_FRUIT_SLICE_AUDIO_VOICES];
   uint64_t last_sound_ms[H2_FRUIT_SLICE_SOUND_COUNT];
   uint64_t started_ms, submitted_samples;
+  /* Window counters: producer timing, not a hardware DAC underrun count. */
+  uint64_t last_pump_ms;
+  uint32_t max_pump_gap_ms, writes, blocked_writes, rebases;
+  bool pumped, timeline_started;
   uint32_t music_position;
   uint32_t seen;
   uint8_t mute;
@@ -35,6 +39,10 @@ typedef struct h2_fruit_slice_audio {
  * speaker; first pump after a user gesture opens the single track. */
 int h2_fruit_slice_audio_init(h2_fruit_slice_audio_t* audio,
                               h2_runtime_t* runtime);
+/* Open the silent PCM path without mixing/submitting any samples. Native
+ * targets may call this during loading to move slow DAC startup off the first
+ * gesture. Fully muted audio remains closed. Idempotent; caller owns errors. */
+int h2_fruit_slice_audio_prepare(h2_fruit_slice_audio_t* audio);
 /* Drop suppressed/burst requests; four fixed voices, priority replacement.
  * now_ms is monotonic wall time. BOMB clears lower-priority voices. */
 void h2_fruit_slice_audio_emit(h2_fruit_slice_audio_t* audio,
@@ -42,8 +50,8 @@ void h2_fruit_slice_audio_emit(h2_fruit_slice_audio_t* audio,
 /* Changes mute flags immediately and persists independently of game/profile.
  * Flushes queued PCM so muting cannot leave old audio playing. */
 int h2_fruit_slice_audio_set_mute(h2_fruit_slice_audio_t* audio, uint8_t mute);
-/* At most three native frames per call, write timeout zero, no backlog replay.
- * Call every game frame after draining the game's sound queue. */
+/* At most three native frames per call, at most 20 ms of lookahead, write
+ * timeout zero, no backlog replay. Service at frame boundaries/during waits. */
 int h2_fruit_slice_audio_pump(h2_fruit_slice_audio_t* audio, uint64_t now_ms);
 /* Close track and stop speaker, discard voices. Safe to resume by pumping.
  * Runtime consumes a valid close handle even on error; speaker stop is still
