@@ -102,7 +102,9 @@ static void load_records(session_t* s, h2_xianxia_rpg_records_t* out) {
     if (journey_rc == H2_PAL_OK) {
       out->has_journey = h2_xianxia_rpg_journey_decode(
           data, size, &out->journey, &journey_tag);
-      if (!out->has_journey) out->unreadable = true;
+      out->journey_unreadable = !out->has_journey;
+    } else {
+      out->journey_unreadable = journey_rc != H2_PAL_ERR_NOT_FOUND;
     }
     h2_pal_mem_free(s->allocator, data);
     data = NULL;
@@ -112,11 +114,15 @@ static void load_records(session_t* s, h2_xianxia_rpg_records_t* out) {
             ? ns->get_blob(ns, s->allocator, H2_XIANXIA_RPG_PREF_CHAPTERS_KEY,
                            &data, &size)
             : H2_PAL_ERR_UNSUPPORTED;
-    if (chapters_rc == H2_PAL_OK &&
-        !h2_xianxia_rpg_progress_decode(data, size, &out->progress)) {
-      memset(&out->progress, 0, sizeof(out->progress));
-      out->unreadable = true;
+    if (chapters_rc == H2_PAL_OK) {
+      out->has_progress =
+          h2_xianxia_rpg_progress_decode(data, size, &out->progress);
+      out->progress_unreadable = !out->has_progress;
+      if (!out->has_progress) memset(&out->progress, 0, sizeof(out->progress));
+    } else {
+      out->progress_unreadable = chapters_rc != H2_PAL_ERR_NOT_FOUND;
     }
+    out->unreadable = out->journey_unreadable || out->progress_unreadable;
     h2_pal_mem_free(s->allocator, data);
     if (ns->close != NULL) (void)ns->close(ns);
     s->chapter1_tag = h2_xianxia_rpg_chapter1_tag(words, present);

@@ -1866,7 +1866,10 @@ void h2_xianxia_rpg_game_init(h2_xianxia_rpg_game_t* game, int32_t width,
           memcmp(&r->progress.chapters[0], &clear, sizeof(clear)) != 0) {
         r->progress.cleared |= 1u;
         r->progress.chapters[0] = clear;
-        game->progress_pending = true;
+        /* Keep the usable legacy clear in memory even if chapters cannot
+         * be read, but never replace that blob just by opening the game.
+         * A player completing a chapter still explicitly records a clear. */
+        game->progress_pending = !r->progress_unreadable;
       }
     }
   }

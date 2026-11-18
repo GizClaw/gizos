@@ -65,8 +65,11 @@ typedef struct h2_xianxia_rpg_config {
  * walk, characters to talk, and battle commands to fight. The run opens and
  * closes Display and Touch, drains Runtime events, and paces frames with
  * h2_runtime_wait_notify(). Pref is optional: when unavailable the journey is
- * kept in memory only. Invalid records are ignored and left untouched. Game
- * state and three RGB565 frame-sized buffers come from Runtime mem before the
+ * kept in memory only. Invalid records are ignored and left untouched on
+ * load, including automatic migration. Player-triggered chapter starts and
+ * checkpoints replace that chapter's journey; completing a chapter records
+ * its clear in chapters. Game state and three RGB565 frame-sized buffers
+ * come from Runtime mem before the
  * first frame; frames never allocate. Diagnostics use Runtime log. Every
  * allocation, provider session and callback ends before return. The config is
  * borrowed for the call; NULL selects defaults.

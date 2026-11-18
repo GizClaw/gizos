@@ -446,7 +446,11 @@ typedef struct h2_xianxia_rpg_records {
    * resumes it; false after v0.1 or a new chapter-1 run changed save0..3. */
   bool journey_latest;
   h2_xianxia_rpg_progress_t progress;
-  /** A record was present but invalid; it is ignored and kept as is. */
+  /** Each blob is missing when neither its valid nor unreadable bit is set.
+   * Read errors count as unreadable: they do not prove a record is absent. */
+  bool has_progress;
+  bool journey_unreadable, progress_unreadable;
+  /** A record was present but invalid or could not be read. */
   bool unreadable;
 } h2_xianxia_rpg_records_t;
 

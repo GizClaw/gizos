@@ -1050,6 +1050,21 @@ static void test_upgrade_from_cleared_v01(void) {
   CHECK(h2_xianxia_rpg_game_take_writes(&game, &writes));
   CHECK(writes.journey && !writes.chapter1);
 
+  /* An unreadable chapter blob must not be replaced automatically, but
+   * the valid legacy clear still carries into a player-started chapter 2. */
+  h2_xianxia_rpg_records_t damaged = game.records;
+  memset(&damaged.progress, 0, sizeof(damaged.progress));
+  damaged.progress_unreadable = damaged.unreadable = true;
+  damaged.has_progress = false;
+  damaged.has_journey = damaged.journey_latest = false;
+  h2_xianxia_rpg_game_init(&game, 640, 480, 41u, &damaged);
+  CHECK(!h2_xianxia_rpg_game_take_writes(&game, &writes));
+  enter_chapter2(&game);
+  CHECK(game.hero.level == 4u && game.hero.pills == 2u);
+  CHECK(game.flags & H2_XIANXIA_RPG_FLAG_C1_CLEARED);
+  CHECK(h2_xianxia_rpg_game_take_writes(&game, &writes));
+  CHECK(writes.journey && !writes.progress && !writes.chapter1);
+
   /* A chapter-1 run still in progress is not a clear: chapter 2 then
    * starts from its defaults and leaves that run resumable. */
   h2_xianxia_rpg_save_t midway = cleared;
