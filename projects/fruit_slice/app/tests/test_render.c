@@ -21,13 +21,16 @@
 static uint16_t background[MAX_W * MAX_H];
 static uint16_t pixels[MAX_W * MAX_H];
 static h2_fruit_slice_game_t game;
+static h2_fruit_slice_language_t render_language;
 
 /* Optional review artifact: Bazel collects files in this directory. */
 static void write_ppm(const char* name, int32_t width, int32_t height) {
   const char* directory = getenv("TEST_UNDECLARED_OUTPUTS_DIR");
   if (directory == NULL || directory[0] == '\0') return;
   char path[512];
-  (void)snprintf(path, sizeof(path), "%s/%s.ppm", directory, name);
+  (void)snprintf(path, sizeof(path), "%s/%s%s.ppm", directory,
+                 game.language == H2_FRUIT_SLICE_LANGUAGE_EN ? "en-" : "",
+                 name);
   FILE* file = fopen(path, "wb");
   CHECK(file != NULL);
   fprintf(file, "P6\n%d %d\n255\n", (int)width, (int)height);
@@ -258,6 +261,7 @@ static void render_size(int32_t width, int32_t height) {
 
   char name[64];
   h2_fruit_slice_game_init(&game, width, height, 11u, 12u);
+  game.language = render_language;
   CHECK(h2_fruit_slice_sprites_prepare(sprites, &game));
   h2_fruit_slice_game_step(&game, 100u);
   (void)snprintf(name, sizeof(name), "title_%dx%d", (int)width, (int)height);
@@ -356,6 +360,7 @@ static void test_clipping(void) {
 
 static void test_progress_pages(int32_t width, int32_t height) {
   h2_fruit_slice_game_init(&game, width, height, 25u, 31u);
+  game.language = render_language;
   game.progress.coins = H2_FRUIT_SLICE_PROGRESS_LIMIT;
   game.progress.fruit_credit = 10u;
   for (unsigned page = 0; page < 2u; ++page) {
@@ -398,6 +403,7 @@ static void test_card_scenes(int32_t width, int32_t height) {
   sprites = h2_fruit_slice_sprites_create(&test_memory);
   CHECK(sprites != NULL);
   h2_fruit_slice_game_init(&game, width, height, 42u, 0u);
+  game.language = render_language;
   CHECK(h2_fruit_slice_sprites_prepare(sprites, &game));
   const size_t prepared = allocation_calls;
   if (width == 480 && height == 320)
@@ -427,6 +433,18 @@ static void test_card_scenes(int32_t width, int32_t height) {
                    height);
     check_scene(name, width, height);
   }
+  /* Full names/hints with maximum duplicate counts, in both languages. */
+  for (unsigned id = 0; id < H2_FRUIT_SLICE_CARD_COUNT; ++id) {
+    game.cards.counts[id] = 99u;
+    game.cards.tab = h2_fruit_slice_card(id)->category;
+    uint8_t ids[H2_FRUIT_SLICE_CARD_TAB_SLOTS];
+    const unsigned count = h2_fruit_slice_card_tab_cards(game.cards.tab, ids);
+    for (unsigned slot = 0; slot < count; ++slot)
+      if (ids[slot] == id) game.cards.selected = (uint8_t)slot;
+    (void)snprintf(name, sizeof(name), "preview-detail-%u-%dx%d", id, width,
+                   height);
+    check_scene(name, width, height);
+  }
   h2_fruit_slice_cards_close_album(&game.cards);
   game.phase = H2_FRUIT_SLICE_PHASE_GAME_OVER;
   const unsigned ids[] = {0u, 3u, 5u, 15u};
@@ -447,6 +465,7 @@ static void test_card_scenes(int32_t width, int32_t height) {
 }
 
 int main(void) {
+  test_card_scenes(160, 160);
   test_card_scenes(240, 240);
   test_card_scenes(480, 320);
   test_card_scenes(480, 800);
@@ -462,6 +481,9 @@ int main(void) {
   test_bands();
   test_static_key();
   test_sprite_cache();
+  render_size(160, 160);
+  render_size(240, 240);
+  render_size(480, 320);
   render_size(480, 480);
   render_size(800, 480);
   render_size(368, 448);
@@ -469,6 +491,13 @@ int main(void) {
   test_blast_bounds(800, 480);
   test_blast_bounds(368, 448);
   test_clipping();
+  render_language = H2_FRUIT_SLICE_LANGUAGE_EN;
+  test_progress_pages(160, 160);
+  test_progress_pages(480, 320);
+  test_card_scenes(160, 160);
+  test_card_scenes(480, 320);
+  render_size(160, 160);
+  render_size(480, 320);
   h2_fruit_slice_sprites_destroy(sprites);
   puts("fruit slice render tests passed");
   return 0;

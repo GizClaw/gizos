@@ -1,5 +1,7 @@
 #include "h2_fruit_slice_cards_render.h"
 
+#define TR(value) h2_fruit_slice_translate(game->language, (value))
+
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -519,34 +521,42 @@ static void draw_card(h2_fruit_slice_canvas_t* canvas,
   if (sx < 0.86f) return;
   card_art(canvas, game, id, acx, acy, art_r, side != SIDE_FACE, angle);
   if (w >= 34.0f) {
-    const char* name = side == SIDE_FACE ? card->name : "???";
+    const char* name = side == SIDE_FACE ? TR(card->name) : "???";
     /* Bitmap text cannot shrink below one pixel per stroke. Keep tiny card
      * labels within their border; the detail panel retains the full name. */
     static const char* const compact[H2_FRUIT_SLICE_CARD_COUNT] = {
         "MELON", "ORNG", "APPLE", "KIWI",  "LEMON", "SALAD", "KNIFE", "JADE",
         "AXE",   "BOMB", "DODGE", "SQUAD", "COMBO", "MEGA",  "SCORE", "CROWN"};
     if (side == SIDE_FACE && h2_fruit_slice_text_width(name, 1) > w * 0.88f)
-      name = compact[id];
+      name = TR(compact[id]);
     const int32_t scale = h2_fruit_slice_fit_scale(
         name, w * 0.88f, (int32_t)fmaxf(1.0f, floorf(w / 56.0f)));
     h2_fruit_slice_draw_text_centered(
-        canvas, name, cx, y0 + h * 0.655f, scale,
+        canvas, name, cx, y0 + h * 0.64f, scale,
         side == SIDE_FACE ? RGB(248, 242, 228) : RGB(130, 130, 146), 256u);
   }
   const unsigned gems = card->rarity + 1u;
   const float gap = w * 0.11f, gem_r = fmaxf(1.2f, w * 0.032f);
   for (unsigned i = 0; i < gems; ++i) {
     const float gx = cx + ((float)i - (float)(gems - 1u) * 0.5f) * gap;
-    h2_fruit_slice_draw_disc(canvas, gx, y0 + h * 0.875f, gem_r,
+    h2_fruit_slice_draw_disc(canvas, gx, y0 + h * 0.93f, gem_r,
                              side == SIDE_FACE ? rc : RGB(84, 84, 98), 256u);
     if (side == SIDE_FACE)
       h2_fruit_slice_draw_disc(canvas, gx - gem_r * 0.3f,
-                               y0 + h * 0.875f - gem_r * 0.3f, gem_r * 0.4f,
+                               y0 + h * 0.93f - gem_r * 0.3f, gem_r * 0.4f,
                                RGB(255, 255, 255), 170u);
   }
   if (!badges || side != SIDE_FACE) return;
+  if (w < 34.0f) {
+    /* Tiny cards retain a dot; the selected detail keeps full counts/text. */
+    if ((game->cards.unseen & (1u << id)) != 0u)
+      h2_fruit_slice_draw_disc(canvas, x1 - 2.0f, y0 + 2.0f, 2.0f,
+                               RGB(226, 40, 56), 256u);
+    return;
+  }
   const int32_t small = (int32_t)fmaxf(1.0f, floorf(w / 70.0f));
-  const float pill_h = (float)small * 7.0f + 4.0f;
+  const float pill_h =
+      (float)h2_fruit_slice_text_height(TR("NEW"), small) + 4.0f;
   const unsigned count = game->cards.counts[id];
   if (count > 1u) {
     char text[8];
@@ -560,11 +570,11 @@ static void draw_card(h2_fruit_slice_canvas_t* canvas,
                              RGB(255, 222, 80), 256u);
   }
   if ((game->cards.unseen & (1u << id)) != 0u) {
-    const float tw = (float)h2_fruit_slice_text_width("NEW", small);
+    const float tw = (float)h2_fruit_slice_text_width(TR("NEW"), small);
     h2_fruit_slice_draw_rounded_rect(canvas, x0 - 2.0f, y0 - pill_h * 0.4f,
                                      x0 + tw + 8.0f, y0 + pill_h * 0.6f,
                                      pill_h * 0.5f, RGB(226, 40, 56), 256u);
-    h2_fruit_slice_draw_text(canvas, "NEW", (int32_t)(x0 + 3.0f),
+    h2_fruit_slice_draw_text(canvas, TR("NEW"), (int32_t)(x0 + 3.0f),
                              (int32_t)(y0 - pill_h * 0.4f + 2.0f), small,
                              RGB(255, 255, 255), 256u);
   }
@@ -677,11 +687,11 @@ void h2_fruit_slice_cards_render_result(h2_fruit_slice_canvas_t* canvas,
   const unsigned earned = popcount32(game->cards.run_earned);
   if (earned == 0u) return;
   const unsigned fresh = popcount32(game->cards.run_new);
-  char text[32];
+  char text[96];
   if (fresh != 0u)
-    (void)snprintf(text, sizeof(text), "CARDS +%u  NEW %u", earned, fresh);
+    (void)snprintf(text, sizeof(text), TR("CARDS +%u  NEW %u"), earned, fresh);
   else
-    (void)snprintf(text, sizeof(text), "CARDS +%u", earned);
+    (void)snprintf(text, sizeof(text), TR("CARDS +%u"), earned);
   const float w = (float)canvas->width;
   const int32_t scale = h2_fruit_slice_fit_scale(
       text, w * 0.6f, h2_fruit_slice_text_scale(game->unit, 2.5f));
@@ -724,7 +734,7 @@ void h2_fruit_slice_cards_render_play_scene(h2_fruit_slice_canvas_t* canvas,
                              f->duplicate ? 50u : 90u);
     mini_card(canvas, f->card, side, x, y, w, h, sx);
     if (a < 760.0f) {
-      const char* label = f->duplicate ? "+1" : "NEW!";
+      const char* label = f->duplicate ? "+1" : TR("NEW!");
       const int32_t scale = h2_fruit_slice_text_scale(u, 2.5f);
       const uint32_t alpha =
           a < 460.0f ? 256u : alpha_of((760.0f - a) / 300.0f);
@@ -846,14 +856,14 @@ void h2_fruit_slice_cards_render_reveal_scene(
   }
 
   if (t >= face) {
-    const char* title = "NEW CARD!";
+    const char* title = TR("NEW CARD!");
     int32_t scale = h2_fruit_slice_fit_scale(
         title, w * 0.9f, h2_fruit_slice_text_scale(u, 5.0f));
     if (settled < 140.0f) ++scale; /* Pops in one size larger. */
     h2_fruit_slice_draw_text_centered(
         canvas, title, w * 0.5f, h * 0.045f, scale,
         rarity == 0u ? RGB(255, 222, 80) : rc, alpha_of(settled / 120.0f));
-    const char* name = h2_fruit_slice_card_rarity_name(rarity);
+    const char* name = TR(h2_fruit_slice_card_rarity_name(rarity));
     const int32_t small = h2_fruit_slice_fit_scale(
         name, w * 0.8f, h2_fruit_slice_text_scale(u, 3.0f));
     h2_fruit_slice_draw_text_centered(canvas, name, w * 0.5f,
@@ -861,17 +871,18 @@ void h2_fruit_slice_cards_render_reveal_scene(
                                       rc, alpha_of(settled / 200.0f));
   }
   if (t >= (float)H2_FRUIT_SLICE_REVEAL_INPUT_MS) {
-    char hint[32];
+    char hint[96];
     if (cards->reveal_total > 1u)
-      (void)snprintf(hint, sizeof(hint), "TAP TO CONTINUE %u/%u",
+      (void)snprintf(hint, sizeof(hint), TR("TAP TO CONTINUE %u/%u"),
                      (unsigned)cards->reveal_index + 1u,
                      (unsigned)cards->reveal_total);
     else
-      (void)snprintf(hint, sizeof(hint), "TAP TO CONTINUE");
+      (void)snprintf(hint, sizeof(hint), "%s", TR("TAP TO CONTINUE"));
     const int32_t scale = h2_fruit_slice_fit_scale(
         hint, w * 0.92f, h2_fruit_slice_text_scale(u, 2.0f));
     h2_fruit_slice_draw_text_centered(
-        canvas, hint, w * 0.5f, h * 0.93f - (float)scale * 7.0f, scale,
+        canvas, hint, w * 0.5f,
+        h * 0.93f - (float)h2_fruit_slice_text_height(hint, scale), scale,
         RGB(240, 232, 214),
         150u + (uint32_t)(100.0f * fabsf(sinf(t * 0.003f))));
   }
@@ -888,7 +899,7 @@ void h2_fruit_slice_cards_render_album_static(
   h2_fruit_slice_draw_rounded_rect(canvas, 0.0f, 0.0f, w, h, 0.0f,
                                    RGB(16, 10, 22), 190u);
 
-  const char* title = "CARD ALBUM";
+  const char* title = TR("CARD ALBUM");
   h2_fruit_slice_draw_text_centered(
       canvas, title, w * 0.5f, l.title.y0,
       h2_fruit_slice_fit_scale(title, w * 0.9f,
@@ -911,7 +922,7 @@ void h2_fruit_slice_cards_render_album_static(
         fmaxf(fill, bar->x0 + bar_h) - bar_h * 0.3f, bar->y0 + bar_h * 0.45f,
         bar_h * 0.15f, RGB(255, 236, 150), 170u);
   }
-  char text[40];
+  char text[96];
   (void)snprintf(text, sizeof(text), "%u/%u", owned,
                  (unsigned)H2_FRUIT_SLICE_CARD_COUNT);
   const int32_t count_scale = h2_fruit_slice_fit_scale(
@@ -928,15 +939,15 @@ void h2_fruit_slice_cards_render_album_static(
         canvas, r->x0, r->y0, r->x1, r->y1,
         fminf(10.0f * u, (r->y1 - r->y0) * 0.5f),
         active ? RGB(255, 196, 60) : RGB(50, 38, 30), active ? 256u : 230u);
-    const char* name = h2_fruit_slice_card_tab_name(tab);
+    const char* name = TR(h2_fruit_slice_card_tab_name(tab));
     const int32_t scale = h2_fruit_slice_fit_scale(
         name, (r->x1 - r->x0) * 0.86f,
         (int32_t)fmaxf(1.0f, fminf((float)h2_fruit_slice_text_scale(u, 2.5f),
                                    floorf((r->y1 - r->y0) * 0.6f / 7.0f))));
     h2_fruit_slice_draw_text_centered(
         canvas, name, (r->x0 + r->x1) * 0.5f,
-        (r->y0 + r->y1 - (float)scale * 7.0f) * 0.5f, scale,
-        active ? RGB(48, 26, 8) : RGB(232, 222, 204), 256u);
+        (r->y0 + r->y1 - (float)h2_fruit_slice_text_height(name, scale)) * 0.5f,
+        scale, active ? RGB(48, 26, 8) : RGB(232, 222, 204), 256u);
     uint8_t ids[H2_FRUIT_SLICE_CARD_TAB_SLOTS];
     const unsigned n = h2_fruit_slice_card_tab_cards(tab, ids);
     bool fresh = false;
@@ -971,33 +982,53 @@ void h2_fruit_slice_cards_render_album_static(
     const float dw = (d->x1 - d->x0) * 0.92f, dh = d->y1 - d->y0;
     const float limit = fmaxf(1.0f, floorf(dh * 0.24f / 7.0f));
     const float cx = (d->x0 + d->x1) * 0.5f;
-    const char* name = have ? card->name : "???";
+    const char* name = have ? TR(card->name) : "???";
     const int32_t big = h2_fruit_slice_fit_scale(
         name, dw,
         (int32_t)fminf(limit, (float)h2_fruit_slice_text_scale(u, 3.0f)));
-    h2_fruit_slice_draw_text_centered(canvas, name, cx, d->y0 + dh * 0.10f, big,
-                                      have ? rc : RGB(150, 150, 166), 256u);
-    char line[48];
+    const bool compact = dh < 42.0f;
+    if (!compact)
+      h2_fruit_slice_draw_text_centered(canvas, name, cx, d->y0 + dh * 0.10f,
+                                        big, have ? rc : RGB(150, 150, 166),
+                                        256u);
+    char line[96];
     if (have)
       (void)snprintf(line, sizeof(line), "%s  x%u",
-                     h2_fruit_slice_card_rarity_name(card->rarity),
+                     TR(h2_fruit_slice_card_rarity_name(card->rarity)),
                      (unsigned)cards->counts[id]);
     else
-      (void)snprintf(line, sizeof(line), "%s - LOCKED",
-                     h2_fruit_slice_card_rarity_name(card->rarity));
+      (void)snprintf(line, sizeof(line), TR("%s - LOCKED"),
+                     TR(h2_fruit_slice_card_rarity_name(card->rarity)));
     const int32_t small_pref =
         (int32_t)fminf(limit, (float)h2_fruit_slice_text_scale(u, 2.0f));
-    h2_fruit_slice_draw_text_centered(
-        canvas, line, cx, d->y0 + dh * 0.44f,
-        h2_fruit_slice_fit_scale(line, dw, small_pref),
-        have ? lighten(rc, 60u) : RGB(170, 170, 184), 256u);
-    const char* status = cards->save_status == 1u   ? "SESSION ONLY"
-                         : cards->save_status == 2u ? "UNSAVED - RETRYING"
-                         : cards->save_status == 3u ? "UNSAVED - PROTECTED"
+    if (compact) {
+      char combined[128];
+      (void)snprintf(combined, sizeof(combined), "%s %s", name, line);
+      if ((float)h2_fruit_slice_text_width(combined, 1) > dw) {
+        if (have)
+          (void)snprintf(combined, sizeof(combined), "%s x%u", name,
+                         (unsigned)cards->counts[id]);
+        else
+          (void)snprintf(combined, sizeof(combined), "%s %s", name,
+                         TR("LOCKED"));
+      }
+      h2_fruit_slice_draw_text_centered(
+          canvas, combined, cx, d->y0 + 1.0f,
+          h2_fruit_slice_fit_scale(combined, dw, 1),
+          have ? lighten(rc, 60u) : RGB(170, 170, 184), 256u);
+    } else {
+      h2_fruit_slice_draw_text_centered(
+          canvas, line, cx, d->y0 + dh * 0.44f,
+          h2_fruit_slice_fit_scale(line, dw, small_pref),
+          have ? lighten(rc, 60u) : RGB(170, 170, 184), 256u);
+    }
+    const char* status = cards->save_status == 1u   ? TR("SESSION ONLY")
+                         : cards->save_status == 2u ? TR("UNSAVED - RETRYING")
+                         : cards->save_status == 3u ? TR("UNSAVED - PROTECTED")
                                                     : NULL;
-    const char* hint = status != NULL ? status : card->hint;
+    const char* hint = status != NULL ? status : TR(card->hint);
     h2_fruit_slice_draw_text_centered(
-        canvas, hint, cx, d->y0 + dh * 0.72f,
+        canvas, hint, cx, compact ? d->y0 + 16.0f : d->y0 + dh * 0.72f,
         h2_fruit_slice_fit_scale(hint, dw, small_pref),
         status != NULL ? RGB(255, 150, 90)
                        : (have ? RGB(206, 196, 176) : RGB(255, 222, 120)),
