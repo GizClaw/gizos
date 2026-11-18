@@ -2715,7 +2715,11 @@ static void draw_battle_static(canvas_t* canvas, const game_t* game) {
   const h2_xianxia_rpg_rect_t* m = &l->message;
   panel(canvas, (float)m->x, (float)m->y, (float)m->w, (float)m->h, 8.0f, 230u);
   int32_t message_w = m->w - 24;
-  if (b->ally) {
+  const bool over = b->state == H2_XIANXIA_RPG_BATTLE_VICTORY ||
+                    b->state == H2_XIANXIA_RPG_BATTLE_DEFEAT ||
+                    b->state == H2_XIANXIA_RPG_BATTLE_FLED;
+  /* The lanterns give way to the tap hint once the battle is over. */
+  if (b->ally && !over) {
     /* Rapport lanterns at the right end of the message box. */
     const int32_t lamp = LINE_PX - 6;
     const char* label = h2_xianxia_rpg_text[H2_XIANXIA_RPG_TEXT_RAPPORT];
@@ -3141,8 +3145,8 @@ static void battle_scene(canvas_t* canvas, const game_t* game) {
       draw_enemy(canvas, (h2_xianxia_rpg_enemy_t)b->enemy, cx, ey, s * 0.8f,
                  game->time_ms + i * 700u, b->charging && real);
       if (choosing)
-        ellipse(canvas, cx, ey - s * 0.1f, s * 0.44f, s * 0.62f, 0.0f,
-                RGB(255, 240, 200), (uint32_t)(40.0f + 50.0f * pulse));
+        ellipse(canvas, cx, ey + s * 0.5f, s * 0.42f, s * 0.1f, 0.0f,
+                RGB(255, 240, 200), (uint32_t)(60.0f + 80.0f * pulse));
       if (real && b->enemy_flash_ms > 0u)
         glow(canvas, cx, ey, s * 0.5f, RGB(255, 255, 255),
              b->enemy_flash_ms * 200u / H2_XIANXIA_RPG_FLASH_MS);
@@ -3173,15 +3177,24 @@ static void battle_scene(canvas_t* canvas, const game_t* game) {
     }
   }
 
-  /* The companion behind the hero, and her action. */
+  /* The companion behind the hero, in front of him while she acts. */
+  const float ally_bob =
+      sinf((float)(game->time_ms % 2200u) * (PI / 1100.0f)) * s * 0.012f;
+  const float ally_walk =
+      ally_acting && b->ally_action == H2_XIANXIA_RPG_ALLY_POLE
+          ? ally_k * PI * 2.0f
+          : 0.0f;
+  if (b->ally && !ally_acting)
+    draw_person(canvas, H2_XIANXIA_RPG_ACTOR_JIANGLI, ax, hfeet, s * 0.85f,
+                H2_XIANXIA_RPG_FACING_RIGHT, ally_walk, ally_bob);
+  if (b->ally && b->split && b->state != H2_XIANXIA_RPG_BATTLE_VICTORY) {
+    /* Her lantern light falls on the real shadow. */
+    const h2_xianxia_rpg_rect_t* real = &l->shadows[b->real_shadow & 1u];
+    const float rx = (float)real->x + (float)real->w * 0.5f;
+    capsule(canvas, ax - s * 0.2f, hfeet - s * 0.4f, rx, ey + s * 0.45f,
+            s * 0.05f, RGB(210, 255, 236), 60u);
+  }
   if (b->ally) {
-    draw_person(
-        canvas, H2_XIANXIA_RPG_ACTOR_JIANGLI, ax, hfeet, s * 0.85f,
-        H2_XIANXIA_RPG_FACING_RIGHT,
-        ally_acting && b->ally_action == H2_XIANXIA_RPG_ALLY_POLE
-            ? ally_k * PI * 2.0f
-            : 0.0f,
-        sinf((float)(game->time_ms % 2200u) * (PI / 1100.0f)) * s * 0.012f);
     if (ally_acting && b->ally_action == H2_XIANXIA_RPG_ALLY_LANTERN) {
       const float fade = sinf(ally_k * PI);
       const float lx = ax - s * 0.2f, ly = hfeet - s * 0.4f;
@@ -3211,6 +3224,9 @@ static void battle_scene(canvas_t* canvas, const game_t* game) {
     glow(canvas, hx, hfeet - s * 0.5f, s * 0.5f, RGB(255, 80, 60),
          b->hero_flash_ms * 180u / H2_XIANXIA_RPG_FLASH_MS);
   if (fallen) glow(canvas, hx, hfeet - s * 0.4f, s * 0.6f, C_SHADOW, 150u);
+  if (b->ally && ally_acting)
+    draw_person(canvas, H2_XIANXIA_RPG_ACTOR_JIANGLI, ax, hfeet + s * 0.02f,
+                s * 0.85f, H2_XIANXIA_RPG_FACING_RIGHT, ally_walk, ally_bob);
 
   /* Pole strike from the companion. */
   if (ally_acting && b->ally_action == H2_XIANXIA_RPG_ALLY_POLE &&

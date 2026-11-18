@@ -132,7 +132,7 @@ static void load_records(session_t* s, h2_xianxia_rpg_records_t* out) {
                  out->has_chapter1 ? 1 : 0,
                  out->has_chapter1 ? (int)out->chapter1.stage : -1, rc);
   log_line(s, H2_PAL_LOG_INFO, message);
-  char records[224];
+  char records[320];
   (void)snprintf(records, sizeof(records),
                  "H2_XIANXIA_RPG_RECORDS_LOAD chapter1=%d keys=0x%x journey=%d "
                  "journey_chapter=%d journey_stage=%d latest=%d cleared=0x%x "
@@ -246,7 +246,7 @@ static void log_transitions(session_t* s) {
   memcpy(s->logged, now, sizeof(now));
   const int32_t enemy = now[3] >= 0 ? (int32_t)g->battle.enemy : -1;
   const h2_xianxia_rpg_battle_t* b = &g->battle;
-  char message[384];
+  char message[512];
   /* int32_t is long on some embedded toolchains, so use its own format. */
   (void)snprintf(
       message, sizeof(message),

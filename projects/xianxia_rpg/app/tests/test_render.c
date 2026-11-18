@@ -327,8 +327,8 @@ static void test_chapter2_screens(int32_t width, int32_t height) {
   game.battle.mp_sealed = false;
   game.battle.split = game.battle.phase_two = true;
   game.battle.charging = false;
-  for (uint8_t real = 0; real < 2u; ++real) {
-    game.battle.real_shadow = real;
+  for (uint32_t real = 0; real < 2u; ++real) {
+    game.battle.real_shadow = (uint8_t)real;
     game.battle.state = H2_XIANXIA_RPG_BATTLE_TARGET;
     game.battle.pending = H2_XIANXIA_RPG_COMMAND_ATTACK;
     check_all_layers(&game);
