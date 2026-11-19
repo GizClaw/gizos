@@ -1985,7 +1985,7 @@ h2_pal_result_t h2_alipay_independent_set_nfc_context(const char* token,
   int rc = h2_pal_mutex_lock(s_sync, s_lock);
   if (rc != H2_PAL_OK) return rc;
   rc = ensure_tap();
-  h2_alipay_client_binding_t binding;
+  h2_alipay_client_binding_t binding = {0};
   if (rc == H2_PAL_OK)
     rc = h2_alipay_client_binding_snapshot(&s_config, &binding);
   if (rc == H2_PAL_OK && binding.state != H2_ALIPAY_CLIENT_COMPLETE)
