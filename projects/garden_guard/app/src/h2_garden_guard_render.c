@@ -1811,6 +1811,19 @@ static void draw_toolbar(h2_garden_guard_canvas_t* canvas,
 
 #include "h2_garden_guard_title.inc"
 
+static uint8_t title_symbol(uint32_t* offset) {
+  int32_t node = (int32_t)(sizeof(k_title_tree) / sizeof(k_title_tree[0])) - 1;
+  uint32_t pos = *offset;
+  while (node >= 0) {
+    const uint32_t branch =
+        ((uint32_t)k_title_art[pos >> 3] >> (7u - (pos & 7u))) & 1u;
+    node = k_title_tree[node][branch];
+    ++pos;
+  }
+  *offset = pos;
+  return (uint8_t)(-node - 1);
+}
+
 /* Expand a single source row when the scale needs it. The illustration uses
  * flash plus a scanline on the stack. No extra framebuffer or codec is needed.
  */
@@ -1827,15 +1840,15 @@ static void draw_title_art(h2_garden_guard_canvas_t* canvas, float x, float y,
     const int32_t sy = (int32_t)clampf(((float)py + 0.5f - y) * inverse, 0.0f,
                                        (float)(TITLE_ART_HEIGHT - 1));
     if (decoded != sy) {
-      const uint8_t* data = &k_title_art[k_title_row_offsets[sy]];
+      uint32_t offset = k_title_bit_offsets[sy];
       int32_t sx = 0;
       while (sx < TITLE_ART_WIDTH) {
-        const uint8_t token = *data++;
+        const uint8_t token = title_symbol(&offset);
         if ((token & 128u) == 0u) {
           line[sx++] = token;
         } else {
           const size_t count = (token & 127u) + 3u;
-          memset(&line[sx], *data++, count);
+          memset(&line[sx], title_symbol(&offset), count);
           sx += (int32_t)count;
         }
       }

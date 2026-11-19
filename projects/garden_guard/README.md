@@ -66,4 +66,6 @@ python3 projects/garden_guard/tools/generate_droid.py \
   "$scratch/DroidSansFallback.ttf" "$scratch/generate_han"
 ```
 
+The cover retains its original RGB565 palette and per-row runs. The decode table reduces its flash footprint while the renderer still uses one row of scratch storage. To reproduce the conversion, pass the original row-RLE table from commit `8c48db3a899fe6ee367dd58f253c2188d4540ea0` to `tools/compress_cover.py ORIGINAL_INCLUDE app/src/h2_garden_guard_title.inc`. The tool round-trips every row against the input.
+
 The zombie sprites and journal portraits are generated from the original drawing paths. See the [sprite sources](tools/zombie_art/) for the format and regeneration command.
