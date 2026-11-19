@@ -228,6 +228,23 @@ typedef enum h2_xianxia_rpg_script_id {
   H2_XIANXIA_RPG_SCRIPT_C9_REVEAL,
   H2_XIANXIA_RPG_SCRIPT_C9_REST,
   H2_XIANXIA_RPG_SCRIPT_C9_HELP,
+  H2_XIANXIA_RPG_SCRIPT_C10_FIRST,
+  H2_XIANXIA_RPG_SCRIPT_C10_INTRO = H2_XIANXIA_RPG_SCRIPT_C10_FIRST,
+  H2_XIANXIA_RPG_SCRIPT_C10_HELP,
+  H2_XIANXIA_RPG_SCRIPT_C10_NEED,
+  H2_XIANXIA_RPG_SCRIPT_C10_SHRINE,
+  H2_XIANXIA_RPG_SCRIPT_C10_ARRAY,
+  H2_XIANXIA_RPG_SCRIPT_C10_RETURN,
+  H2_XIANXIA_RPG_SCRIPT_C10_RETRY,
+  H2_XIANXIA_RPG_SCRIPT_C10_REUNION,
+  H2_XIANXIA_RPG_SCRIPT_C10_RELEASE,
+  H2_XIANXIA_RPG_SCRIPT_C10_KEEP,
+  H2_XIANXIA_RPG_SCRIPT_C10_DOCK,
+  H2_XIANXIA_RPG_SCRIPT_C10_TOWER,
+  H2_XIANXIA_RPG_SCRIPT_C10_FESTIVAL,
+  H2_XIANXIA_RPG_SCRIPT_C10_REST,
+  H2_XIANXIA_RPG_SCRIPT_C10_RECALL_GIVE,
+  H2_XIANXIA_RPG_SCRIPT_C10_RECALL_TAKE,
   H2_XIANXIA_RPG_SCRIPT_COUNT,
 } h2_xianxia_rpg_script_id_t;
 
@@ -523,6 +540,47 @@ bool h2_xianxia_rpg_ambush_cell(const h2_xianxia_rpg_game_t* game,
                                 h2_xianxia_rpg_map_t map, int32_t x, int32_t y);
 /** Cells pathfinding avoids when another way exists (ambush ground). */
 bool h2_xianxia_rpg_costly_cell(h2_xianxia_rpg_map_t map, int32_t x, int32_t y);
+
+/* Chapter 10 reuses the earlier villages and landmarks as new states. */
+char h2_xianxia_rpg_c10_tile(h2_xianxia_rpg_map_t map, int32_t x, int32_t y);
+h2_xianxia_rpg_map_t h2_xianxia_rpg_c10_base_map(h2_xianxia_rpg_map_t map);
+const char* h2_xianxia_rpg_c10_map_name(h2_xianxia_rpg_map_t map);
+const h2_xianxia_rpg_chapter_info_t* h2_xianxia_rpg_c10_info(void);
+const h2_xianxia_rpg_script_t* h2_xianxia_rpg_c10_script(
+    h2_xianxia_rpg_script_id_t id);
+size_t h2_xianxia_rpg_c10_strings(const char** out, size_t capacity);
+extern const uint8_t h2_xianxia_rpg_c10_helpers[4];
+extern const char* const h2_xianxia_rpg_c10_destinations[3];
+extern const char* const h2_xianxia_rpg_c10_hints[3][3];
+typedef enum h2_xianxia_rpg_c10_text_id {
+  H2_XIANXIA_RPG_C10_ONWARD,
+  H2_XIANXIA_RPG_C10_HELP,
+  H2_XIANXIA_RPG_C10_REST,
+  H2_XIANXIA_RPG_C10_SHRINE,
+  H2_XIANXIA_RPG_C10_ALTAR,
+  H2_XIANXIA_RPG_C10_CONTINUE,
+  H2_XIANXIA_RPG_C10_FORM,
+  H2_XIANXIA_RPG_C10_SWITCH,
+  H2_XIANXIA_RPG_C10_STATUS,
+  H2_XIANXIA_RPG_C10_ASSIGN,
+  H2_XIANXIA_RPG_C10_ASSIGN_HELP,
+  H2_XIANXIA_RPG_C10_ASSIGNED,
+  H2_XIANXIA_RPG_C10_CORRECT,
+  H2_XIANXIA_RPG_C10_WRONG,
+  H2_XIANXIA_RPG_C10_WON,
+  H2_XIANXIA_RPG_C10_SWITCH_HINT,
+  H2_XIANXIA_RPG_C10_PROGRESS,
+  H2_XIANXIA_RPG_C10_EAST,
+  H2_XIANXIA_RPG_C10_WEST,
+  H2_XIANXIA_RPG_C10_RELEASE,
+  H2_XIANXIA_RPG_C10_KEEP,
+  H2_XIANXIA_RPG_C10_SELF,
+  H2_XIANXIA_RPG_C10_END_RELEASE,
+  H2_XIANXIA_RPG_C10_END_KEEP,
+  H2_XIANXIA_RPG_C10_END_COMPLETE,
+  H2_XIANXIA_RPG_C10_TEXT_COUNT,
+} h2_xianxia_rpg_c10_text_id_t;
+extern const char* const h2_xianxia_rpg_c10_text[H2_XIANXIA_RPG_C10_TEXT_COUNT];
 
 /* Chapter 2 tables, owned by h2_xianxia_rpg_chapter2.c. */
 char h2_xianxia_rpg_c2_tile(h2_xianxia_rpg_map_t map, int32_t x, int32_t y);
