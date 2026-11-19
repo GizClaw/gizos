@@ -1,5 +1,6 @@
-Droid Sans and Droid Sans Fallback. Digitized data copyright Google Corporation (c) 2006.
-Garden Guard uses a raster bitmap subset and a Web font subset.
+Droid Sans Fallback. Digitized data copyright Google Corporation (c) 2006.
+Droid Sans. Digitized data copyright Google Corporation (c) 2007.
+Garden Guard uses a Droid Sans Fallback raster subset and Web font subsets of both fonts.
 Upstream source is AOSP frameworks/base, 63ade05d76785975fc3292ca030abbaa1dda8891, data/fonts.
 
 
