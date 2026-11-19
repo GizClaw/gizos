@@ -23,11 +23,29 @@ _DISH_NAMES = [
     "shrimp",
     "maki",
     "inari",
-    "empty",
 ]
 
-_PLATES = ["plates/room.rgb565z"] + ["plates/" + n + ".png" for n in [
+_PAINTS = [
     "counter",
+    "counter_shade",
+    "mat",
+    "booth",
+    "yuzu",
+    "condiments",
+    "tea",
+    "steel",
+    "plate_shade",
+    "empty",
+] + _DISH_NAMES + [dish + suffix for dish in _DISH_NAMES for suffix in [
+    "_belt",
+    "_cleared",
+    "_bite",
+]]
+
+_PLATES = [
+    "plates/room.rgb565z",
+    "art/service/room/belt-uv-runs.z",
+] + ["plates/" + name + ".paintz" for name in _PAINTS] + ["plates/" + n + ".png" for n in [
     "cloth",
     "cast",
     "guest",
@@ -39,7 +57,7 @@ _PLATES = ["plates/room.rgb565z"] + ["plates/" + n + ".png" for n in [
     "card_rest",
     "rest",
     "mark",
-] + _DISH_NAMES + [n + "_belt" for n in _DISH_NAMES] + [n + "_cleared" for n in _DISH_NAMES[:-1]]]
+]]
 
 _STRIKES = {
     "small": 14,

@@ -56,6 +56,7 @@ typedef struct {
   int bites[BF_DISHES], varieties, last_dish, bite_ms, turn_ms, feedback_ms;
   bool empty[BF_SLOTS], obstructed;
   bf_actor_t player, diners[2];
+  bf_point_t bite_source;
   bf_point_t route[BF_ROUTE];
   int route_len, route_at;
 } bf_game_t;

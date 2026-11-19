@@ -1,0 +1,119 @@
+{
+  "logical_stage": [
+    800,
+    480
+  ],
+  "backing": [
+    1600,
+    960
+  ],
+  "island_rect": [
+    136,
+    168,
+    528,
+    140
+  ],
+  "slat_repeat_count": 64,
+  "lap_ms": 27000,
+  "texture": [
+    128,
+    32
+  ],
+  "food_source": [
+    640,
+    416
+  ],
+  "food_anchor": [
+    320,
+    300
+  ],
+  "front_food_draw": [
+    48,
+    31
+  ],
+  "rear_food_draw": [
+    43,
+    28
+  ],
+  "props": [
+    {
+      "asset": "booth",
+      "id": "booth-left",
+      "rect": [
+        -32,
+        219,
+        103,
+        88
+      ],
+      "flip_x": false,
+      "foot_y": 311
+    },
+    {
+      "asset": "booth",
+      "id": "booth-right",
+      "rect": [
+        696,
+        139,
+        106,
+        92
+      ],
+      "flip_x": true,
+      "foot_y": 227
+    },
+    {
+      "asset": "booth",
+      "id": "booth-near",
+      "rect": [
+        693,
+        323,
+        130,
+        113
+      ],
+      "flip_x": true,
+      "foot_y": 431
+    },
+    {
+      "asset": "yuzu",
+      "id": "yuzu-south",
+      "rect": [
+        6,
+        344,
+        67,
+        81
+      ],
+      "flip_x": false,
+      "foot_y": 424
+    },
+    {
+      "asset": "condiments",
+      "id": "tea-service",
+      "rect": [
+        287,
+        197,
+        42,
+        31
+      ],
+      "flip_x": false,
+      "foot_y": 225
+    },
+    {
+      "asset": "tea",
+      "id": "return-stack",
+      "rect": [
+        477,
+        209,
+        43,
+        24
+      ],
+      "flip_x": false,
+      "foot_y": 231
+    }
+  ],
+  "mat_rect": [
+    299,
+    412,
+    202,
+    62
+  ],
+  "actor_split_y": 238
+}

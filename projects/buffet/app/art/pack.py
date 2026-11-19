@@ -42,11 +42,43 @@ def decode(source):
     return w, h, pixels, palette, alpha
 
 
-def emit(file, kind, name, values):
-    print(f'static const {kind} {name}[] = {{', file=file)
+def emit(file, kind, name, values, public=False):
+    storage = '' if public else 'static '
+    print(f'{storage}const {kind} {name}[] = {{', file=file)
     for i in range(0, len(values), 64):
         print(','.join(map(str, values[i:i+64])) + ',', file=file)
     print('};', file=file)
+
+
+def pack_track(source, out):
+    raw = zlib.decompress(source.read_bytes())
+    magic, width, height, count = struct.unpack_from('<4sHHI', raw)
+    if (magic, width, height) != (b'TWU1', 1056, 280):
+        raise ValueError('unexpected conveyor registration')
+    data = list(v[0] for v in struct.iter_unpack('<H', raw[12:]))
+    start = 0
+    for _ in range(count):
+        y, x, length = data[start:start+3]
+        if y >= height or not 0 < length <= width - x:
+            raise ValueError('conveyor run crosses the island bounds')
+        start += 3 + length
+    if start != len(data):
+        raise ValueError('invalid conveyor run length')
+    emit(out, 'uint16_t', 'bf_belt_runs', data, public=True)
+    print(f'const unsigned bf_belt_run_count = {count};', file=out)
+
+
+def pack_paint(source, out):
+    name = source.stem
+    raw = zlib.decompress(source.read_bytes())
+    w, h = struct.unpack_from('<HH', raw)
+    size = w * h
+    if not (0 < w <= 1600 and 0 < h <= 960 and len(raw) == 4 + 3*size):
+        raise ValueError(f'invalid painted layer: {name}')
+    rgb = [v[0] for v in struct.iter_unpack('<H', raw[4:4+2*size])]
+    emit(out, 'uint16_t', name + '_rgb', rgb)
+    emit(out, 'uint8_t', name + '_alpha', raw[4+2*size:])
+    print(f'const bf_paint_t bf_{name} = {{{w},{h},{name}_rgb,{name}_alpha}};', file=out)
 
 
 def main():
@@ -54,6 +86,12 @@ def main():
         print('#include "buffet_sprite.h"', file=out)
         for arg in sys.argv[2:]:
             source = Path(arg)
+            if source.suffix == '.paintz':
+                pack_paint(source, out)
+                continue
+            if source.name == 'belt-uv-runs.z':
+                pack_track(source, out)
+                continue
             if source.suffix == '.rgb565z':
                 raw = zlib.decompress(source.read_bytes())
                 if len(raw) != 1600*960*2: raise ValueError('wrong painted room extent')

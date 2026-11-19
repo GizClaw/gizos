@@ -3,22 +3,16 @@ indexed PNGs, so running or building it requires no art-authoring packages.
 """
 import argparse
 import io
-import sys
-import zlib
-from array import array
 from pathlib import Path
-import subprocess
-import tempfile
 
 import cairosvg
 from PIL import Image, PngImagePlugin
 
-from backdrop import backdrop
+from service_layers import service_layers
 from cutouts import Cast
 from shop import DEFS, crest, mat, meter, path, group, rect
 
 HERE = Path(__file__).resolve().parent
-NAMES = ('salmon', 'tamago', 'tuna', 'shrimp', 'maki', 'inari', 'empty')
 
 
 def paint(body, box, size):
@@ -49,22 +43,9 @@ def save(image, name, origin, out):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--out', type=Path, default=HERE.parent / 'plates')
-    parser.add_argument('--raw', type=Path, help='Reuse 640 by 416 RGBA sculpts named 0.rgba through 12.rgba')
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
-    room_image, counter_image=backdrop(HERE/'painting'/'shop.png')
-    # Encode the painted light directly at display precision. Separate RGB
-    # channels get the same ordered threshold to avoid coloured noise on wood.
-    bayer=(0,8,2,10,12,4,14,6,3,11,1,9,15,7,13,5)
-    words=array('H'); data=room_image.getdata()
-    for y in range(room_image.height):
-        for x in range(room_image.width):
-            r,g,b=data[y*room_image.width+x]; q=bayer[(y%4)*4+x%4]*16
-            words.append((min(31,(r*31+q)//255)<<11)|(min(63,(g*63+q)//255)<<5)|min(31,(b*31+q)//255))
-    if sys.byteorder!='little':words.byteswap()
-    (args.out/'room.rgb565z').write_bytes(zlib.compress(words.tobytes(),9))
-    mask=Image.new('RGBA',counter_image.size,'white');mask.putalpha(counter_image.getchannel('A'))
-    save(mask,'counter','painting/shop.png, counter occlusion mask',args.out)
+    service_layers(HERE/'service', args.out)
     for name, body, box in [('gauge',meter(False),(0,0,154,29)), ('gauge_full',meter(True),(0,0,154,29)),
                             ('cloth',mat(),(0,0,800,480)), ('mark',crest('#f3ddb0'),(-36,-20,66,40))]:
         save(paint(body, box, (box[2]*2,box[3]*2)), name, 'shop.py / '+name, args.out)
@@ -99,19 +80,7 @@ def main():
             pane=triptych.crop((i*512+8,8,(i+1)*512-8,1016)).resize((202,260),Image.Resampling.LANCZOS)
             card.alpha_composite(pane,(11,13))
         save(card,key,'painting/collectibles.png and shop print mount',args.out)
-    with tempfile.TemporaryDirectory() as work:
-        sculpt = str(Path(work)/'sculpt')
-        if args.raw is None:
-            subprocess.run(['cc','-O3','-std=c11',str(HERE/'sculpt.c'),'-lm','-o',sculpt],check=True)
-        for i,name in enumerate(NAMES + tuple(n+'_cleared' for n in NAMES[:6])):
-            raw = ((args.raw/f'{i}.rgba').read_bytes() if args.raw else
-                   subprocess.check_output([sculpt,str(i),'640','416']))
-            plate=Image.frombytes('RGBA',(640,416),raw)
-            if i>6:
-                save(plate.resize((100,65),Image.Resampling.LANCZOS),name,'sculpt.c, returned glaze',args.out)
-                continue
-            save(plate,name,'sculpt.c, '+name,args.out)
-            save(plate.resize((100,65),Image.Resampling.LANCZOS),name+'_belt','sculpt.c, dining-room mip',args.out)
+
 
 
 if __name__ == '__main__':

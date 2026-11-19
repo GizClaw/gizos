@@ -327,8 +327,9 @@ static void eat(bf_game_t* g, int slot) {
   g->player.walking = false;
   g->bite_ms = 680;
   g->feedback_ms = 1020;
-  bf_point_t p = bf_place(g, slot).pos;
-  g->player.face = facing(p.x - g->player.pos.x, p.y - g->player.pos.y);
+  g->bite_source = bf_place(g, slot).pos;
+  g->player.face = facing(g->bite_source.x - g->player.pos.x,
+                          g->bite_source.y - g->player.pos.y);
 }
 void bf_action(bf_game_t* g, unsigned actions) {
   if (actions & H2_BUFFET_SOUND) g->muted = !g->muted;
