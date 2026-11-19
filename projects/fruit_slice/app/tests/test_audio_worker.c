@@ -217,6 +217,29 @@ static h2_runtime_t direct_runtime(void) {
                         .queue = &queue_api,
                         .task = &task_api};
 }
+static void wait_for_pcm(unsigned count) {
+  const uint64_t deadline = now() + 5000u;
+  do {
+    pthread_mutex_lock(&sink.lock);
+    const bool ready = sink.writes >= count;
+    pthread_mutex_unlock(&sink.lock);
+    if (ready) return;
+    delay(5u);
+  } while (now() < deadline);
+  assert(!"worker did not supply the requested PCM blocks");
+}
+static int wait_for_audio_error(h2_fruit_slice_audio_t* audio) {
+  /* Observe the injected failure; host scheduling has no 40/300ms guarantee.
+   * The watchdog still fails the caller if the error is never propagated. */
+  const uint64_t deadline = now() + 5000u;
+  int rc;
+  do {
+    rc = h2_fruit_slice_audio_pump(audio, now());
+    if (rc != H2_PAL_OK) return rc;
+    delay(5u);
+  } while (now() < deadline);
+  return rc;
+}
 static void test_owner_lifecycle_and_latency(void) {
   reset_sink();
   h2_runtime_t rt = direct_runtime();
@@ -296,7 +319,7 @@ static void test_pcm_identity(void) {
       h2_fruit_slice_audio_emit(&a, H2_FRUIT_SLICE_SOUND_CARD, 1000u);
       a.worker_requested = worker != 0u;
       assert(h2_fruit_slice_audio_pump(&a, now()) == 0);
-      if (worker) delay(55u);
+      wait_for_pcm(2u);
       assert(h2_fruit_slice_audio_close(&a) == 0);
       assert(sink.writes >= 2u);
       if (!worker)
@@ -318,9 +341,10 @@ static void test_mute_shutdown_retry(void) {
     a.worker_requested = true;
     assert(h2_fruit_slice_audio_prepare(&a) == H2_PAL_OK);
     assert(h2_fruit_slice_audio_worker_start(&a) == H2_PAL_OK);
-    if (scenario >= 3u)
+    if (scenario >= 3u) {
       assert(h2_fruit_slice_audio_pump(&a, now()) == H2_PAL_OK);
-    delay(65u);
+      wait_for_pcm(2u);
+    }
     if (failure == 0u)
       queue_close_failures = 1;
     else if (failure == 1u)
@@ -360,9 +384,12 @@ static void test_provider_failures(void) {
       sink.fail_close = H2_PAL_ERR_IO;
     const int first = h2_fruit_slice_audio_pump(&a, now());
     assert(first == H2_PAL_OK || (failure == 0u && first == H2_PAL_ERR_IO));
-    delay(40);
-    assert(h2_fruit_slice_audio_pump(&a, now()) ==
-           (failure == 0u ? H2_PAL_ERR_IO : H2_PAL_OK));
+    if (failure == 0u)
+      assert(wait_for_audio_error(&a) == H2_PAL_ERR_IO);
+    else {
+      wait_for_pcm(1u);
+      assert(h2_fruit_slice_audio_pump(&a, now()) == H2_PAL_OK);
+    }
     const int closed = h2_fruit_slice_audio_close(&a);
     assert(closed == (failure == 0u ? H2_PAL_OK : H2_PAL_ERR_IO));
     assert(!a.worker && !a.track && live_queues == 0u);
@@ -382,8 +409,7 @@ static void test_backpressure_error_and_burst(void) {
   assert(h2_fruit_slice_audio_pump(&a, now()) == 0);
   for (unsigned i = 0; i < 1000; ++i)
     h2_fruit_slice_audio_emit(&a, H2_FRUIT_SLICE_SOUND_SLICE, now());
-  delay(300);
-  assert(h2_fruit_slice_audio_pump(&a, now()) == H2_PAL_ERR_IO);
+  assert(wait_for_audio_error(&a) == H2_PAL_ERR_IO);
   assert(a.worker && a.blocked_writes >= 3u);
   assert(h2_fruit_slice_audio_close(&a) == 0);
   assert(sink.opens == 1 && sink.closes == 1);
