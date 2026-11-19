@@ -420,7 +420,9 @@ static void test_backpressure_error_and_burst(void) {
  */
 static unsigned frames, commits, touch_phase, display_pressure_ms;
 static unsigned mute_failure_mode, audio_setting_commits, mute_writes;
-static bool mute_first_gesture;
+static bool mute_first_gesture, monitor_blocked_audio, first_album_progress;
+static unsigned display_progress_checks, pref_progress_checks;
+static uint64_t max_display_hold_ms, max_pref_hold_ms;
 static uint32_t stored_audio_setting, pending_audio_setting;
 static const unsigned event_frames[] = {5u, 35u, 40u, 45u, 65u, 85u, 90u};
 static const unsigned event_buttons[] = {
@@ -446,9 +448,30 @@ static int draw(void* u, const h2_display_rect_t* r, const void* p,
   (void)fmt;
   return 0;
 }
+static uint64_t hold_main_callback(uint32_t ms, bool verify_progress) {
+  const uint64_t started = now();
+  pthread_mutex_lock(&sink.lock);
+  const unsigned before = sink.writes;
+  pthread_mutex_unlock(&sink.lock);
+  delay(ms);
+  /* The App cannot service audio until this Display/Pref callback returns.
+   * Require new PCM from the worker here, with the ordinary liveness watchdog.
+   * Wall-clock gap ratios from sequential runs are measurements, not portable
+   * CI assertions: the host scheduler can stall either run independently. */
+  if (verify_progress) wait_for_pcm(before + 1u);
+  return now() - started;
+}
 static int present(void* u) {
   (void)u;
-  delay(frames == 5u || frames % 20u == 0 ? display_pressure_ms : 8u);
+  const bool pressure = frames == 5u || frames % 20u == 0u;
+  const bool monitor = monitor_blocked_audio && frames >= 5u && pressure;
+  const uint64_t elapsed =
+      hold_main_callback(pressure ? display_pressure_ms : 8u, monitor);
+  if (pressure && elapsed > max_display_hold_ms) max_display_hold_ms = elapsed;
+  if (monitor) {
+    ++display_progress_checks;
+    if (frames == 5u) first_album_progress = true;
+  }
   return 0;
 }
 static const h2_pal_display_vtable_t dvt = {.open = display_open,
@@ -560,7 +583,9 @@ static int pref_commit(h2_pal_pref_namespace_t* n) {
     stored_audio_setting = pending_audio_setting;
     ++audio_setting_commits;
   }
-  delay(39u);
+  const uint64_t elapsed = hold_main_callback(39u, monitor_blocked_audio);
+  if (elapsed > max_pref_hold_ms) max_pref_hold_ms = elapsed;
+  if (monitor_blocked_audio) ++pref_progress_checks;
   return 0;
 }
 static int pref_close(h2_pal_pref_namespace_t* n) {
@@ -611,6 +636,11 @@ static bool exit_app(void* u) {
 static uint64_t run_app(bool worker, unsigned pressure) {
   reset_sink();
   frames = commits = touch_phase = 0;
+  monitor_blocked_audio =
+      worker && mute_failure_mode == 0u && !mute_first_gesture;
+  first_album_progress = false;
+  display_progress_checks = pref_progress_checks = 0u;
+  max_display_hold_ms = max_pref_hold_ms = 0u;
   pending_audio_setting = audio_setting_commits = 0u;
   stored_audio_setting =
       mute_first_gesture ? 0x41550101u : 0u; /* Saved SFX mute. */
@@ -681,10 +711,17 @@ static uint64_t run_app(bool worker, unsigned pressure) {
   } else {
     assert(touch_phase == 2u * sizeof(event_frames) / sizeof(event_frames[0]));
   }
+  if (monitor_blocked_audio) {
+    assert(first_album_progress && display_progress_checks >= 2u &&
+           pref_progress_checks >= 2u);
+  }
   printf(
-      "public-App worker=%d album_pressure=%u missing_ms=%llu refill_gap=%llu writes=%u pref_commits=%u\n",
+      "public-App worker=%d album_pressure=%u missing_ms=%llu refill_gap=%llu writes=%u pref_commits=%u display_progress=%u pref_progress=%u display_hold_max=%llu pref_hold_max=%llu\n",
       worker, pressure, (unsigned long long)sink.missing,
-      (unsigned long long)sink.max_gap, sink.writes, commits);
+      (unsigned long long)sink.max_gap, sink.writes, commits,
+      display_progress_checks, pref_progress_checks,
+      (unsigned long long)max_display_hold_ms,
+      (unsigned long long)max_pref_hold_ms);
   return sink.missing;
 }
 int main(void) {
@@ -697,8 +734,8 @@ int main(void) {
   const unsigned pressures[] = {154u, 180u};
   for (unsigned i = 0; i < 2u; ++i) {
     const uint64_t cooperative = run_app(false, pressures[i]);
-    const uint64_t independent = run_app(true, pressures[i]);
-    assert(cooperative >= 200u && independent < cooperative / 4u);
+    assert(cooperative >= 200u);
+    (void)run_app(true, pressures[i]);
   }
   for (mute_failure_mode = 1u; mute_failure_mode <= 3u; ++mute_failure_mode)
     (void)run_app(true, 8u);
