@@ -27,6 +27,7 @@ typedef struct fixture {
   int create_result, write_result;
   uint32_t preference;
   uint32_t peak;
+  int16_t last_pcm[4096], first_pcm[4096];
   bool paced_sink;
   uint64_t now_ms, consumed_at_ms;
   uint32_t queued_ms, starved_ms, full_writes;
@@ -73,6 +74,9 @@ static int write_track(h2_pal_audio_track_t* track,
         samples[i] < 0 ? (uint32_t)-(int32_t)samples[i] : (uint32_t)samples[i];
     if (magnitude > f->peak) f->peak = magnitude;
   }
+  CHECK(frame->bytes <= sizeof(f->last_pcm));
+  memcpy(f->last_pcm, frame->data, frame->bytes);
+  if (f->writes == 0u) memcpy(f->first_pcm, frame->data, frame->bytes);
   ++f->writes;
   if (f->paced_sink) {
     const uint64_t elapsed = f->now_ms - f->consumed_at_ms;
@@ -168,7 +172,8 @@ static void test_bank_mute_and_lifecycle(void) {
   CHECK(h2_fruit_slice_audio_pump(&audio, 100) == 0);
   CHECK(f.starts == 1 && f.opens == 1 && f.peak > 0 && f.peak < 4000);
   CHECK(h2_fruit_slice_audio_set_mute(&audio, H2_FRUIT_SLICE_MUTE_MUSIC) == 0);
-  CHECK(f.closes == 1 && f.stops == 1 && f.commits == 1);
+  CHECK(f.closes == 0 && f.stops == 0 && f.commits == 1);
+  CHECK(h2_fruit_slice_audio_pump(&audio, 120) == H2_PAL_OK);
   for (unsigned sound = 0; sound < H2_FRUIT_SLICE_SOUND_COUNT; ++sound) {
     CHECK(h2_fruit_slice_audio_suspend(&audio) == 0);
     f.peak = 0;
@@ -178,10 +183,10 @@ static void test_bank_mute_and_lifecycle(void) {
     CHECK(f.peak > 0); /* Every shipped event actually produces PCM. */
   }
   CHECK(h2_fruit_slice_audio_set_mute(&audio, 3) == 0);
-  unsigned writes = f.writes;
   h2_fruit_slice_audio_emit(&audio, H2_FRUIT_SLICE_SOUND_BOMB, 50000);
-  CHECK(active(&audio) == 0);
-  CHECK(h2_fruit_slice_audio_pump(&audio, 50000) == 0 && f.writes == writes);
+  CHECK(h2_fruit_slice_audio_pump(&audio, 50000) == H2_PAL_OK);
+  CHECK(h2_fruit_slice_audio_pump(&audio, 50020) == H2_PAL_OK);
+  CHECK(active(&audio) == 0 && audio.track == NULL);
   CHECK(h2_fruit_slice_audio_close(&audio) == 0);
   CHECK(f.opens == f.closes && f.starts == f.stops);
   CHECK(h2_fruit_slice_audio_init(&audio, &rt) == 0 && audio.mute == 3);
@@ -531,6 +536,8 @@ static void test_silent_prepare_preserves_gesture_timeline(void) {
   CHECK(f.opens == 1u && f.writes == 2u && audio.rebases == 0u);
   CHECK(audio.started_ms == 100000u);
   CHECK(h2_fruit_slice_audio_set_mute(&audio, 3u) == H2_PAL_OK);
+  CHECK(h2_fruit_slice_audio_pump(&audio, 100020u) == H2_PAL_OK);
+  CHECK(h2_fruit_slice_audio_pump(&audio, 100040u) == H2_PAL_OK);
   CHECK(h2_fruit_slice_audio_prepare(&audio) == H2_PAL_OK);
   CHECK(f.opens == 1u && f.closes == 1u && !audio.speaker_started);
   CHECK(h2_fruit_slice_audio_close(&audio) == H2_PAL_OK);
@@ -550,7 +557,85 @@ static void test_long_frames_keep_bounded_lookahead(void) {
   CHECK(h2_fruit_slice_audio_close(&audio) == H2_PAL_OK);
 }
 
+static void test_mute_gain_ramps(void) {
+  const h2_audio_pcm_format_t formats[] = {
+      {8000, 160, 1, H2_AUDIO_SAMPLE_S16LE},
+      {16000, 320, 1, H2_AUDIO_SAMPLE_S16LE},
+      {48000, 960, 2, H2_AUDIO_SAMPLE_S16LE},
+      {16000, 960, 1, H2_AUDIO_SAMPLE_S16LE}};
+  for (unsigned format = 0u; format < sizeof(formats) / sizeof(formats[0]);
+       ++format) {
+    unsigned hard_jump = 0u, ramp_jump = 0u;
+    for (unsigned phase = 0u; phase < 32u; ++phase) {
+      fixture_t f = {.format = formats[format], .preference = 0x41550101u};
+      fixture_t reference = f;
+      h2_runtime_t rt = runtime_for(&f), ref_rt = runtime_for(&reference);
+      h2_fruit_slice_audio_t a, b;
+      CHECK(h2_fruit_slice_audio_init(&a, &rt) == 0);
+      CHECK(h2_fruit_slice_audio_init(&b, &ref_rt) == 0);
+      a.music_position = b.music_position = (phase * 237u) * 65536u;
+      CHECK(h2_fruit_slice_audio_prepare(&a) == 0);
+      CHECK(h2_fruit_slice_audio_prepare(&b) == 0);
+      CHECK(h2_fruit_slice_audio_set_mute(&a, 3u) == 0);
+      CHECK(h2_fruit_slice_audio_pump(&a, 100u) == 0);
+      CHECK(h2_fruit_slice_audio_pump(&b, 100u) == 0);
+      const unsigned ramp_samples = formats[format].sample_rate_hz / 100u;
+      for (unsigned i = 0u; i < formats[format].frame_samples_per_channel;
+           ++i) {
+        const int32_t gain =
+            i + 1u < ramp_samples
+                ? 65536 - (65536 / (int32_t)ramp_samples) * (int32_t)(i + 1u)
+                : 0;
+        for (unsigned c = 0u; c < formats[format].channels; ++c) {
+          const unsigned at = i * formats[format].channels + c;
+          CHECK(f.first_pcm[at] ==
+                (int16_t)((int64_t)reference.first_pcm[at] * gain / 65536));
+        }
+      }
+      const char* export_dir = getenv("H2_AUDIO_PCM_DIR");
+      if (export_dir != NULL && phase == 7u) {
+        char path[1024];
+        CHECK(snprintf(path, sizeof(path), "%s/mute-%u-%u.s16le", export_dir,
+                       formats[format].sample_rate_hz,
+                       formats[format].frame_samples_per_channel) > 0);
+        FILE* file = fopen(path, "wb");
+        CHECK(file != NULL);
+        for (unsigned i = 0u; i < formats[format].frame_samples_per_channel *
+                                      formats[format].channels;
+             ++i) {
+          CHECK(fputc((uint16_t)f.first_pcm[i] & 255u, file) != EOF);
+          CHECK(fputc(((uint16_t)f.first_pcm[i] >> 8) & 255u, file) != EOF);
+        }
+        CHECK(fclose(file) == 0);
+      }
+      const unsigned hard = (unsigned)abs(reference.first_pcm[0]);
+      const unsigned ramp =
+          (unsigned)abs(f.first_pcm[0] - reference.first_pcm[0]);
+      if (hard > hard_jump) hard_jump = hard;
+      if (ramp > ramp_jump) ramp_jump = ramp;
+      CHECK(a.ramp_left == 0u && a.music_gain == 0 && a.sfx_gain == 0);
+      for (unsigned i = 0; i < formats[format].frame_samples_per_channel *
+                                   formats[format].channels;
+           ++i)
+        CHECK(abs(f.last_pcm[i]) <= abs(reference.last_pcm[i]));
+      CHECK(h2_fruit_slice_audio_pump(&a, 120u) == 0);
+      CHECK(a.track == NULL && f.closes == 1u);
+      CHECK(h2_fruit_slice_audio_set_mute(&a, H2_FRUIT_SLICE_MUTE_SFX) == 0);
+      CHECK(h2_fruit_slice_audio_pump(&a, 140u) == 0);
+      CHECK(a.music_gain == 65536 && a.track != NULL);
+      CHECK(h2_fruit_slice_audio_close(&a) == 0);
+      CHECK(h2_fruit_slice_audio_close(&b) == 0);
+    }
+    printf(
+        "mute PCM rate=%u channels=%u: hard-switch delta=%u ramp-first delta=%u\n",
+        formats[format].sample_rate_hz, formats[format].channels, hard_jump,
+        ramp_jump);
+    CHECK(hard_jump > 100u && ramp_jump < hard_jump / 20u);
+  }
+}
+
 int main(void) {
+  test_mute_gain_ramps();
   test_long_frames_keep_bounded_lookahead();
   test_silent_prepare_preserves_gesture_timeline();
   test_pcm_deadline_lookahead();

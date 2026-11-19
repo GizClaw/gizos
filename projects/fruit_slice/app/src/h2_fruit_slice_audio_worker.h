@@ -10,6 +10,14 @@ void h2_fruit_slice_audio_worker_emit(h2_fruit_slice_audio_t* audio,
                                       h2_fruit_slice_sound_t sound,
                                       uint64_t now_ms);
 int h2_fruit_slice_audio_worker_poll(h2_fruit_slice_audio_t* audio);
+int h2_fruit_slice_audio_worker_mute(h2_fruit_slice_audio_t* audio,
+                                     uint8_t mute);
+/* Owner-only core operations; the controller must never call these on the
+ * worker's mixer while it is running. Pref save borrows Runtime for the call.
+ */
+void h2_fruit_slice_audio_apply_mute(h2_fruit_slice_audio_t* audio,
+                                     uint8_t mute);
+int h2_fruit_slice_audio_save_mute(h2_runtime_t* runtime, uint8_t mute);
 /* Stop accepting commands immediately, confirm queue close/wake, then join
  * and return mixer ownership. Failed close is retried even if it changed the
  * queue predicate. Pending stop makes emit drop/count commands and poll return

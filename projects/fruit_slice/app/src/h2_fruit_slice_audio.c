@@ -9,6 +9,7 @@
 #define PREF_KEY "audio_v1"
 #define PREF_MAGIC 0x41550100u
 #define POSITION_ONE 65536u
+#define GAIN_ONE 65536
 
 static unsigned priority(unsigned sound) {
   static const uint8_t priorities[H2_FRUIT_SLICE_SOUND_COUNT] = {
@@ -37,6 +38,8 @@ int h2_fruit_slice_audio_init(h2_fruit_slice_audio_t* audio,
   memset(audio, 0, sizeof(*audio));
   audio->runtime = runtime;
   audio->mute = load_mute(runtime);
+  audio->sfx_gain = (audio->mute & H2_FRUIT_SLICE_MUTE_SFX) ? 0 : GAIN_ONE;
+  audio->music_gain = (audio->mute & H2_FRUIT_SLICE_MUTE_MUSIC) ? 0 : GAIN_ONE;
   h2_audio_info_t info = {0};
   int rc = h2_pal_audio_get_info(runtime->audio, &info);
   if (rc != H2_PAL_OK) return rc;
@@ -119,17 +122,10 @@ int h2_fruit_slice_audio_suspend(h2_fruit_slice_audio_t* audio) {
   return first_error;
 }
 
-int h2_fruit_slice_audio_set_mute(h2_fruit_slice_audio_t* audio, uint8_t mute) {
-  if (audio == NULL || mute > 3u) return H2_PAL_ERR_INVALID_ARG;
-  if (audio->mute == mute) return H2_PAL_OK;
-  int rc = h2_fruit_slice_audio_suspend(audio);
-  if (rc != H2_PAL_OK) return rc;
-  /* Keep the previous applied state until shutdown really completes. The
-   * App retries a differing requested mute on its next frame. */
-  audio->mute = mute;
+int h2_fruit_slice_audio_save_mute(h2_runtime_t* runtime, uint8_t mute) {
   h2_pal_pref_namespace_t* ns = NULL;
-  rc = h2_pal_pref_open(audio->runtime->pref, H2_FRUIT_SLICE_PREF_NAMESPACE,
-                        H2_PAL_PREF_OPEN_READ_WRITE, &ns);
+  int rc = h2_pal_pref_open(runtime->pref, H2_FRUIT_SLICE_PREF_NAMESPACE,
+                            H2_PAL_PREF_OPEN_READ_WRITE, &ns);
   if (rc != H2_PAL_OK || ns == NULL)
     return rc != H2_PAL_OK ? rc : H2_PAL_ERR_IO;
   rc = ns->set_u32 != NULL ? ns->set_u32(ns, PREF_KEY, PREF_MAGIC | mute)
@@ -139,6 +135,40 @@ int h2_fruit_slice_audio_set_mute(h2_fruit_slice_audio_t* audio, uint8_t mute) {
     int closed = ns->close(ns);
     if (rc == H2_PAL_OK) rc = closed;
   }
+  return rc;
+}
+
+void h2_fruit_slice_audio_apply_mute(h2_fruit_slice_audio_t* audio,
+                                     uint8_t mute) {
+  if (audio->mute == mute) return;
+  audio->mute = mute;
+  const uint32_t count = audio->format.sample_rate_hz / 100u;
+  audio->ramp_left = count != 0u ? count : 1u; /* 10 ms on a usable format. */
+  if (mute == 3u && audio->track == NULL && !audio->speaker_started) {
+    audio->sfx_gain = audio->music_gain = 0;
+    audio->ramp_left = 0u;
+    return;
+  }
+  const int32_t sfx = (mute & H2_FRUIT_SLICE_MUTE_SFX) ? 0 : GAIN_ONE;
+  const int32_t music = (mute & H2_FRUIT_SLICE_MUTE_MUSIC) ? 0 : GAIN_ONE;
+  audio->sfx_step = (sfx - audio->sfx_gain) / (int32_t)audio->ramp_left;
+  audio->music_step = (music - audio->music_gain) / (int32_t)audio->ramp_left;
+}
+
+int h2_fruit_slice_audio_set_mute(h2_fruit_slice_audio_t* audio, uint8_t mute) {
+  if (audio == NULL || mute > 3u) return H2_PAL_ERR_INVALID_ARG;
+  if (audio->mute == mute) return H2_PAL_OK;
+  if (audio->worker_requested && audio->worker == NULL) {
+    const int rc = h2_fruit_slice_audio_worker_start(audio);
+    if (rc != H2_PAL_OK) return rc;
+  }
+  if (audio->worker != NULL)
+    return h2_fruit_slice_audio_worker_mute(audio, mute);
+  h2_fruit_slice_audio_apply_mute(audio, mute);
+  audio->pref_dirty = true;
+  const int rc = h2_fruit_slice_audio_save_mute(audio->runtime, mute);
+  if (rc == H2_PAL_OK || rc == H2_PAL_ERR_UNSUPPORTED)
+    audio->pref_dirty = false;
   return rc;
 }
 
@@ -157,20 +187,46 @@ static void mix_frame(h2_fruit_slice_audio_t* audio) {
       &h2_fruit_slice_audio_bank[H2_FRUIT_SLICE_AUDIO_MUSIC];
   const uint32_t music_end = (uint32_t)music->count * POSITION_ONE;
   for (unsigned i = 0; i < audio->format.frame_samples_per_channel; ++i) {
-    int32_t mixed = 0;
+    int32_t effects = 0;
     bool duck = false;
     for (unsigned v = 0; v < H2_FRUIT_SLICE_AUDIO_VOICES; ++v) {
       h2_fruit_slice_audio_voice_t* voice = &audio->voices[v];
       if (!voice->active) continue;
       const h2_fruit_slice_audio_clip_t* clip =
           &h2_fruit_slice_audio_bank[voice->sound];
-      mixed += sample(clip, voice->position) * 150;
+      effects += sample(clip, voice->position) * 150;
       voice->position += step;
       if (voice->position / POSITION_ONE >= clip->count) voice->active = false;
       duck = true;
     }
-    if (!(audio->mute & H2_FRUIT_SLICE_MUTE_MUSIC))
-      mixed += sample(music, audio->music_position) * (duck ? 10 : 24);
+    if (audio->ramp_left != 0u) {
+      audio->sfx_gain += audio->sfx_step;
+      audio->music_gain += audio->music_step;
+      if (--audio->ramp_left == 0u) {
+        audio->sfx_gain =
+            (audio->mute & H2_FRUIT_SLICE_MUTE_SFX) ? 0 : GAIN_ONE;
+        audio->music_gain =
+            (audio->mute & H2_FRUIT_SLICE_MUTE_MUSIC) ? 0 : GAIN_ONE;
+        if (audio->mute & H2_FRUIT_SLICE_MUTE_SFX) {
+          memset(audio->voices, 0, sizeof(audio->voices));
+          /* Removing a fading SFX must not hard-switch BGM from ducked x10
+           * to x24. Carry its current level into the next 10 ms ramp. Normal
+           * effect/melody timing and steady-state samples remain unchanged. */
+          if (duck && !(audio->mute & H2_FRUIT_SLICE_MUTE_MUSIC)) {
+            audio->music_gain = audio->music_gain * 10 / 24;
+            audio->ramp_left = audio->format.sample_rate_hz / 100u;
+            audio->music_step =
+                (GAIN_ONE - audio->music_gain) / (int32_t)audio->ramp_left;
+            audio->sfx_step = 0;
+          }
+        }
+      }
+    }
+    const int music_sample =
+        sample(music, audio->music_position) * (duck ? 10 : 24);
+    int32_t mixed = (int32_t)(((int64_t)effects * audio->sfx_gain +
+                               (int64_t)music_sample * audio->music_gain) /
+                              GAIN_ONE);
     audio->music_position += step;
     if (audio->music_position >= music_end) audio->music_position -= music_end;
     if (mixed > 32767) mixed = 32767;
@@ -201,12 +257,20 @@ int h2_fruit_slice_audio_prepare(h2_fruit_slice_audio_t* audio) {
 int h2_fruit_slice_audio_pump(h2_fruit_slice_audio_t* audio, uint64_t now_ms) {
   if (audio == NULL) return H2_PAL_ERR_INVALID_ARG;
   if (!audio->available) return H2_PAL_ERR_UNSUPPORTED;
-  if (audio->mute == 3u) return H2_PAL_OK;
-  if (audio->worker_requested && audio->worker == NULL) {
+  if (audio->worker != NULL) return h2_fruit_slice_audio_worker_poll(audio);
+  if (audio->worker_requested && audio->mute != 3u) {
     const int started = h2_fruit_slice_audio_worker_start(audio);
     if (started != H2_PAL_OK) return started;
+    return h2_fruit_slice_audio_worker_poll(audio);
   }
-  if (audio->worker != NULL) return h2_fruit_slice_audio_worker_poll(audio);
+  if (audio->pref_dirty && now_ms >= audio->pref_retry_ms) {
+    const int saved =
+        h2_fruit_slice_audio_save_mute(audio->runtime, audio->mute);
+    audio->pref_dirty = saved != H2_PAL_OK && saved != H2_PAL_ERR_UNSUPPORTED;
+    audio->pref_retry_ms = now_ms + 500u;
+  }
+  if (audio->mute == 3u && audio->ramp_left == 0u)
+    return h2_fruit_slice_audio_suspend(audio);
   if (audio->pumped && now_ms >= audio->last_pump_ms) {
     const uint64_t gap = now_ms - audio->last_pump_ms;
     if (gap > audio->max_pump_gap_ms)

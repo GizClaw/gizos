@@ -36,6 +36,13 @@ typedef struct h2_fruit_slice_audio {
   uint32_t music_position;
   uint32_t seen;
   uint8_t mute;
+  /* Q16 per-bus gain. Only transitions use the ramp; steady-state PCM is
+   * unchanged. A direct/cooperative owner and the PAL worker share this core.
+   */
+  int32_t sfx_gain, music_gain, sfx_step, music_step;
+  uint32_t ramp_left;
+  bool pref_dirty;
+  uint64_t pref_retry_ms;
   bool available, speaker_started;
   struct h2_fruit_slice_audio_worker* worker;
   bool worker_requested;
@@ -54,9 +61,12 @@ int h2_fruit_slice_audio_prepare(h2_fruit_slice_audio_t* audio);
  * now_ms is monotonic wall time. BOMB clears lower-priority voices. */
 void h2_fruit_slice_audio_emit(h2_fruit_slice_audio_t* audio,
                                h2_fruit_slice_sound_t sound, uint64_t now_ms);
-/* Stop/flush playback, then apply and persist independent mute flags. Failed
- * shutdown retains the previous applied value so the App retries the request.
- * A persistence failure leaves the successfully applied mute in memory. */
+/* Queue the latest requested mute in worker mode, without joining, touching
+ * hardware or saving on the caller. Single-bus changes keep the track and
+ * ramp its digital bus over 10 ms. The worker releases hardware after a full
+ * mute fade and retries failed control cleanup/settings writes. Queue pressure
+ * leaves the previous accepted value so the App retries on its next frame.
+ * Cooperative targets apply the same ramp and persist synchronously. */
 int h2_fruit_slice_audio_set_mute(h2_fruit_slice_audio_t* audio, uint8_t mute);
 /* At most three native frames per call, at most 20 ms of lookahead, write
  * timeout zero, no backlog replay. Service at frame boundaries/during waits. */
