@@ -241,6 +241,7 @@ static int queue_recv(void* u, h2_pal_queue_t* q, void* item,
 static h2_pal_queue_vtable_t queue_vt;
 static h2_pal_queue_api_t queue_api;
 static void init_queue_api(void) {
+  app_thread = pthread_self();
   queue_vt = *h2_desktop_platform_queue_api()->vtable;
   queue_vt.create = queue_create;
   queue_vt.destroy = queue_destroy;
@@ -283,7 +284,9 @@ static int task_join(void* u, h2_pal_task_t* task) {
   if (toggle_trial && pthread_equal(pthread_self(), app_thread) && tap_pending)
     ++toggle_join_main_calls;
   (void)u;
-  if (join_failures) {
+  /* Producer-join faults belong to the App caller; a concurrent Pref join
+   * has its own fault counter and must not consume this injection. */
+  if (pthread_equal(pthread_self(), app_thread) && join_failures) {
     --join_failures;
     return H2_PAL_ERR_BUSY;
   }
@@ -865,7 +868,6 @@ static uint64_t run_app(bool worker, unsigned pressure) {
   c.audio = &audio_api;
   h2_runtime_t* rt = NULL;
   assert(h2_runtime_init(&c, &rt) == 0);
-  app_thread = pthread_self();
   const h2_fruit_slice_config_t cfg = {.seed = 42,
                                        .frame_period_ms = 30,
                                        .should_exit = exit_app,
