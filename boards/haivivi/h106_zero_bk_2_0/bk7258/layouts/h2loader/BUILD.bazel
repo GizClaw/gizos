@@ -1,14 +1,38 @@
+load("@rules_python//python:defs.bzl", "py_test")
+load(":partitions.bzl", "zero_bk_partition_tables")
+
 package(default_visibility = ["//visibility:public"])
+
+zero_bk_partition_tables()
+
+py_test(
+    name = "fixed_xip_test",
+    srcs = ["tests/test_fixed_xip.py"],
+    args = [
+        "$(location :p1_partitions)",
+        "$(location :p2_partitions)",
+    ],
+    data = [
+        ":p1_partitions",
+        ":p2_partitions",
+    ],
+    main = "tests/test_fixed_xip.py",
+)
 
 exports_files([
     "ap.defaults",
+    "ap.e2e.defaults",
     "ap.ipv6.defaults",
+    "ap.loader.defaults",
+    "ap.mfg.defaults",
     "ap/h2loader/usr_gpio_cfg.h",
     "bk_loader.json",
     "cp.defaults",
+    "cp.e2e.defaults",
     "cp.ipv6.defaults",
+    "cp.loader.defaults",
+    "cp.mfg.defaults",
     "partitions/bk7258/ab_position_independent.csv",
-    "partitions/bk7258/auto_partitions.csv",
     "partitions/bk7258/ota_rbl.config",
     "pj_config.mk",
     "ram_regions.csv",
@@ -30,11 +54,18 @@ alias(
 )
 
 filegroup(
-    name = "layout",
+    name = "project_support",
     srcs = [
         "partitions/bk7258/ab_position_independent.csv",
-        "partitions/bk7258/auto_partitions.csv",
         "partitions/bk7258/ota_rbl.config",
         "pj_config.mk",
+    ],
+)
+
+filegroup(
+    name = "layout",
+    srcs = [
+        ":p2_partitions",
+        ":project_support",
     ],
 )

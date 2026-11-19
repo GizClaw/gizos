@@ -76,7 +76,8 @@ def _bk7258_firmware_impl(ctx):
     prebuilt_sources = [component.native_srcs for component in prebuilt_components]
     prebuilt_headers = [component.headers for component in prebuilt_components]
     inputs = depset(
-        [ctx.file.project, ctx.file._archive_cmake, ctx.file._native_component_cmake, ctx.file._sdk_version, ctx.file._toolchain_archives, ctx.file._sdk_locator, ctx.file._toolchain_locator, ctx.file._ccache_locator, ctx.file.ram_regions] + ctx.files.srcs + ctx.files.support_files + ctx.files.project_support_files + ctx.files.ap_config + ctx.files.cp_config + [ctx.file.ap_gpio, ctx.file.cp_gpio] + prebuilt_files + ([ctx.file.memory_contract] if ctx.file.memory_contract else []),
+        direct = ([ctx.file.partition_table] if ctx.file.partition_table else []) +
+                 [ctx.file.project, ctx.file._archive_cmake, ctx.file._native_component_cmake, ctx.file._sdk_version, ctx.file._toolchain_archives, ctx.file._sdk_locator, ctx.file._toolchain_locator, ctx.file._ccache_locator, ctx.file.ram_regions] + ctx.files.srcs + ctx.files.support_files + ctx.files.project_support_files + ctx.files.ap_config + ctx.files.cp_config + [ctx.file.ap_gpio, ctx.file.cp_gpio] + prebuilt_files + ([ctx.file.memory_contract] if ctx.file.memory_contract else []),
         transitive = graph_sources + prebuilt_headers + prebuilt_sources,
     )
 
@@ -104,6 +105,8 @@ def _bk7258_firmware_impl(ctx):
     args.add("--recovery-output", recovery_image.path)
     args.add("--partition-metadata-output", partition_metadata.path)
     args.add("--ram-regions", ctx.file.ram_regions.path)
+    if ctx.file.partition_table:
+        args.add("--partition-table", ctx.file.partition_table.path)
     if ctx.file.memory_contract:
         args.add("--memory-contract", ctx.file.memory_contract.path)
         args.add("--memory-checker", ctx.executable.memory_checker.path)
@@ -232,6 +235,10 @@ _bk7258_firmware = rule(
             mandatory = True,
         ),
         "project_name": attr.string(mandatory = True),
+        "partition_table": attr.label(
+            allow_single_file = [".csv"],
+            doc = "Board-selected CSV staged as partitions/<target>/auto_partitions.csv.",
+        ),
         "project_support_files": attr.label_list(allow_files = True),
         "recovery_config": attr.label(
             allow_single_file = [".json"],
