@@ -266,9 +266,9 @@ bool h2_garden_guard_cell_at(const h2_garden_guard_layout_t* layout, float x,
 float h2_garden_guard_plant_height(h2_garden_guard_plant_kind_t kind) {
   switch (kind) {
     case H2_GARDEN_GUARD_PLANT_SUNFLOWER:
-      return 1.06f;
+      return 1.13f;
     case H2_GARDEN_GUARD_PLANT_SHOOTER:
-      return 0.96f;
+      return 1.02f;
     case H2_GARDEN_GUARD_PLANT_PUMPKIN:
       return 0.72f;
     default:
