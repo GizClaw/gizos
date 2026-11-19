@@ -504,7 +504,8 @@ static int bk_draw_bitmap(void* user, const h2_display_rect_t* rect,
     const uint8_t* src_row = src + (size_t)row * stride_bytes;
     if (format == H2_DISPLAY_PIXEL_RGB565) {
       if (!state->swap_rgb565_bytes) {
-        memcpy(dst, src_row, (size_t)clipped.width * sizeof(uint16_t));
+        h2_bk7258_display_copy_pixels(dst, src_row,
+                                      (size_t)clipped.width * sizeof(uint16_t));
       } else {
         for (int col = 0; col < clipped.width; ++col) {
           uint16_t pixel;

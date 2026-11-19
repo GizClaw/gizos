@@ -11,7 +11,24 @@ static void paint(uint16_t* pixels, const h2_display_rect_t* rect,
       pixels[(size_t)y * WIDTH + (size_t)x] = color;
 }
 
+static void check_copy_boundaries(void) {
+  _Alignas(4) uint8_t src[104], dst[104], expected[104];
+  for (size_t i = 0; i < sizeof(src); ++i) src[i] = (uint8_t)(i * 71u + 29u);
+  for (size_t in = 0; in < 4; ++in) {
+    for (size_t out = 0; out < 4; ++out) {
+      for (size_t size = 0; size <= 97; ++size) {
+        memset(dst, 0xa5, sizeof(dst));
+        memset(expected, 0xa5, sizeof(expected));
+        memcpy(expected + out, src + in, size);
+        h2_bk7258_display_copy_pixels(dst + out, src + in, size);
+        assert(memcmp(dst, expected, sizeof(dst)) == 0);
+      }
+    }
+  }
+}
+
 int main(void) {
+  check_copy_boundaries();
   uint16_t* shadow = calloc(PIXELS, sizeof(uint16_t));
   uint16_t* pixels[2] = {malloc(PIXELS * sizeof(uint16_t)),
                          malloc(PIXELS * sizeof(uint16_t))};

@@ -80,6 +80,26 @@ static inline void h2_bk7258_display_buffer_release(
   h2_atomic_bool_store(buffer->available, true, H2_ATOMIC_RELEASE);
 }
 
+/* Both sides of a frame copy can be in uncached PSRAM. Group aligned reads
+ * and writes so the bus can transfer several words before changing direction.
+ * Keep the exact byte range for borrowed, unaligned and padded source rows. */
+static inline void h2_bk7258_display_copy_pixels(void* dst, const void* src,
+                                                 size_t bytes) {
+#if defined(__GNUC__)
+  enum { block_bytes = 32 };
+  if ((((uintptr_t)dst | (uintptr_t)src) & 3u) == 0u) {
+    while (bytes >= block_bytes) {
+      __builtin_memcpy(__builtin_assume_aligned(dst, 4),
+                       __builtin_assume_aligned(src, 4), block_bytes);
+      dst = (uint8_t*)dst + block_bytes;
+      src = (const uint8_t*)src + block_bytes;
+      bytes -= block_bytes;
+    }
+  }
+#endif
+  if (bytes != 0u) memcpy(dst, src, bytes);
+}
+
 /* Only the successful claimant may write pixels. Dirty bands accumulate
  * separately for both slots, including changes while a slot is scanning.
  * Returns the copied byte count. */
@@ -93,7 +113,8 @@ static inline size_t h2_bk7258_display_buffer_copy(
     const size_t bytes = (size_t)(band->x1 - band->x0) * sizeof(uint16_t);
     for (int32_t y = band->y0; y < band->y1; ++y) {
       const size_t offset = (size_t)y * width + (size_t)band->x0;
-      memcpy(buffer->pixels + offset, shadow + offset, bytes);
+      h2_bk7258_display_copy_pixels(buffer->pixels + offset, shadow + offset,
+                                    bytes);
     }
     total += bytes * (size_t)(band->y1 - band->y0);
   }
