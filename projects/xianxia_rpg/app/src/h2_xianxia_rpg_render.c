@@ -4139,12 +4139,12 @@ static void draw_c9_glyphs(canvas_t* canvas, const game_t* game) {
     for (uint32_t i = 0; i < 8; ++i) {
       const float cx = (float)w * ((float)(i % 4u) + .5f) / 4;
       const float cy = 66 + cell_h * ((float)(i / 4u) + .35f);
-      c9_glyph(canvas, i, cx, cy, h < 300 ? 27 : 45, C_GOLD);
+      c9_glyph(canvas, i, cx, cy, h < 300 ? 27.0f : 45.0f, C_GOLD);
       text_centered(canvas, false, h2_xianxia_rpg_c9_glyph_names[i], cx,
                     (int32_t)(cy + (h < 300 ? 14 : 26)), C_TEXT, 256u);
     }
   } else {
-    const float size = h < 300 ? 36 : 54;
+    const float size = h < 300 ? 36.0f : 54.0f;
     const float cy = (float)h * .36f;
     for (uint32_t i = 0; i < 2; ++i)
       c9_glyph(canvas, h2_xianxia_rpg_c9_reference(game->node_room, i),
