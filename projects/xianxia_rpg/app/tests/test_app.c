@@ -24,6 +24,12 @@
 #define PREF_MAX 16
 #define PREF_VALUE_MAX 256
 
+/* Each normal cc_test selects its group while sharing this fixture and
+ * the production App driver. Keep the default target on chapters 1–7. */
+#ifndef H2_XIANXIA_RPG_TEST_EIGHTH_RECORD_OWNERSHIP
+#define H2_XIANXIA_RPG_TEST_EIGHTH_RECORD_OWNERSHIP 0
+#endif
+
 typedef struct fake_display {
   h2_display_info_t info;
   int opened, open_calls, close_calls;
@@ -1087,20 +1093,115 @@ static void test_seventh_chapter_keeps_formal_sixth(void) {
   use_prefs = false;
 }
 
+/* Original PAL bytes from the public v0.7 zip (e9d2ddd5...43eebd0),
+ * cleared in fresh Chromium through real pointer input: three right answers,
+ * sword/guard mirror victory, then ending refresh. No new codec generated
+ * this predecessor fixture. */
+static void plant_seventh_clear(void) {
+  static const uint8_t bytes[36] = {
+      0x03, 0x07, 0x2c, 0x0a, 0x03, 0x14, 0x0b, 0x04, 0x14, 0x0b, 0x04, 0x03,
+      0xb2, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x11, 0x00,
+      0x9c, 0xd3, 0x4e, 0xcb, 0xe8, 0x0f, 0x00, 0x00, 0x57, 0xc7, 0x13, 0x61};
+  static const uint8_t table[168] = {
+      [0] = 2,    [1] = 10,     [2] = 64,     [100] = 10,   [101] = 3,
+      [102] = 3,  [103] = 15,   [104] = 0xb2, [105] = 2,    [112] = 1,
+      [114] = 17, [164] = 0x1f, [165] = 0x28, [166] = 0x1a, [167] = 0xf9};
+  pref_put(H2_XIANXIA_RPG_PREF_JOURNEY7_KEY, H2_PAL_PREF_ENTRY_BLOB, bytes,
+           sizeof(bytes))
+      ->writes = 0;
+  pref_put(H2_XIANXIA_RPG_PREF_CHAPTERS_KEY, H2_PAL_PREF_ENTRY_BLOB, table,
+           sizeof(table))
+      ->writes = 0;
+}
+static void test_eighth_record_ownership(void) {
+  memset(&prefs, 0, sizeof(prefs));
+  use_prefs = true;
+  plant_seventh_clear();
+  const pref_entry_t old = *pref_find(H2_XIANXIA_RPG_PREF_JOURNEY7_KEY),
+                     table = *pref_find(H2_XIANXIA_RPG_PREF_CHAPTERS_KEY);
+  h2_xianxia_rpg_game_t layout;
+  h2_xianxia_rpg_game_init(&layout, WIDTH, HEIGHT, 1, NULL);
+  const h2_xianxia_rpg_rect_t* b = &layout.layout.title_buttons[1];
+  reset(WIDTH, HEIGHT, H2_DISPLAY_PIXEL_RGB565);
+  fx.exit_after = 350;
+  script_tap(40, b->x + b->w / 2, b->y + b->h / 2);
+  script_tap(210, 320, 240);
+  script_tap(320, 320, 240);
+  CHECK(run_once() == H2_PAL_OK);
+  CHECK(memcmp(&old, pref_find(H2_XIANXIA_RPG_PREF_JOURNEY7_KEY),
+               sizeof(old)) == 0);
+  CHECK(memcmp(&table, pref_find(H2_XIANXIA_RPG_PREF_CHAPTERS_KEY),
+               sizeof(table)) == 0);
+  const pref_entry_t* j8 = pref_find(H2_XIANXIA_RPG_PREF_JOURNEY8_KEY);
+  h2_xianxia_rpg_save_t save;
+  uint32_t tag = 0;
+  CHECK(j8 && j8->writes == 1 &&
+        h2_xianxia_rpg_journey8_decode(j8->value, j8->size, &save, &tag));
+  CHECK(save.chapter == 8 && save.level == 10 && save.pills == 3 &&
+        save.trust == 3 && save.facts == 4072);
+  CHECK(tag == (h2_xianxia_rpg_predecessor_tag(0, old.value, old.size) ^
+                h2_xianxia_rpg_predecessor_tag(0, NULL, 0)));
+  for (unsigned state = 0; state < 8; ++state) {
+    memset(&prefs, 0, sizeof(prefs));
+    plant_seventh_clear();
+    h2_xianxia_rpg_save_t damaged = save;
+    if (state == 0) damaged.chapter = 9;
+    if (state == 6) damaged.facts |= 1u << 24;
+    if (state == 7) damaged.flags |= 15u;
+    uint8_t bytes[36];
+    h2_xianxia_rpg_journey8_encode(&damaged, tag, bytes);
+    if (state == 1) bytes[0] = 4;
+    if (state == 2) bytes[32] ^= 1;
+    pref_entry_t* e =
+        pref_put(H2_XIANXIA_RPG_PREF_JOURNEY8_KEY,
+                 state == 3 ? H2_PAL_PREF_ENTRY_U32 : H2_PAL_PREF_ENTRY_BLOB,
+                 bytes, sizeof(bytes));
+    e->writes = 0;
+    if (state == 4 || state == 5) {
+      prefs.read_error_key = state == 4 ? H2_XIANXIA_RPG_PREF_JOURNEY8_KEY
+                                        : H2_XIANXIA_RPG_PREF_JOURNEY7_KEY;
+      prefs.read_error = H2_PAL_ERR_IO;
+    }
+    const pref_entry_t seventh = *pref_find(H2_XIANXIA_RPG_PREF_JOURNEY7_KEY),
+                       chapters = *pref_find(H2_XIANXIA_RPG_PREF_CHAPTERS_KEY);
+    reset(WIDTH, HEIGHT, H2_DISPLAY_PIXEL_RGB565);
+    fx.exit_after = 350;
+    script_tap(40, b->x + b->w / 2, b->y + b->h / 2);
+    if (state != 5) {
+      script_tap(210, 320, 240);
+      script_tap(320, 320, 240);
+    }
+    CHECK(run_once() == H2_PAL_OK && e->writes == 0 &&
+          memcmp(e->value, bytes, sizeof(bytes)) == 0);
+    CHECK(memcmp(&seventh, pref_find(H2_XIANXIA_RPG_PREF_JOURNEY7_KEY),
+                 sizeof(seventh)) == 0);
+    CHECK(memcmp(&chapters, pref_find(H2_XIANXIA_RPG_PREF_CHAPTERS_KEY),
+                 sizeof(chapters)) == 0);
+  }
+  use_prefs = false;
+}
+
 int main(void) {
-  test_seventh_chapter_keeps_formal_sixth();
-  test_sixth_chapter_keeps_released_records();
-  CHECK(h2_xianxia_rpg_run(NULL, NULL) == H2_PAL_ERR_INVALID_ARG);
-  test_plays_and_cleans_up();
-  test_rejects_unusable_displays();
-  test_ready_failure_ends_run();
-  test_upgrade_keeps_v01_keys();
-  test_corrupt_journey_is_kept();
-  test_import_record_combinations();
-  test_three_key_import_and_write_failures();
-  test_third_chapter_keeps_released_journey();
-  test_fourth_chapter_keeps_released_records();
-  test_fifth_chapter_keeps_released_records();
-  printf("xianxia_rpg app tests passed\n");
+  if (H2_XIANXIA_RPG_TEST_EIGHTH_RECORD_OWNERSHIP) {
+    puts("xianxia_rpg App group: chapter 8 record ownership (9 scenarios)");
+    test_eighth_record_ownership();
+    puts("xianxia_rpg chapter8 App tests passed");
+  } else {
+    puts("xianxia_rpg App group: lifecycle and chapters 1-7");
+    test_seventh_chapter_keeps_formal_sixth();
+    test_sixth_chapter_keeps_released_records();
+    CHECK(h2_xianxia_rpg_run(NULL, NULL) == H2_PAL_ERR_INVALID_ARG);
+    test_plays_and_cleans_up();
+    test_rejects_unusable_displays();
+    test_ready_failure_ends_run();
+    test_upgrade_keeps_v01_keys();
+    test_corrupt_journey_is_kept();
+    test_import_record_combinations();
+    test_three_key_import_and_write_failures();
+    test_third_chapter_keeps_released_journey();
+    test_fourth_chapter_keeps_released_records();
+    test_fifth_chapter_keeps_released_records();
+    printf("xianxia_rpg app tests passed\n");
+  }
   return 0;
 }

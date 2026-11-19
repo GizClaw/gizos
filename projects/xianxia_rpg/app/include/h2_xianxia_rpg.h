@@ -45,6 +45,8 @@ extern "C" {
 #define H2_XIANXIA_RPG_PREF_JOURNEY6_KEY "journey6"
 /** Chapter-7 journey, same v3 layout; fingerprint also covers journey6. */
 #define H2_XIANXIA_RPG_PREF_JOURNEY7_KEY "journey7"
+/** Chapter-8 journey, same v3 layout; fingerprint also covers journey7. */
+#define H2_XIANXIA_RPG_PREF_JOURNEY8_KEY "journey8"
 /** Blob with the cleared chapters and the hero at each clear, used to enter
  * the next chapter; a v0.1 chapter-1 clear is copied into it on start. */
 #define H2_XIANXIA_RPG_PREF_CHAPTERS_KEY "chapters"

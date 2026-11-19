@@ -36,9 +36,9 @@ extern "C" {
 #define H2_XIANXIA_RPG_ENCOUNTER_MAX 3
 /** Chapters the progress record can hold, and those this build plays. */
 #define H2_XIANXIA_RPG_CHAPTER_MAX 10u
-#define H2_XIANXIA_RPG_CHAPTERS_PLAYABLE 7u
+#define H2_XIANXIA_RPG_CHAPTERS_PLAYABLE 8u
 /** Rows of the chapter screen: playable chapters and the next one. */
-#define H2_XIANXIA_RPG_CHAPTER_ROWS 8
+#define H2_XIANXIA_RPG_CHAPTER_ROWS 9
 /** Lanterns of rapport with the companion; full rapport unlocks the joint
  * strike. */
 #define H2_XIANXIA_RPG_RAPPORT_MAX 3u
@@ -81,6 +81,7 @@ extern "C" {
 /** Chapter 6 adds a second fact word; older records keep their v2 bytes. */
 #define H2_XIANXIA_RPG_JOURNEY6_BYTES 36u
 #define H2_XIANXIA_RPG_JOURNEY7_BYTES 36u
+#define H2_XIANXIA_RPG_JOURNEY8_BYTES 36u
 #define H2_XIANXIA_RPG_CLEAR_BYTES 16u
 #define H2_XIANXIA_RPG_PROGRESS_BYTES \
   (4u + H2_XIANXIA_RPG_CHAPTER_MAX * H2_XIANXIA_RPG_CLEAR_BYTES + 4u)
@@ -119,6 +120,9 @@ typedef enum h2_xianxia_rpg_map {
   H2_XIANXIA_RPG_MAP_FROZEN_CREEK,
   H2_XIANXIA_RPG_MAP_MIRROR_SHORE,
   H2_XIANXIA_RPG_MAP_MIRROR_HALL,
+  H2_XIANXIA_RPG_MAP_SNOW_CAMP,
+  H2_XIANXIA_RPG_MAP_ICE_CLIFF,
+  H2_XIANXIA_RPG_MAP_SNOW_CAVE,
   H2_XIANXIA_RPG_MAP_COUNT,
 } h2_xianxia_rpg_map_t;
 
@@ -174,6 +178,12 @@ typedef enum h2_xianxia_rpg_stage {
   H2_XIANXIA_RPG_STAGE_C7_DUEL,
   H2_XIANXIA_RPG_STAGE_C7_REVEAL,
   H2_XIANXIA_RPG_STAGE_C7_CLEARED,
+  H2_XIANXIA_RPG_STAGE_C8_ORDER,
+  H2_XIANXIA_RPG_STAGE_C8_RESCUE,
+  H2_XIANXIA_RPG_STAGE_C8_INJURY,
+  H2_XIANXIA_RPG_STAGE_C8_GUARD,
+  H2_XIANXIA_RPG_STAGE_C8_REVEAL,
+  H2_XIANXIA_RPG_STAGE_C8_CLEARED,
   H2_XIANXIA_RPG_STAGE_COUNT,
 } h2_xianxia_rpg_stage_t;
 
@@ -230,6 +240,7 @@ typedef enum h2_xianxia_rpg_enemy {
   H2_XIANXIA_RPG_ENEMY_WENZHOU,
   H2_XIANXIA_RPG_ENEMY_TIDE_OTTER,
   H2_XIANXIA_RPG_ENEMY_MIRROR,
+  H2_XIANXIA_RPG_ENEMY_BRIDGE_SHADE,
   H2_XIANXIA_RPG_ENEMY_COUNT,
 } h2_xianxia_rpg_enemy_t;
 
@@ -326,6 +337,7 @@ typedef enum h2_xianxia_rpg_effect {
   H2_XIANXIA_RPG_EFFECT_C6_RITUAL,
   H2_XIANXIA_RPG_EFFECT_C7_FEEDBACK,
   H2_XIANXIA_RPG_EFFECT_C7_BATTLE,
+  H2_XIANXIA_RPG_EFFECT_C8_BATTLE,
   H2_XIANXIA_RPG_EFFECT_COUNT,
 } h2_xianxia_rpg_effect_t;
 
@@ -393,6 +405,22 @@ typedef enum h2_xianxia_rpg_effect {
 #define H2_XIANXIA_RPG_FACT_C7_TREATY (1u << 7)
 #define H2_XIANXIA_RPG_C7_ANSWERS_SHIFT 8u
 #define H2_XIANXIA_RPG_FACT_C7_MIRROR (1u << 11)
+/** Chapter 8 facts append to the inherited 12 bits. The local flag byte
+ * holds east/west snow steps (four bits each, saturated at twelve). */
+#define H2_XIANXIA_RPG_FACT_C8_WEST_FIRST (1u << 12)
+#define H2_XIANXIA_RPG_FACT_C8_CHOSEN (1u << 13)
+#define H2_XIANXIA_RPG_FACT_C8_EAST (1u << 14)
+#define H2_XIANXIA_RPG_FACT_C8_WEST (1u << 15)
+#define H2_XIANXIA_RPG_FACT_C8_COAL (1u << 16)
+#define H2_XIANXIA_RPG_FACT_C8_WENZHOU (1u << 17)
+#define H2_XIANXIA_RPG_FACT_C8_SNOW (1u << 18)
+#define H2_XIANXIA_RPG_FACT_C8_LIGHT (1u << 19)
+#define H2_XIANXIA_RPG_FACT_C8_EAST_BLOCK (1u << 20)
+#define H2_XIANXIA_RPG_FACT_C8_WEST_BLOCK (1u << 21)
+#define H2_XIANXIA_RPG_FACT_C8_PILL_USED (1u << 22)
+#define H2_XIANXIA_RPG_FACT_C8_ACTIVE_WEN (1u << 23)
+#define H2_XIANXIA_RPG_C8_RESCUED \
+  (H2_XIANXIA_RPG_FACT_C8_EAST | H2_XIANXIA_RPG_FACT_C8_WEST)
 /** Flags a chapter hands to the next one. */
 #define H2_XIANXIA_RPG_FLAG_CARRY                                      \
   (H2_XIANXIA_RPG_FLAG_C1_CLEARED | H2_XIANXIA_RPG_FLAG_C2_RUMOR |     \
@@ -422,7 +450,7 @@ typedef struct h2_xianxia_rpg_layout {
   h2_xianxia_rpg_rect_t chapter_panel;
   h2_xianxia_rpg_rect_t chapter_rows[H2_XIANXIA_RPG_CHAPTER_ROWS];
   h2_xianxia_rpg_rect_t chapter_restart[H2_XIANXIA_RPG_CHAPTER_ROWS];
-  h2_xianxia_rpg_rect_t chapter_back;
+  h2_xianxia_rpg_rect_t chapter_back, chapter_more;
   /** Battle: picture, lower panel, its message box and command buttons. */
   h2_xianxia_rpg_rect_t stage, panel, message;
   h2_xianxia_rpg_rect_t commands[H2_XIANXIA_RPG_COMMANDS];
@@ -563,6 +591,9 @@ typedef struct h2_xianxia_rpg_battle {
   /** Three waves, each ends after three enemy actions or a defeated foe. */
   bool lamp_battle, lamp_guard, ally_mend, heal_ally;
   uint32_t lamp_hp, lamp_max, wave, wave_turn;
+  /** Chapter 8 has two independent lamp piles; guard intercepts both. */
+  bool dual_lamps;
+  uint32_t west_lamp_hp;
   /** 0 hero, 1 companion, 2 lantern; used only for enemy hits. */
   uint8_t hit_target;
   uint8_t real_shadow;
@@ -623,6 +654,8 @@ typedef struct h2_xianxia_rpg_records {
   h2_xianxia_rpg_save_t journey6;
   bool has_journey7, journey7_latest, journey7_unreadable;
   h2_xianxia_rpg_save_t journey7;
+  bool has_journey8, journey8_latest, journey8_unreadable;
+  h2_xianxia_rpg_save_t journey8;
   h2_xianxia_rpg_progress_t progress;
   /** Each blob is missing when neither its valid nor unreadable bit is set.
    * Read errors count as unreadable: they do not prove a record is absent. */
@@ -648,6 +681,8 @@ typedef struct h2_xianxia_rpg_writes {
   h2_xianxia_rpg_save_t journey6_save;
   bool journey7;
   h2_xianxia_rpg_save_t journey7_save;
+  bool journey8;
+  h2_xianxia_rpg_save_t journey8_save;
   bool progress;
   h2_xianxia_rpg_progress_t progress_record;
 } h2_xianxia_rpg_writes_t;
@@ -664,7 +699,7 @@ typedef struct h2_xianxia_rpg_game {
   /* Title and chapter screen. */
   h2_xianxia_rpg_records_t records;
   /** Chapter the chapter card leads into, and whether it carries a clear. */
-  uint32_t prologue_chapter;
+  uint32_t prologue_chapter, chapter_page;
   bool prologue_carry;
 
   /* Progress. */
@@ -781,6 +816,13 @@ void h2_xianxia_rpg_journey7_encode(const h2_xianxia_rpg_save_t* save,
 bool h2_xianxia_rpg_journey7_decode(const uint8_t* data, size_t size,
                                     h2_xianxia_rpg_save_t* out_save,
                                     uint32_t* out_tag);
+/** Journey8 retains the v3 layout; only its own decoder knows new facts. */
+void h2_xianxia_rpg_journey8_encode(const h2_xianxia_rpg_save_t* save,
+                                    uint32_t predecessor_tag,
+                                    uint8_t out[H2_XIANXIA_RPG_JOURNEY8_BYTES]);
+bool h2_xianxia_rpg_journey8_decode(const uint8_t* data, size_t size,
+                                    h2_xianxia_rpg_save_t* out_save,
+                                    uint32_t* out_tag);
 /** Rapport capacity grows only after chapter-6 recovery. Trust remains
  * 0..3 so published completion-table decoders still accept the record. */
 uint32_t h2_xianxia_rpg_rapport_max(const h2_xianxia_rpg_game_t* game);
@@ -824,7 +866,9 @@ const char* h2_xianxia_rpg_objective(h2_xianxia_rpg_stage_t stage);
 const h2_xianxia_rpg_enemy_info_t* h2_xianxia_rpg_enemy_info(
     h2_xianxia_rpg_enemy_t enemy);
 const char* h2_xianxia_rpg_command_label(h2_xianxia_rpg_command_t command);
-/** Every fixed UTF-8 string the story and UI may draw, for glyph checks. */
+/** Enumerate fixed UTF-8 story/UI strings in order for glyph checks. Return
+ * the total count even if truncated; write at most capacity pointers to out.
+ * out must hold capacity elements and may be NULL when capacity is zero. */
 size_t h2_xianxia_rpg_story_strings(const char** out, size_t capacity);
 
 /** Hero stats at a level, with full HP/MP and no pills. */
