@@ -28,6 +28,10 @@ extern const tp_sensor_config_t* tp_get_sensor_auto_detect(
 #endif
 #define TOUCH_I2C_ID SOC_I2C_UNIT_NUM
 #define TOUCH_QUEUE_SIZE 32u
+#define TOUCH_STATUS_REG 0x814eu
+#define TOUCH_READY 0x80u
+#define TOUCH_CONTACTS 0x0fu
+#define TOUCH_RETRY_MS 50u
 /* Some vendor readers index by hardware tracking ID rather than max_num. */
 #define TOUCH_SAMPLE_COUNT 11u
 
@@ -42,7 +46,13 @@ static struct {
   h2_pal_touch_event_t events[TOUCH_QUEUE_SIZE];
   size_t head;
   size_t count;
-  h2_pal_result_t error;
+  h2_pal_result_t error;  /* Terminal for this session. */
+  const char* pending_io; /* Delivered before any subsequent gesture. */
+  bool discard_contact, fault_reported;
+  unsigned sync_logs;
+  /* Written only by the worker during a GT911 SDK report read. */
+  uint8_t report_status;
+  const char* report_stage;
   bool opened;
   bool stop;
   bool pending;
@@ -106,19 +116,33 @@ static int touch_coordinate(uint16_t value, uint16_t source_size,
   return (int)((uint32_t)value * (display_size - 1u) / (source_size - 1u));
 }
 
-static void touch_record(const tp_data_t* sample) {
-  uint32_t flags = rtos_enter_critical();
-  if (s_touch.stop || s_touch.error != H2_PAL_OK) goto done;
+/* Called under the queue lock. Invalidate both halves of any queued gesture.
+ * The consumer gets an I/O error to cancel even if recovery wins the race to
+ * its next poll. Only another failed transaction can publish another error. */
+static void touch_report_fault(const char* stage) {
+  if (s_touch.sensor->id != TP_ID_GT911) {
+    s_touch.error = H2_PAL_ERR_IO;
+    return;
+  }
+  if (s_touch.pending_io == NULL) s_touch.pending_io = stage;
+  s_touch.count = 0u;
+  s_touch.pressed = false;
+  s_touch.discard_contact = true;
+}
+
+static void touch_record_locked(const tp_data_t* sample) {
+  if (s_touch.error != H2_PAL_OK) return;
   if (sample->event != TP_EVENT_TYPE_DOWN &&
       sample->event != TP_EVENT_TYPE_MOVE && sample->event != TP_EVENT_TYPE_UP)
-    goto done;
-  if (s_touch.pressed && sample->track_id != s_touch.track_id) goto done;
-  if (!s_touch.pressed && sample->event == TP_EVENT_TYPE_UP) goto done;
+    return;
+  if (s_touch.pressed && sample->track_id != s_touch.track_id) return;
+  if (!s_touch.pressed && sample->event == TP_EVENT_TYPE_UP) return;
   if (sample->x_coordinate >= s_touch.source_width ||
       sample->y_coordinate >= s_touch.source_height) {
-    s_touch.error = H2_PAL_ERR_IO;
-    goto done;
+    touch_report_fault("bounds");
+    return;
   }
+  if (s_touch.discard_contact) return;
   h2_pal_touch_event_t event = {
       .kind = sample->event == TP_EVENT_TYPE_UP
                   ? H2_PAL_TOUCH_EVENT_UP
@@ -134,24 +158,83 @@ static void touch_record(const tp_data_t* sample) {
     size_t tail = (s_touch.head + s_touch.count - 1u) % TOUCH_QUEUE_SIZE;
     if (s_touch.events[tail].kind == H2_PAL_TOUCH_EVENT_MOVE) {
       s_touch.events[tail] = event;
-      goto done;
+      return;
     }
   }
   if (s_touch.count == TOUCH_QUEUE_SIZE) {
     /* Losing an edge cannot be represented as a successful touch gesture. */
     s_touch.error = H2_PAL_ERR_FULL;
-    goto done;
+    return;
   }
   s_touch.events[(s_touch.head + s_touch.count) % TOUCH_QUEUE_SIZE] = event;
   ++s_touch.count;
   s_touch.pressed = event.kind != H2_PAL_TOUCH_EVENT_UP;
   s_touch.track_id = sample->track_id;
-done:
+}
+
+/* The SDK re-reads status, decodes points (possibly updating its private
+ * tracking), then ACKs even on a read failure. Observe the count it actually
+ * decoded. In particular, a zero-finger report need not produce an SDK UP. */
+static int gt911_report_read(uint8_t addr, uint16_t reg, uint8_t* data,
+                             uint16_t len) {
+  int rc = tp_i2c_read_uint16(addr, reg, data, len);
+  if (reg == TOUCH_STATUS_REG && len == 1u) {
+    s_touch.report_stage = "report-status";
+    if (rc == BK_OK) {
+      s_touch.report_status = data[0];
+      if ((data[0] & TOUCH_READY) &&
+          (data[0] & TOUCH_CONTACTS) > TP_SUPPORT_MAX_NUM) {
+        s_touch.report_stage = "count";
+        return -1; /* The SDK's point buffer holds TP_SUPPORT_MAX_NUM. */
+      }
+    }
+  } else {
+    s_touch.report_stage = rc == BK_OK ? "ack" : "data";
+  }
+  return rc;
+}
+
+static bool touch_read_report(const tp_i2c_callback_t* reader) {
+  uint8_t status = 0;
+  tp_data_t samples[TOUCH_SAMPLE_COUNT] = {0};
+  const char* fault = NULL;
+  if (s_touch_i2c.read_uint16(s_touch.sensor->address, TOUCH_STATUS_REG,
+                              &status, sizeof(status)) != BK_OK) {
+    fault = "status";
+  } else if (!(status & TOUCH_READY)) {
+    return true; /* Idle says nothing about physical release. */
+  } else {
+    s_touch.report_status = 0;
+    s_touch.report_stage = "report";
+    if (s_touch.sensor->read_tp_info(reader, TP_SUPPORT_MAX_NUM,
+                                     (uint8_t*)samples) != BK_OK)
+      fault = s_touch.report_stage;
+  }
+
+  uint32_t flags = rtos_enter_critical();
+  if (!s_touch.stop && s_touch.error == H2_PAL_OK) {
+    if (fault != NULL) {
+      touch_report_fault(fault);
+    } else if (s_touch.discard_contact &&
+               (s_touch.report_status & (TOUCH_READY | TOUCH_CONTACTS)) ==
+                   TOUCH_READY) {
+      /* Discard this ACKed release too, including any stale UP coordinates. */
+      s_touch.discard_contact = false;
+    } else {
+      for (size_t i = 0u; i < TOUCH_SAMPLE_COUNT; ++i)
+        touch_record_locked(&samples[i]);
+    }
+  }
   rtos_exit_critical(flags);
+  return fault == NULL;
 }
 
 static void touch_worker(void* ctx) {
   (void)ctx;
+  const bool gt911 = s_touch.sensor->id == TP_ID_GT911;
+  tp_i2c_callback_t reader = s_touch_i2c;
+  if (gt911) reader.read_uint16 = gt911_report_read;
+  bool retry = false;
   for (;;) {
     uint32_t flags = rtos_enter_critical();
     bool stop = s_touch.stop;
@@ -159,33 +242,13 @@ static void touch_worker(void* ctx) {
     s_touch.pending = false;
     rtos_exit_critical(flags);
     if (stop) return;
-    if (pending) {
-      /* Both supported Goodix controllers use the same ready/status register.
-       * The SDK reader reports BK_FAIL for normal idle, so check readiness
-       * before calling it; a ready zero-finger report still carries release. */
-      uint8_t status = 0;
-      if (s_touch_i2c.read_uint16(s_touch.sensor->address, 0x814eu, &status,
-                                  sizeof(status)) != BK_OK) {
-        flags = rtos_enter_critical();
-        s_touch.error = H2_PAL_ERR_IO;
-        rtos_exit_critical(flags);
-      } else if ((status & 0x80u) != 0u) {
-        tp_data_t samples[TOUCH_SAMPLE_COUNT] = {0};
-        int result = s_touch.sensor->read_tp_info(
-            &s_touch_i2c, TP_SUPPORT_MAX_NUM, (uint8_t*)samples);
-        if (result != BK_OK) {
-          flags = rtos_enter_critical();
-          s_touch.error = H2_PAL_ERR_IO;
-          rtos_exit_critical(flags);
-        } else {
-          for (size_t i = 0u; i < TOUCH_SAMPLE_COUNT; ++i)
-            touch_record(&samples[i]);
-        }
-      }
-    }
-    if (rtos_delay_milliseconds(5u) != BK_OK) {
+    /* A failed status read or ACK can leave INT asserted without a new edge.
+     * Retry on the existing reader task. Resume IRQ-only sampling on success.
+     */
+    if (pending || retry) retry = !touch_read_report(&reader) && gt911;
+    if (rtos_delay_milliseconds(retry ? TOUCH_RETRY_MS : 5u) != BK_OK) {
       flags = rtos_enter_critical();
-      s_touch.error = H2_PAL_ERR_IO;
+      if (s_touch.error == H2_PAL_OK) s_touch.error = H2_PAL_ERR_IO;
       rtos_exit_critical(flags);
       return;
     }
@@ -395,13 +458,19 @@ static h2_pal_result_t touch_poll_event(void* user,
   (void)user;
   if (out_event == NULL) return H2_PAL_ERR_INVALID_ARG;
   bool report = false;
+  const char* sync_stage = NULL;
   uint32_t flags = rtos_enter_critical();
   h2_pal_result_t result = H2_PAL_ERR_WOULD_BLOCK;
   if (!s_touch.opened)
     result = H2_PAL_ERR_INVALID_STATE;
   else if (s_touch.error != H2_PAL_OK)
     result = s_touch.error;
-  else if (s_touch.count != 0u) {
+  else if (s_touch.pending_io != NULL) {
+    if (!s_touch.fault_reported) sync_stage = s_touch.pending_io;
+    s_touch.pending_io = NULL;
+    s_touch.fault_reported = true;
+    result = H2_PAL_ERR_IO;
+  } else if (s_touch.count != 0u) {
     *out_event = s_touch.events[s_touch.head];
     s_touch.head = (s_touch.head + 1u) % TOUCH_QUEUE_SIZE;
     --s_touch.count;
@@ -412,8 +481,18 @@ static h2_pal_result_t touch_poll_event(void* user,
       report = true;
     }
   }
+  if (s_touch.fault_reported && !s_touch.discard_contact &&
+      (result == H2_PAL_OK || result == H2_PAL_ERR_WOULD_BLOCK)) {
+    sync_stage = "released";
+    s_touch.fault_reported = false;
+  }
+  if (sync_stage != NULL && s_touch.sync_logs < 16u)
+    ++s_touch.sync_logs;
+  else
+    sync_stage = NULL;
   rtos_exit_critical(flags);
   /* Log on the caller task, never in the ISR or the small reader stack. */
+  if (sync_stage != NULL) printf("H2_BK_TOUCH_SYNC stage=%s\r\n", sync_stage);
   if (report)
     printf("H2_BK_TOUCH_POINT kind=%s x=%ld y=%ld\r\n",
            out_event->kind == H2_PAL_TOUCH_EVENT_DOWN ? "down" : "up",

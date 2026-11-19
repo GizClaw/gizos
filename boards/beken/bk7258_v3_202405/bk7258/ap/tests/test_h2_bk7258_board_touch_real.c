@@ -9,15 +9,31 @@
 
 static pthread_mutex_t critical = PTHREAD_MUTEX_INITIALIZER;
 static gpio_isr_t interrupt_callback;
-static bool irq_enabled, bus_live, task_live, no_sensor, read_complete_pending;
+static bool irq_enabled, bus_live, task_live, no_sensor;
 static bool interrupt_input, input_settled;
-static int fail_bus, fail_sensor, fail_start, fail_join, fail_read, fail_enable;
+static int fail_bus, fail_sensor, fail_start, fail_join, fail_enable;
 static int fail_range, change_range_on_init, initialize_range_on_init;
-static int status_reads, fail_status;
+static int status_reads, retry_delays;
+static unsigned submitted, sampled, published;
+/* Each scripted fault applies to one report. A stuck bus outlasts the IRQ. */
+static enum fault {
+  HEALTHY,
+  PROBE_IO,
+  READER_STATUS_IO,
+  READER_IDLE,
+  DATA_IO,
+  ACK_IO,
+  ACK_UNCERTAIN,
+  BAD_COUNT,
+  PROBE_SAYS_RELEASE,
+  STUCK_BUS,
+  WORKER_DIES
+} fault;
+static bool in_reader, fail_status, sdk_pressed;
 static uint16_t expected_range_register = 0x8048;
 static uint16_t display_width = 480, display_height = 800;
 static uint16_t controller_width = 480, controller_height = 800;
-static int read_count, bus_closes, starts, joins;
+static int bus_closes, starts, joins;
 static tp_data_t next_sample;
 static h2_pal_task_entry_t worker_entry;
 static void* worker_context;
@@ -41,15 +57,17 @@ static void pause_thread(void) {
 }
 int rtos_delay_milliseconds(uint32_t ms) {
   /* Reset settling delays require no wall time in this hardware mock. */
-  if (ms >= 50u && interrupt_input) input_settled = true;
-  if (ms == 5u) {
+  if (ms == 5u || ms == 50u) {
     uint32_t flags = rtos_enter_critical();
-    if (read_complete_pending) {
-      ++read_count;
-      read_complete_pending = false;
-    }
+    published = sampled;
+    if (ms == 50u) ++retry_delays;
+    bool die = fault == WORKER_DIES && sampled == submitted;
+    if (die) fault = HEALTHY;
     rtos_exit_critical(flags);
     pause_thread();
+    if (die) return -1;
+  } else if (ms >= 50u && interrupt_input) {
+    input_settled = true;
   }
   return BK_OK;
 }
@@ -123,14 +141,6 @@ int bk_i2c_deinit_v2(int id) {
     (void)len;                                                       \
     return BK_OK;                                                    \
   }
-#define TRANSPORT16(name)                                             \
-  int name(uint8_t addr, uint16_t reg, uint8_t* data, uint16_t len) { \
-    (void)addr;                                                       \
-    (void)reg;                                                        \
-    (void)data;                                                       \
-    (void)len;                                                        \
-    return BK_OK;                                                     \
-  }
 TRANSPORT8(tp_i2c_read_uint8)
 TRANSPORT8(tp_i2c_write_uint8)
 int tp_i2c_read_uint16(uint8_t addr, uint16_t reg, uint8_t* data,
@@ -141,16 +151,32 @@ int tp_i2c_read_uint16(uint8_t addr, uint16_t reg, uint8_t* data,
     assert(len == 1);
     uint32_t flags = rtos_enter_critical();
     ++status_reads;
-    int result = fail_status ? -1 : BK_OK;
+    sampled = submitted;
+    if (fault == STUCK_BUS) fail_status = true;
+    bool failed = fail_status || (in_reader && fault == READER_STATUS_IO) ||
+                  (!in_reader && fault == PROBE_IO);
     data[0] = next_sample.event == TP_EVENT_TYPE_NONE ? 0
               : next_sample.event == TP_EVENT_TYPE_UP ? 0x80
                                                       : 0x81;
-    if (fail_status) {
-      read_complete_pending = next_sample.event != TP_EVENT_TYPE_NONE;
-      next_sample = (tp_data_t){0};
-    }
+    if (in_reader && fault == READER_IDLE) data[0] = 0;
+    if (in_reader && fault == BAD_COUNT) data[0] = 0x82;
+    if (!in_reader && fault == PROBE_SAYS_RELEASE) data[0] = 0x80;
+    if (failed && !in_reader) fault = HEALTHY;
     rtos_exit_critical(flags);
-    return result;
+    return failed ? -1 : BK_OK;
+  }
+  if (reg == 0x814f) {
+    assert(len == 8u);
+    uint32_t flags = rtos_enter_critical();
+    memset(data, 0, len);
+    data[0] = next_sample.track_id;
+    data[1] = (uint8_t)next_sample.x_coordinate;
+    data[2] = (uint8_t)(next_sample.x_coordinate >> 8);
+    data[3] = (uint8_t)next_sample.y_coordinate;
+    data[4] = (uint8_t)(next_sample.y_coordinate >> 8);
+    bool failed = fault == DATA_IO;
+    rtos_exit_critical(flags);
+    return failed ? -1 : BK_OK;
   }
   assert(len == 6 && reg == expected_range_register);
   if (fail_range) return -1;
@@ -162,7 +188,16 @@ int tp_i2c_read_uint16(uint8_t addr, uint16_t reg, uint8_t* data,
   data[5] = 1;
   return BK_OK;
 }
-TRANSPORT16(tp_i2c_write_uint16)
+int tp_i2c_write_uint16(uint8_t addr, uint16_t reg, uint8_t* data,
+                        uint16_t len) {
+  assert(in_reader && addr == 0x14 && reg == 0x814e && len == 1 && *data == 0);
+  uint32_t flags = rtos_enter_critical();
+  bool failed = fault == ACK_IO || fault == ACK_UNCERTAIN;
+  if (fault != ACK_IO) next_sample = (tp_data_t){0};
+  if (fault != WORKER_DIES) fault = HEALTHY;
+  rtos_exit_critical(flags);
+  return failed ? -1 : BK_OK;
+}
 
 static int sensor_init(const tp_i2c_callback_t* cb,
                        tp_sensor_user_config_t* config) {
@@ -185,16 +220,26 @@ static int sensor_init(const tp_i2c_callback_t* cb,
 }
 static int sensor_read(const tp_i2c_callback_t* cb, uint8_t max_num,
                        uint8_t* data) {
-  (void)cb;
+  /* Mirror the pinned reader's second status read, tracking before ACK, and
+   * ACK even after a read error. Point data and status use separate reads. */
   assert(bus_live && max_num == TP_SUPPORT_MAX_NUM);
-  uint32_t flags = rtos_enter_critical();
-  ((tp_data_t*)data)[0] = next_sample;
-  read_complete_pending = next_sample.event != TP_EVENT_TYPE_NONE;
-  int result =
-      fail_read || next_sample.event == TP_EVENT_TYPE_NONE ? -1 : BK_OK;
-  next_sample = (tp_data_t){0};
-  rtos_exit_critical(flags);
-  return result;
+  uint8_t status = 0, point[8] = {0}, ack = 0;
+  in_reader = true;
+  int rc = cb->read_uint16(0x14, 0x814e, &status, 1u);
+  if (rc == BK_OK && !(status & 0x80u)) rc = -1;
+  if (rc == BK_OK) rc = cb->read_uint16(0x14, 0x814f, point, sizeof(point));
+  if (rc == BK_OK) {
+    uint32_t flags = rtos_enter_critical();
+    tp_data_t sample = next_sample;
+    if (sample.event == TP_EVENT_TYPE_UP && !sdk_pressed)
+      sample.event = TP_EVENT_TYPE_NONE;
+    sdk_pressed = (status & 0x0fu) != 0u;
+    ((tp_data_t*)data)[0] = sample;
+    rtos_exit_critical(flags);
+  }
+  if (cb->write_uint16(0x14, 0x814e, &ack, 1u) != BK_OK) rc = -1;
+  in_reader = false;
+  return rc;
 }
 static tp_sensor_config_t sensor = {
     .name = "gt911",
@@ -257,17 +302,19 @@ h2_pal_display_t* h2_bk7258_board_display(void) {
   return &api;
 }
 
-static void emit(uint8_t kind, uint8_t track, uint16_t x, uint16_t y) {
+static void emit_with_fault(enum fault failure, uint8_t kind, uint8_t track,
+                            uint16_t x, uint16_t y) {
   assert(irq_enabled && interrupt_callback != NULL);
   uint32_t flags = rtos_enter_critical();
-  int before = read_count;
+  unsigned sequence = ++submitted;
+  fault = failure;
   next_sample = (tp_data_t){
       .event = kind, .track_id = track, .x_coordinate = x, .y_coordinate = y};
   rtos_exit_critical(flags);
   interrupt_callback(CONFIG_TP_INT_GPIO_ID);
   for (unsigned i = 0; i < 1000; ++i) {
     flags = rtos_enter_critical();
-    bool done = read_count != before;
+    bool done = published == sequence;
     rtos_exit_critical(flags);
     /* The worker's next delay acknowledges the entire read/publication batch.
      */
@@ -275,6 +322,9 @@ static void emit(uint8_t kind, uint8_t track, uint16_t x, uint16_t y) {
     pause_thread();
   }
   assert(!"touch worker did not read the panel");
+}
+static void emit(uint8_t kind, uint8_t track, uint16_t x, uint16_t y) {
+  emit_with_fault(HEALTHY, kind, track, x, y);
 }
 static void expect(h2_pal_touch_event_kind_t kind, int x, int y) {
   h2_pal_touch_event_t event;
@@ -386,6 +436,136 @@ static void coordinate_range_tests(void) {
   controller_width = 480;
 }
 
+static void expect_result(h2_pal_result_t result) {
+  h2_pal_touch_event_t event;
+  assert(h2_pal_touch_poll_event(touch, &event) == result);
+}
+
+static void fresh_tap(void) {
+  emit(TP_EVENT_TYPE_DOWN, 0, 60, 70);
+  emit(TP_EVENT_TYPE_UP, 0, 60, 70);
+  expect(H2_PAL_TOUCH_EVENT_DOWN, 60, 70);
+  expect(H2_PAL_TOUCH_EVENT_UP, 60, 70);
+  expect_result(H2_PAL_ERR_WOULD_BLOCK);
+}
+
+static void report_recovery_tests(void) {
+  const enum fault failures[] = {PROBE_IO,  READER_STATUS_IO, READER_IDLE,
+                                 DATA_IO,   ACK_IO,           ACK_UNCERTAIN,
+                                 BAD_COUNT, HEALTHY /* out of bounds */};
+  for (size_t i = 0u; i < sizeof(failures) / sizeof(failures[0]); ++i) {
+    assert(h2_pal_touch_open(touch) == H2_PAL_OK);
+    int started = starts;
+    emit(TP_EVENT_TYPE_DOWN, 0, 20, 30);
+    expect(H2_PAL_TOUCH_EVENT_DOWN, 20, 30);
+    emit(TP_EVENT_TYPE_MOVE, 0, 21, 31); /* Undelivered at time of fault. */
+    emit_with_fault(failures[i], TP_EVENT_TYPE_MOVE, 0,
+                    failures[i] == HEALTHY ? controller_width : 22, 32);
+    /* The worker can keep sampling before the consumer sees the error. An
+     * idle bus, and even a zero count in just the outer probe, are ambiguous.
+     */
+    emit(TP_EVENT_TYPE_NONE, 0, 0, 0);
+    emit_with_fault(PROBE_SAYS_RELEASE, TP_EVENT_TYPE_MOVE, 0, 60, 70);
+    expect_result(H2_PAL_ERR_IO);
+    for (int poll = 0; poll < 64; ++poll) expect_result(H2_PAL_ERR_WOULD_BLOCK);
+    emit(TP_EVENT_TYPE_MOVE, 0, 61, 71);
+    emit(TP_EVENT_TYPE_UP, 0, 61, 71);
+    expect_result(H2_PAL_ERR_WOULD_BLOCK);
+    fresh_tap();
+    assert(starts == started);
+    clean();
+  }
+
+  /* The first DOWN can fail before SDK tracking. Its actual ready release
+   * has no SDK UP, yet the very next tap belongs to a fresh gesture. */
+  assert(h2_pal_touch_open(touch) == H2_PAL_OK);
+  emit_with_fault(DATA_IO, TP_EVENT_TYPE_DOWN, 0, 20, 30);
+  emit(TP_EVENT_TYPE_UP, 0, 20, 30);
+  emit(TP_EVENT_TYPE_DOWN, 0, 40, 50);
+  emit(TP_EVENT_TYPE_UP, 0, 40, 50);
+  expect_result(H2_PAL_ERR_IO); /* Cancellation precedes fresh queued edges. */
+  expect(H2_PAL_TOUCH_EVENT_DOWN, 40, 50);
+  expect(H2_PAL_TOUCH_EVENT_UP, 40, 50);
+
+  /* The SDK advanced its tracking before a release ACK whose result is
+   * uncertain. Never re-arm on idle or on a held contact's next DOWN. */
+  emit(TP_EVENT_TYPE_DOWN, 0, 40, 50);
+  expect(H2_PAL_TOUCH_EVENT_DOWN, 40, 50);
+  emit_with_fault(ACK_UNCERTAIN, TP_EVENT_TYPE_UP, 0, 40, 50);
+  expect_result(H2_PAL_ERR_IO);
+  emit(TP_EVENT_TYPE_NONE, 0, 0, 0);
+  emit(TP_EVENT_TYPE_DOWN, 0, 60, 70);
+  emit(TP_EVENT_TYPE_UP, 0, 60, 70);
+  expect_result(H2_PAL_ERR_WOULD_BLOCK);
+  fresh_tap();
+
+  /* A failed release ACK can also leave ready asserted. The retry must read
+   * that release without another IRQ, even though SDK tracking is now up. */
+  emit(TP_EVENT_TYPE_DOWN, 0, 40, 50);
+  expect(H2_PAL_TOUCH_EVENT_DOWN, 40, 50);
+  emit_with_fault(ACK_IO, TP_EVENT_TYPE_UP, 0, 40, 50);
+  bool acknowledged = false;
+  for (unsigned i = 0; i < 1000 && !acknowledged; ++i) {
+    uint32_t flags = rtos_enter_critical();
+    acknowledged = next_sample.event == TP_EVENT_TYPE_NONE;
+    rtos_exit_critical(flags);
+    if (!acknowledged) pause_thread();
+  }
+  assert(acknowledged);
+  expect_result(H2_PAL_ERR_IO);
+  fresh_tap();
+  clean();
+}
+
+static void persistent_fault_tests(void) {
+  int delays_before = retry_delays;
+  assert(h2_pal_touch_open(touch) == H2_PAL_OK);
+  emit_with_fault(STUCK_BUS, TP_EVENT_TYPE_DOWN, 0, 20, 30);
+  /* Each failed worker retry is observable even with INT held asserted. */
+  for (int error = 0; error < 3; ++error) {
+    h2_pal_touch_event_t event;
+    h2_pal_result_t rc = H2_PAL_ERR_WOULD_BLOCK;
+    for (unsigned i = 0; i < 1000 && rc == H2_PAL_ERR_WOULD_BLOCK; ++i) {
+      rc = h2_pal_touch_poll_event(touch, &event);
+      if (rc == H2_PAL_ERR_WOULD_BLOCK) pause_thread();
+    }
+    assert(rc == H2_PAL_ERR_IO);
+  }
+  uint32_t flags = rtos_enter_critical();
+  assert(retry_delays - delays_before >= 2);
+  fail_status = false;
+  /* Release is already ready on the controller. No further IRQ arrives. */
+  unsigned release = ++submitted;
+  next_sample = (tp_data_t){.event = TP_EVENT_TYPE_UP};
+  rtos_exit_critical(flags);
+  bool processed = false;
+  for (unsigned i = 0; i < 1000 && !processed; ++i) {
+    flags = rtos_enter_critical();
+    processed = published == release;
+    rtos_exit_critical(flags);
+    if (!processed) pause_thread();
+  }
+  assert(processed);
+  h2_pal_touch_event_t event;
+  /* A final real failure may have raced the poll above. */
+  int last = h2_pal_touch_poll_event(touch, &event);
+  assert(last == H2_PAL_ERR_WOULD_BLOCK || last == H2_PAL_ERR_IO);
+  expect_result(H2_PAL_ERR_WOULD_BLOCK);
+  fresh_tap();
+  clean();
+
+  assert(h2_pal_touch_open(touch) == H2_PAL_OK);
+  emit_with_fault(WORKER_DIES, TP_EVENT_TYPE_NONE, 0, 0, 0);
+  /* A dead acquisition worker remains terminal until shutdown. */
+  for (unsigned i = 0; i < 1000u; ++i) {
+    if (h2_pal_touch_poll_event(touch, &event) == H2_PAL_ERR_IO) break;
+    pause_thread();
+  }
+  expect_result(H2_PAL_ERR_IO);
+  expect_result(H2_PAL_ERR_IO);
+  clean();
+}
+
 int main(void) {
   touch = h2_bk7258_board_touch_api();
   h2_pal_touch_info_t info;
@@ -445,7 +625,12 @@ int main(void) {
   fail_enable = 1;
   assert(h2_pal_touch_open(touch) == H2_PAL_ERR_IO);
   assert(!bus_live && !task_live && interrupt_callback == NULL);
-  fail_enable = 0;
+  fail_join = 1; /* Partial open can return with its reader still owned. */
+  assert(h2_pal_touch_open(touch) == H2_PAL_ERR_IO);
+  assert(bus_live && task_live && !irq_enabled && interrupt_callback == NULL);
+  assert(h2_pal_touch_open(touch) == H2_PAL_ERR_BUSY);
+  fail_enable = fail_join = 0;
+  clean();
 
   assert(h2_pal_touch_open(touch) == H2_PAL_OK);
   fail_join = 1;
@@ -456,24 +641,8 @@ int main(void) {
   fail_join = 0;
   clean();
 
-  assert(h2_pal_touch_open(touch) == H2_PAL_OK);
-  fail_read = 1;
-  emit(TP_EVENT_TYPE_DOWN, 0, 1, 2);
-  assert(h2_pal_touch_poll_event(touch, &event) == H2_PAL_ERR_IO);
-  clean();
-  fail_read = 0;
-  assert(h2_pal_touch_open(touch) == H2_PAL_OK);
-  uint32_t status_flags = rtos_enter_critical();
-  fail_status = 1;
-  rtos_exit_critical(status_flags);
-  emit(TP_EVENT_TYPE_DOWN, 0, 1, 2);
-  assert(h2_pal_touch_poll_event(touch, &event) == H2_PAL_ERR_IO);
-  clean();
-  fail_status = 0;
-  assert(h2_pal_touch_open(touch) == H2_PAL_OK);
-  emit(TP_EVENT_TYPE_DOWN, 0, 480, 799);
-  assert(h2_pal_touch_poll_event(touch, &event) == H2_PAL_ERR_IO);
-  clean();
+  report_recovery_tests();
+  persistent_fault_tests();
 
   assert(h2_pal_touch_open(touch) == H2_PAL_OK);
   for (unsigned i = 0; i < 17; ++i) {
@@ -481,6 +650,18 @@ int main(void) {
     emit(TP_EVENT_TYPE_UP, 0, 10, 10);
   }
   assert(h2_pal_touch_poll_event(touch, &event) == H2_PAL_ERR_FULL);
+  emit_with_fault(READER_STATUS_IO, TP_EVENT_TYPE_DOWN, 0, 10, 10);
+  expect_result(H2_PAL_ERR_FULL);
+  clean();
+
+  sensor.id = TP_ID_GT1151;
+  sensor.name = "gt1151";
+  expected_range_register = 0x8051;
+  assert(h2_pal_touch_open(touch) == H2_PAL_OK);
+  emit_with_fault(DATA_IO, TP_EVENT_TYPE_DOWN, 0, 10, 10);
+  expect_result(H2_PAL_ERR_IO);
+  emit(TP_EVENT_TYPE_UP, 0, 10, 10);
+  expect_result(H2_PAL_ERR_IO);
   clean();
   assert(starts == joins);
   return 0;
