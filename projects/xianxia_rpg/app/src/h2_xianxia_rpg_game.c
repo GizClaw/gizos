@@ -1197,7 +1197,7 @@ static void ally_turn(h2_xianxia_rpg_game_t* game) {
       battle_say(game, "%s", c9_text(H2_XIANXIA_RPG_C9_TIDE_CUT));
     } else if (phase == 2u && !wen) {
       const uint32_t room = game->hero.hp_max - game->hero.hp;
-      game->hero.hp += room < 12u ? room : 12u;
+      game->hero.hp += room < 32u ? room : 32u;
       battle_say(game, "%s", c9_text(H2_XIANXIA_RPG_C9_COLD_WARM));
     } else if (phase == 3u && wen) {
       battle_say(game, "%s", c9_text(H2_XIANXIA_RPG_C9_MIRROR_READ));
@@ -3398,6 +3398,15 @@ void h2_xianxia_rpg_game_init(h2_xianxia_rpg_game_t* game, int32_t width,
                                                        &r->journey9, NULL);
     }
     if (!r->has_journey9) r->journey9_latest = false;
+    /* The ninth entry can inherit a real eighth result even if the shared
+     * completion table is missing or opaque. Keep this fallback in memory;
+     * never repair that table on load. */
+    if (r->has_journey8 &&
+        r->journey8.stage == H2_XIANXIA_RPG_STAGE_C8_CLEARED &&
+        !(r->progress.cleared & 128u)) {
+      r->progress.cleared |= 128u;
+      r->progress.chapters[7] = clear_of(&r->journey8);
+    }
     if (!r->has_journey8) r->journey8_latest = false;
     if (!r->has_journey7) r->journey7_latest = false;
     if (!r->has_journey6) r->journey6_latest = false;

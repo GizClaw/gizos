@@ -103,7 +103,7 @@ static void win(void) {
     else if (h2_xianxia_rpg_c9_wenzhou(&g) != want_wen) {
       command(4);
       ++swaps;
-    } else if (g.battle.veiled ||
+    } else if ((!g.hero.pills && g.hero.hp < 120u) || g.battle.veiled ||
                (p == 3u && (g.battle.mirror_command == 0u ||
                             g.battle.mirror_command == 1u)) ||
                g.hero.mp < 7u)
@@ -195,9 +195,13 @@ static void playthrough(int w, int h) {
   dialog();
   CHECK((g.flags & 255u) == 255u && g.hero.hp == g.hero.hp_max);
   reload();
+  /* A previous chapter may spend every pill. Exercise that boundary with
+   * the same production commands, including waiting for the cold-phase heal. */
+  if (w == 320) g.hero.pills = 0;
   talk(7, 2);
   step(1000);
   win();
+  if (w == 320) CHECK(g.hero.pills == 0);
   reload();
   CHECK(g.dialogue.active && g.stage == H2_XIANXIA_RPG_STAGE_C9_REVEAL);
   dialog();
@@ -210,6 +214,37 @@ static void playthrough(int w, int h) {
 static void ownership(void) {
   playthrough(640, 480);
   h2_xianxia_rpg_records_t r = g.records;
+  h2_xianxia_rpg_records_t completion = r;
+  completion.journey9.stage = H2_XIANXIA_RPG_STAGE_C9_REVEAL;
+  for (unsigned i = 0; i < 10; ++i) {
+    completion.progress.reserved[i] = (uint8_t)(0xA0u + i);
+    completion.progress.chapters[i] =
+        (h2_xianxia_rpg_clear_t){.level = 2u + i,
+                                 .pills = i % 9u,
+                                 .trust = i % 4u,
+                                 .flags = 0x80000100u + i,
+                                 .exp = 400u + i,
+                                 .turns = 17u + i};
+  }
+  completion.progress.cleared = 0x3FFu;
+  uint8_t before[168], after[168];
+  h2_xianxia_rpg_progress_encode(&completion.progress, before);
+  h2_xianxia_rpg_writes_t result;
+  for (unsigned opaque = 0; opaque < 2; ++opaque) {
+    completion.progress_unreadable = opaque != 0;
+    h2_xianxia_rpg_game_init(&g, 640, 480, 9, &completion);
+    step(300);
+    box(&g.layout.title_buttons[1]);
+    dialog();
+    CHECK(h2_xianxia_rpg_game_take_writes(&g, &result) && result.journey9 &&
+          !result.journey8 && result.progress == !opaque);
+    if (!opaque) {
+      h2_xianxia_rpg_progress_encode(&result.progress_record, after);
+      for (unsigned i = 0; i < 10; ++i)
+        if (i != 8)
+          CHECK(memcmp(before + 4 + i * 16, after + 4 + i * 16, 16) == 0);
+    }
+  }
   h2_xianxia_rpg_save_t s = r.journey9, out;
   uint8_t bytes[36];
   s.facts |= 1u << 28;
@@ -273,6 +308,23 @@ static void ownership(void) {
   CHECK(g.facts & H2_XIANXIA_RPG_FACT_C9_ACTIVE_WEN);
   checkpoint();
   CHECK(memcmp(&g.records.journey8, &r.journey8, sizeof(r.journey8)) == 0);
+  r.progress.cleared &= ~128u;
+  memset(&r.progress.chapters[7], 0, sizeof(r.progress.chapters[7]));
+  r.progress_unreadable = true;
+  h2_xianxia_rpg_game_init(&g, 640, 480, 9, &r);
+  CHECK(!h2_xianxia_rpg_game_take_writes(&g, &writes));
+  step(300);
+  box(&g.layout.title_buttons[1]);
+  step(1600);
+  tap(160, 100);
+  CHECK(g.prologue_carry);
+  step(1000);
+  tap(160, 100);
+  dialog();
+  CHECK(g.chapter == 9 && g.hero.level == 12 && g.hero.pills == 2 &&
+        (g.facts & 0xFFFFFFu) == 0xFFFFFFu);
+  CHECK(h2_xianxia_rpg_game_take_writes(&g, &writes) && writes.journey9 &&
+        !writes.progress && !writes.journey8);
 }
 int main(void) {
   ownership();

@@ -46,7 +46,7 @@ const char* const h2_xianxia_rpg_c9_text[H2_XIANXIA_RPG_C9_TEXT_COUNT] = {
     "%s · 第%u拍/2",
     "江篱提灯，雾隐解除；本轮可安心出剑。",
     "闻舟读出潮势，截断强潮；本轮扑击减弱。",
-    "江篱暖灯，寒意消退，恢复十二气血。",
+    "江篱暖灯，寒意消退，恢复三十二气血。",
     "闻舟读镜，削弱旧令的反击。",
     "队友协击，伤害 %u。",
     "阵中回声造成 %u 点伤害。",
@@ -63,6 +63,7 @@ const char* const h2_xianxia_rpg_c9_text[H2_XIANXIA_RPG_C9_TEXT_COUNT] = {
     "已通",
     "轻触屏幕，继续第九章《地脉回声》",
     "%s · 旧令%s",
+    "沿梯下井，循回声入廊",
 };
 
 static const h2_xianxia_rpg_line_t k_intro[] = {
@@ -108,7 +109,7 @@ static const h2_xianxia_rpg_line_t k_tide[] = {
 };
 static const h2_xianxia_rpg_line_t k_cold[] = {
     SAY(JIANGLI,
-        "寒室。寒意每回合压来，我的灯能暖身，恢复十二气血。防御也会回灵。别只顾出剑，把自己留在冰里。"),
+        "寒室。寒意每回合压来，我的灯能暖身，恢复三十二气血。药少时先防御，等暖灯回稳再出剑。防御也会回灵，别把自己留在冰里。"),
 };
 static const h2_xianxia_rpg_line_t k_mirror[] = {
     SAY(WENZHOU,

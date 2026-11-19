@@ -3470,8 +3470,12 @@ static void draw_hud(canvas_t* canvas, const game_t* game) {
         h2_xianxia_rpg_actor_name(h2_xianxia_rpg_c9_wenzhou(game)
                                       ? H2_XIANXIA_RPG_ACTOR_WENZHOU
                                       : H2_XIANXIA_RPG_ACTOR_JIANGLI));
-    text_wrapped(canvas, h2_xianxia_rpg_objective(game->stage), x, y, w, 1,
-                 C_TEXT, 256u, UINT32_MAX);
+    const char* goal =
+        game->stage == H2_XIANXIA_RPG_STAGE_C9_DESCEND &&
+                (game->facts & H2_XIANXIA_RPG_FACT_C9_BOOK)
+            ? h2_xianxia_rpg_c9_text[H2_XIANXIA_RPG_C9_DESCEND_READY]
+            : h2_xianxia_rpg_objective(game->stage);
+    text_wrapped(canvas, goal, x, y, w, 1, C_TEXT, 256u, UINT32_MAX);
     text_wrapped(canvas, status, x, y + LINE_PX + 3, w, 1, C_GOLD, 256u,
                  UINT32_MAX);
     return;

@@ -667,6 +667,7 @@ typedef enum h2_xianxia_rpg_c9_text_id {
   H2_XIANXIA_RPG_C9_READY,
   H2_XIANXIA_RPG_C9_ONWARD,
   H2_XIANXIA_RPG_C9_MIRROR_ORDER,
+  H2_XIANXIA_RPG_C9_DESCEND_READY,
   H2_XIANXIA_RPG_C9_TEXT_COUNT,
 } h2_xianxia_rpg_c9_text_id_t;
 extern const char* const h2_xianxia_rpg_c9_text[H2_XIANXIA_RPG_C9_TEXT_COUNT];
