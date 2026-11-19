@@ -23,13 +23,13 @@ static const uint8_t message[] = {0xd1u, 1u, 2u, 'U', 4u, 'x'};
 static const uint8_t uid[] = {4u, 1u, 2u, 3u};
 
 static int capture_log(void* user, h2_pal_log_level_t level, const char* scope,
-                       const char* message) {
+                       const char* log_message) {
   assert(user == &fixture && level == H2_PAL_LOG_WARN);
   assert(strcmp(scope, "h2_nfc_fm175xx") == 0);
   size_t available = sizeof(fixture.diagnostics) - fixture.diagnostic_length;
-  size_t length = strlen(message);
+  size_t length = strlen(log_message);
   assert(length + 1u < available);
-  memcpy(fixture.diagnostics + fixture.diagnostic_length, message, length);
+  memcpy(fixture.diagnostics + fixture.diagnostic_length, log_message, length);
   fixture.diagnostic_length += length;
   fixture.diagnostics[fixture.diagnostic_length++] = '\n';
   fixture.diagnostics[fixture.diagnostic_length] = '\0';
