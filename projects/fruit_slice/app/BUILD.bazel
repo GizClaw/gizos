@@ -25,12 +25,14 @@ _LIBM = select({
     "//conditions:default": [],
 })
 
+_DROID_SANS_FALLBACK = "fonts/DroidSansFallback.ttf"
+
 lvgl_font(
     name = "zh_compact_font",
     size = 12,
     out = "h2_fruit_slice_font_zh_compact.c",
     bpp = 4,
-    font = "//libs/ui/fonts/noto_sans_sc:NotoSansSC-Bold.ttf",
+    font = _DROID_SANS_FALLBACK,
     font_name = "h2_fruit_slice_font_zh_compact",
     lv_include = "h2_fruit_slice_font_format.h",
     symbol_sources = ["src/h2_fruit_slice_text.c"],
@@ -41,7 +43,7 @@ lvgl_font(
     size = 15,
     out = "h2_fruit_slice_font_zh_body.c",
     bpp = 4,
-    font = "//libs/ui/fonts/noto_sans_sc:NotoSansSC-Bold.ttf",
+    font = _DROID_SANS_FALLBACK,
     font_name = "h2_fruit_slice_font_zh_body",
     lv_include = "h2_fruit_slice_font_format.h",
     symbol_sources = ["src/h2_fruit_slice_text.c"],
@@ -52,7 +54,7 @@ lvgl_font(
     size = 20,
     out = "h2_fruit_slice_font_zh_heading.c",
     bpp = 2,
-    font = "//libs/ui/fonts/noto_sans_sc:NotoSansSC-Bold.ttf",
+    font = _DROID_SANS_FALLBACK,
     font_name = "h2_fruit_slice_font_zh_heading",
     lv_include = "h2_fruit_slice_font_format.h",
     symbol_sources = ["src/h2_fruit_slice_text.c"],
@@ -63,7 +65,7 @@ lvgl_font(
     size = 26,
     out = "h2_fruit_slice_font_zh_display.c",
     bpp = 2,
-    font = "//libs/ui/fonts/noto_sans_sc:NotoSansSC-Bold.ttf",
+    font = _DROID_SANS_FALLBACK,
     font_name = "h2_fruit_slice_font_zh_display",
     lv_include = "h2_fruit_slice_font_format.h",
     symbol_sources = ["src/h2_fruit_slice_text.c"],

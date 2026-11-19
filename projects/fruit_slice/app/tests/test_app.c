@@ -21,6 +21,7 @@
 
 #define WIDTH 480
 #define HEIGHT 480
+#define SHADOW_STRIDE 800
 #define SCRIPT_MAX 128
 
 typedef struct fake_display {
@@ -29,7 +30,7 @@ typedef struct fake_display {
   int opened, open_calls, close_calls;
   size_t draws, presents, rows_drawn, pixels_drawn, full_frames;
   uint32_t brightness;
-  uint16_t shadow[WIDTH * 800];
+  uint16_t shadow[SHADOW_STRIDE * 800];
 } fake_display_t;
 
 typedef struct fake_touch {
@@ -215,8 +216,9 @@ static int display_draw(void* user, const h2_display_rect_t* rect,
         rect->x + rect->width <= d->info.width);
   CHECK(rect->y >= 0 && rect->y + rect->height <= d->info.height);
   CHECK(stride == (size_t)d->info.width * 2u);
+  CHECK(d->info.width <= SHADOW_STRIDE && d->info.height <= 800);
   for (int y = 0; y < rect->height; ++y)
-    memcpy(&d->shadow[(size_t)(rect->y + y) * WIDTH + (size_t)rect->x],
+    memcpy(&d->shadow[(size_t)(rect->y + y) * SHADOW_STRIDE + (size_t)rect->x],
            (const uint8_t*)pixels + (size_t)y * stride,
            (size_t)rect->width * 2u);
   ++d->draws;
@@ -472,7 +474,7 @@ static void capture_frame(const fixture_t* f) {
   fprintf(file, "P6\n%d %d\n255\n", width, height);
   for (int y = 0; y < height; ++y)
     for (int x = 0; x < width; ++x) {
-      const uint16_t c = f->display.shadow[y * WIDTH + x];
+      const uint16_t c = f->display.shadow[y * SHADOW_STRIDE + x];
       const unsigned char rgb[3] = {
           (unsigned char)((c >> 11) * 255u / 31u),
           (unsigned char)(((c >> 5) & 63u) * 255u / 63u),
@@ -489,7 +491,7 @@ static bool should_exit(void* user) {
     uint32_t hash = 2166136261u;
     for (int y = 0; y < 20; ++y)
       for (int x = 0; x < f->display.info.width; ++x)
-        hash = (hash ^ f->display.shadow[y * WIDTH + x]) * 16777619u;
+        hash = (hash ^ f->display.shadow[y * SHADOW_STRIDE + x]) * 16777619u;
     if (f->frames == f->header_from) f->header_hash = hash;
     if (f->header_check != 0u && f->frames == f->header_check)
       CHECK(hash ==
@@ -507,7 +509,8 @@ static bool should_exit(void* user) {
       (f->capture_every && f->frames >= f->capture_from && f->frames &&
        f->frames <= f->capture_until && f->frames % f->capture_every == 0u))
     capture_frame(f);
-  if (f->frames == 3u) f->probe_before = f->display.shadow[288u * WIDTH + 240u];
+  if (f->frames == 3u)
+    f->probe_before = f->display.shadow[288u * SHADOW_STRIDE + 240u];
   return f->frames++ >= f->exit_after;
 }
 
@@ -656,7 +659,7 @@ static void test_runs_and_pushes_dirty_rows(void) {
   /* Only the melon's columns are pushed after the first frame. */
   CHECK(fx.display.pixels_drawn - (size_t)WIDTH * HEIGHT <=
         39u * 12u * 16u * 180u);
-  CHECK(fx.display.shadow[0] != fx.display.shadow[288u * WIDTH + 240u]);
+  CHECK(fx.display.shadow[0] != fx.display.shadow[288u * SHADOW_STRIDE + 240u]);
 }
 
 static void test_scaled_touch_slices_title_melon(void) {
@@ -674,7 +677,7 @@ static void test_scaled_touch_slices_title_melon(void) {
   CHECK(run() == H2_PAL_OK);
   CHECK(fx.touch.script_next == fx.touch.script_count);
   /* The melon at the display center is gone once its halves fell away. */
-  CHECK(fx.display.shadow[288u * WIDTH + 240u] != fx.probe_before);
+  CHECK(fx.display.shadow[288u * SHADOW_STRIDE + 240u] != fx.probe_before);
 }
 
 static void test_display_open_failure(void) {
@@ -1722,8 +1725,8 @@ static void test_natural_result_text(void) {
   fx.capture_name = "actual-result-default-zh-160x160";
   CHECK(run() == H2_PAL_OK);
   check_natural_result_awards();
-  const int sizes[][2] = {{160, 160}, {240, 240}, {480, 320}};
-  for (unsigned size = 0; size < 3u; ++size) {
+  const int sizes[][2] = {{160, 160}, {240, 240}, {480, 320}, {800, 480}};
+  for (unsigned size = 0; size < sizeof(sizes) / sizeof(sizes[0]); ++size) {
     for (unsigned language = 0; language < 2u; ++language) {
       reset(620u);
       prepare_natural_result_profile();
@@ -1952,6 +1955,7 @@ int main(void) {
     test_layout_loaded_profile(160, 160, value);
     test_layout_loaded_profile(240, 240, value);
     test_layout_loaded_profile(480, 320, value);
+    test_layout_loaded_profile(800, 480, value); /* BK7258 RGB panel. */
     test_layout_claim_buy_and_back(160, 160, value);
     test_layout_claim_buy_and_back(240, 240, value);
     test_layout_claim_buy_and_back(480, 320, value);
