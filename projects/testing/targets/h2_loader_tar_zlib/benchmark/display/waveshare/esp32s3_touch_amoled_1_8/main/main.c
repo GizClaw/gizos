@@ -1,5 +1,6 @@
 #include "display_bench.h"
 #include "esp_app_desc.h"
+#include "esp_lcd_io_spi.h"
 #include "esp_lcd_sh8601.h"
 #include "esp_timer.h"
 #include "h2_amoled_display_capture.h"

@@ -5,6 +5,6 @@ idf_component_register(
   SRCS ${H2_MAIN_SOURCES}
   INCLUDE_DIRS "$ENV{H2_GIZOS_ROOT}/projects/testing/benchmark/display"
   REQUIRES h2_esp_target_task_policy h2_firmware_lib h2_esp_board h2_pal_core
-           app_update espcoredump esp_timer esp_lcd_sh8601)
+           app_update espcoredump esp_timer esp_lcd esp_lcd_sh8601)
 
 target_compile_options(${COMPONENT_LIB} PRIVATE -std=gnu11 -Wall -Wextra -Werror)
