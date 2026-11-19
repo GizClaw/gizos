@@ -78,7 +78,7 @@ static const h2_xianxia_rpg_line_t k_intro[] = {
 };
 static const h2_xianxia_rpg_line_t k_book[] = {
     SAY(NARRATOR,
-        "井壁八纹已拓入灯簿：墨的三点、雾的横带、剑的直锋、风的回钩、潮的双波、泉的涌口、镜的中线、雪的六枝。"),
+        "井壁八纹已拓入灯簿：墨的四点、雾的横带、剑的直锋、风的回钩、潮的双波、泉的涌口、镜的中线、雪的分枝。"),
     SAY(JIANGLI,
         "门上的三纹混进了一枚变形纹。门页上排会重画本室的两枚正纹，下排才是要点的三枚。比形状，不用凭颜色猜。点错可以重试，不伤人也不扣药。"),
     SAY(NARRATOR,
