@@ -72,6 +72,31 @@
       "bytes": 3360,
       "sha256": "c7b662652c80f86f9644ab405ffb48e16d65318e9ce906e9b82a7ff3d50953a0"
     },
+    "slice_jade": {
+      "samples": 400,
+      "bytes": 400,
+      "sha256": "5b3784640987ee4c52cb9c6d66c1cd43aa75a6128db3ab0880e46d8be0620b93"
+    },
+    "slice_flame": {
+      "samples": 384,
+      "bytes": 384,
+      "sha256": "7fe3f53a04e9c369d37e530ae3b024843e2e6a4e1a4b327a2a8bfe03f62e0a55"
+    },
+    "slice_bamboo": {
+      "samples": 304,
+      "bytes": 304,
+      "sha256": "19cc59f6c45740ee51f8794ca3d8d08c16c381086e6ce24f4ab4a33b6de5df12"
+    },
+    "slice_frost": {
+      "samples": 480,
+      "bytes": 480,
+      "sha256": "f3b1f89b1d64045b2d5009ba652bbe9762cb1d3a9b39657fdd8f54e76a4badf1"
+    },
+    "slice_storm": {
+      "samples": 320,
+      "bytes": 320,
+      "sha256": "94a5d723cdb7528e9e49b928283ddf8557c00b785b31d2cbf563d3d980e4b622"
+    },
     "music": {
       "samples": 64000,
       "bytes": 64000,

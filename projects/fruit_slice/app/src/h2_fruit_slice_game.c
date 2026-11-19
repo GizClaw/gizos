@@ -27,18 +27,23 @@ bool h2_fruit_slice_is_fruit(unsigned kind) {
 
 static const h2_fruit_slice_weapon_t k_weapons[H2_FRUIT_SLICE_WEAPONS] = {
     {"CLASSIC KNIFE", "STANDARD CUT", 0u, 0.0f, 7.0f,
-     H2_FRUIT_SLICE_RGB(110, 214, 255), 300u, 2.0f, 0.0f, 0u, "COMBO 300MS"},
+     H2_FRUIT_SLICE_RGB(110, 214, 255), 300u, 2.0f, 0.0f, 0u,
+     H2_FRUIT_SLICE_SOUND_SLICE, "COMBO 300MS"},
     {"JADE KATANA", "+10 CUT REACH", 40u, 10.0f, 11.0f,
-     H2_FRUIT_SLICE_RGB(100, 255, 152), 300u, 2.0f, 10.0f, 0u, "COMBO 300MS"},
+     H2_FRUIT_SLICE_RGB(100, 255, 152), 300u, 2.0f, 10.0f, 0u,
+     H2_FRUIT_SLICE_SOUND_SLICE_JADE, "COMBO 300MS"},
     {"FLAME AXE", "+20 CUT REACH", 90u, 20.0f, 17.0f,
-     H2_FRUIT_SLICE_RGB(255, 130, 40), 300u, 2.0f, 20.0f, 0u, "COMBO 300MS"},
+     H2_FRUIT_SLICE_RGB(255, 130, 40), 300u, 2.0f, 20.0f, 0u,
+     H2_FRUIT_SLICE_SOUND_SLICE_FLAME, "COMBO 300MS"},
     {"BAMBOO SABER", "NARROW CUT -5", 55u, -5.0f, 4.0f,
-     H2_FRUIT_SLICE_RGB(204, 230, 120), 450u, 2.0f, -5.0f, 1u, "COMBO 450MS"},
+     H2_FRUIT_SLICE_RGB(204, 230, 120), 450u, 2.0f, -5.0f, 1u,
+     H2_FRUIT_SLICE_SOUND_SLICE_BAMBOO, "COMBO 450MS"},
     {"FROST CLEAVER", "WIDE CUT +14", 85u, 14.0f, 13.0f,
      H2_FRUIT_SLICE_RGB(96, 230, 255), 220u, 12.0f, 14.0f, 2u,
-     "MIN12 COMBO220"},
+     H2_FRUIT_SLICE_SOUND_SLICE_FROST, "MIN12 COMBO220"},
     {"STORM BLADE", "VERT+22 SIDE-3", 110u, -3.0f, 8.0f,
-     H2_FRUIT_SLICE_RGB(232, 180, 255), 180u, 6.0f, 22.0f, 3u, "MIN6 COMBO180"},
+     H2_FRUIT_SLICE_RGB(232, 180, 255), 180u, 6.0f, 22.0f, 3u,
+     H2_FRUIT_SLICE_SOUND_SLICE_STORM, "MIN6 COMBO180"},
 };
 static const h2_fruit_slice_task_t k_tasks[H2_FRUIT_SLICE_TASKS] = {
     {"SLICE 10 FRUIT", 10u, 15u, true},   {"MAKE 3 COMBOS", 3u, 25u, true},
@@ -337,7 +342,7 @@ static uint32_t button_at(const h2_fruit_slice_game_t* game, float x, float y) {
 
 static bool low_sound(unsigned sound) {
   return sound == H2_FRUIT_SLICE_SOUND_SWING ||
-         sound == H2_FRUIT_SLICE_SOUND_SLICE ||
+         h2_fruit_slice_sound_is_hit(sound) ||
          sound == H2_FRUIT_SLICE_SOUND_COIN;
 }
 
@@ -737,7 +742,8 @@ static void slice_fruit(h2_fruit_slice_game_t* game, unsigned index, float ux,
   }
 
   if (fruit.menu) enter_playing(game);
-  (void)h2_fruit_slice_game_sound(game, H2_FRUIT_SLICE_SOUND_SLICE);
+  (void)h2_fruit_slice_game_sound(
+      game, h2_fruit_slice_weapon(game->progress.equipped)->hit_sound);
   add_half(game, &fruit, nx, ny, ux, uy);
   add_half(game, &fruit, -nx, -ny, ux, uy);
   const uint16_t juice = h2_fruit_slice_game_juice(kind);
