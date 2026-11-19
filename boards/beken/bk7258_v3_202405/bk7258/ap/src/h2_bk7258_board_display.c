@@ -70,6 +70,7 @@ typedef struct h2_bk7258_display_state {
   h2_bk7258_display_bus_t bus;
   bool swap_rgb565_bytes;
   bool first_present_done;
+  h2_bk7258_display_copy_scratch_t copy_scratch;
   h2_bk7258_backlight_state_t backlight;
   struct {
     frame_buffer_t* frame;
@@ -504,7 +505,7 @@ static int bk_draw_bitmap(void* user, const h2_display_rect_t* rect,
     const uint8_t* src_row = src + (size_t)row * stride_bytes;
     if (format == H2_DISPLAY_PIXEL_RGB565) {
       if (!state->swap_rgb565_bytes) {
-        h2_bk7258_display_copy_pixels(dst, src_row,
+        h2_bk7258_display_copy_pixels(&state->copy_scratch, dst, src_row,
                                       (size_t)clipped.width * sizeof(uint16_t));
       } else {
         for (int col = 0; col < clipped.width; ++col) {
@@ -545,7 +546,7 @@ static int flush_shadow_once(h2_bk7258_display_state_t* state) {
 #endif
       size_t bytes = h2_bk7258_display_buffer_copy(
           &state->scanout[i].buffer, (const uint16_t*)state->shadow->frame,
-          state->width);
+          state->width, &state->copy_scratch);
 #if H2_BK7258_DISPLAY_DIAGNOSTICS
       state->diagnostic_copy_ms += (uint32_t)(rtos_get_time() - copy_started);
       state->diagnostic_copy_bytes += bytes;

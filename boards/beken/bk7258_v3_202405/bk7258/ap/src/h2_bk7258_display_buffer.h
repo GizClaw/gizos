@@ -80,31 +80,52 @@ static inline void h2_bk7258_display_buffer_release(
   h2_atomic_bool_store(buffer->available, true, H2_ATOMIC_RELEASE);
 }
 
-/* Both sides of a frame copy can be in uncached PSRAM. Group aligned reads
- * and writes so the bus can transfer several words before changing direction.
- * Keep the exact byte range for borrowed, unaligned and padded source rows. */
-static inline void h2_bk7258_display_copy_pixels(void* dst, const void* src,
-                                                 size_t bytes) {
+/* The serialized Display writer owns this stripe in internal SRAM. The LCD
+ * and its release callback only access the retained scanout frames. */
+typedef struct h2_bk7258_display_copy_scratch {
+  uint32_t words[128];
+} h2_bk7258_display_copy_scratch_t;
+
+static inline void h2_bk7258_display_copy_aligned(void* dst, const void* src,
+                                                  size_t bytes) {
 #if defined(__GNUC__)
   enum { block_bytes = 32 };
-  if ((((uintptr_t)dst | (uintptr_t)src) & 3u) == 0u) {
-    while (bytes >= block_bytes) {
-      __builtin_memcpy(__builtin_assume_aligned(dst, 4),
-                       __builtin_assume_aligned(src, 4), block_bytes);
-      dst = (uint8_t*)dst + block_bytes;
-      src = (const uint8_t*)src + block_bytes;
-      bytes -= block_bytes;
-    }
+  while (bytes >= block_bytes) {
+    __builtin_memcpy(__builtin_assume_aligned(dst, 4),
+                     __builtin_assume_aligned(src, 4), block_bytes);
+    dst = (uint8_t*)dst + block_bytes;
+    src = (const uint8_t*)src + block_bytes;
+    bytes -= block_bytes;
   }
 #endif
   if (bytes != 0u) memcpy(dst, src, bytes);
+}
+
+/* The two pixel arrays can share the uncached PSRAM bus. Stage whole
+ * stripes so reads from and writes to PSRAM run in separate bursts. */
+static inline void h2_bk7258_display_copy_pixels(
+    h2_bk7258_display_copy_scratch_t* scratch, void* dst, const void* src,
+    size_t bytes) {
+  if ((((uintptr_t)dst | (uintptr_t)src) & 3u) != 0u) {
+    memcpy(dst, src, bytes);
+    return;
+  }
+  while (bytes >= sizeof(*scratch)) {
+    h2_bk7258_display_copy_aligned(scratch, src, sizeof(*scratch));
+    h2_bk7258_display_copy_aligned(dst, scratch, sizeof(*scratch));
+    dst = (uint8_t*)dst + sizeof(*scratch);
+    src = (const uint8_t*)src + sizeof(*scratch);
+    bytes -= sizeof(*scratch);
+  }
+  h2_bk7258_display_copy_aligned(dst, src, bytes);
 }
 
 /* Only the successful claimant may write pixels. Dirty bands accumulate
  * separately for both slots, including changes while a slot is scanning.
  * Returns the copied byte count. */
 static inline size_t h2_bk7258_display_buffer_copy(
-    h2_bk7258_display_buffer_t* buffer, const uint16_t* shadow, size_t width) {
+    h2_bk7258_display_buffer_t* buffer, const uint16_t* shadow, size_t width,
+    h2_bk7258_display_copy_scratch_t* scratch) {
   size_t total = 0u;
   uint64_t pending = buffer->dirty_bands;
   for (uint32_t index = 0u; pending != 0u; ++index, pending >>= 1) {
@@ -113,8 +134,8 @@ static inline size_t h2_bk7258_display_buffer_copy(
     const size_t bytes = (size_t)(band->x1 - band->x0) * sizeof(uint16_t);
     for (int32_t y = band->y0; y < band->y1; ++y) {
       const size_t offset = (size_t)y * width + (size_t)band->x0;
-      h2_bk7258_display_copy_pixels(buffer->pixels + offset, shadow + offset,
-                                    bytes);
+      h2_bk7258_display_copy_pixels(scratch, buffer->pixels + offset,
+                                    shadow + offset, bytes);
     }
     total += bytes * (size_t)(band->y1 - band->y0);
   }

@@ -11,16 +11,18 @@ static void paint(uint16_t* pixels, const h2_display_rect_t* rect,
       pixels[(size_t)y * WIDTH + (size_t)x] = color;
 }
 
+static h2_bk7258_display_copy_scratch_t scratch;
+
 static void check_copy_boundaries(void) {
-  _Alignas(4) uint8_t src[104], dst[104], expected[104];
+  _Alignas(4) uint8_t src[1032], dst[1032], expected[1032];
   for (size_t i = 0; i < sizeof(src); ++i) src[i] = (uint8_t)(i * 71u + 29u);
   for (size_t in = 0; in < 4; ++in) {
     for (size_t out = 0; out < 4; ++out) {
-      for (size_t size = 0; size <= 97; ++size) {
+      for (size_t size = 0; size <= 1025; ++size) {
         memset(dst, 0xa5, sizeof(dst));
         memset(expected, 0xa5, sizeof(expected));
         memcpy(expected + out, src + in, size);
-        h2_bk7258_display_copy_pixels(dst + out, src + in, size);
+        h2_bk7258_display_copy_pixels(&scratch, dst + out, src + in, size);
         assert(memcmp(dst, expected, sizeof(dst)) == 0);
       }
     }
@@ -41,8 +43,9 @@ int main(void) {
     h2_bk7258_display_buffer_init(&buffers[i], pixels[i], &available[i], WIDTH,
                                   HEIGHT);
     assert(h2_bk7258_display_buffer_claim(&buffers[i]));
-    assert(h2_bk7258_display_buffer_copy(&buffers[i], shadow, WIDTH) ==
-           PIXELS * sizeof(uint16_t));
+    assert(
+        h2_bk7258_display_buffer_copy(&buffers[i], shadow, WIDTH, &scratch) ==
+        PIXELS * sizeof(uint16_t));
     assert(memcmp(pixels[i], shadow, PIXELS * sizeof(uint16_t)) == 0);
   }
   /* Both submitted buffers are immutable until the SDK returns one. */
@@ -56,7 +59,7 @@ int main(void) {
   assert(pixels[1][120 * WIDTH + 280] == 0u);
   h2_bk7258_display_buffer_release(&buffers[0]);
   assert(h2_bk7258_display_buffer_claim(&buffers[0]));
-  assert(h2_bk7258_display_buffer_copy(&buffers[0], shadow, WIDTH) ==
+  assert(h2_bk7258_display_buffer_copy(&buffers[0], shadow, WIDTH, &scratch) ==
          240u * 240u * sizeof(uint16_t));
   assert(memcmp(pixels[0], shadow, PIXELS * sizeof(uint16_t)) == 0);
   assert(pixels[1][120 * WIDTH + 280] == 0u);
@@ -75,17 +78,18 @@ int main(void) {
   assert(pixels[0][0] == 0u && pixels[0][PIXELS - 1] == 0u);
   h2_bk7258_display_buffer_release(&buffers[1]);
   assert(h2_bk7258_display_buffer_claim(&buffers[1]));
-  assert(h2_bk7258_display_buffer_copy(&buffers[1], shadow, WIDTH) ==
+  assert(h2_bk7258_display_buffer_copy(&buffers[1], shadow, WIDTH, &scratch) ==
          (240u * 240u + 2u * 8u * 8u) * sizeof(uint16_t));
   assert(memcmp(pixels[1], shadow, PIXELS * sizeof(uint16_t)) == 0);
   h2_bk7258_display_buffer_release(&buffers[0]);
   assert(h2_bk7258_display_buffer_claim(&buffers[0]));
-  assert(h2_bk7258_display_buffer_copy(&buffers[0], shadow, WIDTH) ==
+  assert(h2_bk7258_display_buffer_copy(&buffers[0], shadow, WIDTH, &scratch) ==
          2u * 8u * 8u * sizeof(uint16_t));
   assert(memcmp(pixels[0], shadow, PIXELS * sizeof(uint16_t)) == 0);
   h2_bk7258_display_buffer_release(&buffers[0]);
   assert(h2_bk7258_display_buffer_claim(&buffers[0]));
-  assert(h2_bk7258_display_buffer_copy(&buffers[0], shadow, WIDTH) == 0u);
+  assert(h2_bk7258_display_buffer_copy(&buffers[0], shadow, WIDTH, &scratch) ==
+         0u);
 
   /* Changes inside one band merge only their own rows and columns. */
   const h2_display_rect_t first = {0, 40, 8, 4};
@@ -94,7 +98,7 @@ int main(void) {
   paint(shadow, &second, 0xffe0u);
   h2_bk7258_display_buffer_dirty(&buffers[0], &first);
   h2_bk7258_display_buffer_dirty(&buffers[0], &second);
-  assert(h2_bk7258_display_buffer_copy(&buffers[0], shadow, WIDTH) ==
+  assert(h2_bk7258_display_buffer_copy(&buffers[0], shadow, WIDTH, &scratch) ==
          108u * 8u * sizeof(uint16_t));
   assert(memcmp(pixels[0], shadow, PIXELS * sizeof(uint16_t)) == 0);
   for (unsigned i = 0u; i < 2u; ++i) {
@@ -116,8 +120,8 @@ int main(void) {
                                 TALL_HEIGHT);
   for (size_t i = 0u; i < TALL; ++i) tall_shadow[i] = (uint16_t)(i + 1u);
   assert(h2_bk7258_display_buffer_claim(&tall_buffer));
-  assert(h2_bk7258_display_buffer_copy(&tall_buffer, tall_shadow, TALL_WIDTH) ==
-         TALL * sizeof(uint16_t));
+  assert(h2_bk7258_display_buffer_copy(&tall_buffer, tall_shadow, TALL_WIDTH,
+                                       &scratch) == TALL * sizeof(uint16_t));
   assert(memcmp(tall, tall_shadow, TALL * sizeof(uint16_t)) == 0);
   h2_bk7258_display_buffer_release(&tall_buffer);
   h2_atomic_bool_destroy(&tall_available);
