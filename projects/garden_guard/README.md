@@ -30,6 +30,8 @@ Tap the screen to start. Sun pays for plants: tap a falling or resting sun, or s
 | Shooter | 100 | Fires peas down its lane while a zombie is ahead of it. |
 | Pumpkin | 50 | Tough wall that holds zombies while they chew it; shows cracks as it weakens. |
 | Shovel | free | Removes a plant without refund. |
+| Frostbell | 125 | Unlocked in the shop for 6 coins. Shoots icy seeds that slow a zombie. |
+| Bramble | 75 | Unlocked in the shop for 12 coins. Hurts zombies as they bite. |
 
 Cards recharge after use, shown by a draining shade. Shamblers drag one foot, Shellbacks absorb damage with their salvaged plate first, and Runners take quick strides but break easily. Zombies stop to chew plants in their way. The first zombie through a lane sends its cart across, clearing every zombie in that lane. A second zombie reaching the house in that lane ends the run. Five waves arrive after a 20 s ready time, the last announced as the final wave; clearing them all wins. The result screen shows the score and best score and accepts a tap to play again after one second.
 
@@ -41,4 +43,6 @@ The courtyard is drawn once, including the tiled entry, back border and retainin
 
 Quiet leaves and blinks update on a 120 ms clock. Growth, bloom, shot recoil, jaw strikes, hits and falls follow gameplay events at the default 40 ms frame period. The planted pose also drives the shovel hit area. An idle title screen presents only its first frame. Its dedicated cover illustration uses a 128-color RGB565 palette and per-row runs in flash. It is decoded one row at a time into a 480-byte stack buffer and needs no extra framebuffer.
 
-The best score is stored as `best` in the `garden_guard` Pref namespace. Targets without a Pref implementation retain it in memory only. Runtime statistics are logged every 10 s as `H2_GARDEN_GUARD_STATS`.
+The Field Journal and Plant Shop open from the title or result. The journal unlocks a card when that zombie first becomes visible. Every finished match adds its run score to the total once. Plant defeats earn 3 coins per 10 defense points, rounded up, with another 12 for a win with plant defeats. Carts still score, but their kills do not earn coins. Purchases permanently unlock cards while each new run begins with its ordinary sun allowance.
+
+The versioned `profile` blob in the `garden_guard` Pref namespace holds the journal, total score, coins, best and unlocks. The App also reads and preserves the legacy `best` key. The Web target saves in the current browser origin and uses a single writable tab where Web Locks are available. The ESP launchers use their board Runtime Pref. The desktop target and unsupported storage keep progress for the session. Runtime statistics are logged every 10 s as `H2_GARDEN_GUARD_STATS`.

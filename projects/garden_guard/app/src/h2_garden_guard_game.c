@@ -33,6 +33,8 @@ static const plant_spec_t k_plants[H2_GARDEN_GUARD_PLANT_KIND_COUNT] = {
     [H2_GARDEN_GUARD_PLANT_SUNFLOWER] = {50u, 5000u, 300.0f},
     [H2_GARDEN_GUARD_PLANT_SHOOTER] = {100u, 5000u, 300.0f},
     [H2_GARDEN_GUARD_PLANT_PUMPKIN] = {50u, 18000u, 2400.0f},
+    [H2_GARDEN_GUARD_PLANT_FROST] = {125u, 7000u, 320.0f},
+    [H2_GARDEN_GUARD_PLANT_BRAMBLE] = {75u, 9000u, 1050.0f},
 };
 
 typedef struct pest_spec {
@@ -81,30 +83,24 @@ static uint32_t random_below(h2_garden_guard_game_t* game, uint32_t limit) {
   return limit != 0u ? random_next(game) % limit : 0u;
 }
 
+static h2_garden_guard_plant_kind_t card_plant(int32_t card);
+
 uint32_t h2_garden_guard_card_cost(h2_garden_guard_card_t card) {
-  switch (card) {
-    case H2_GARDEN_GUARD_CARD_SUNFLOWER:
-      return k_plants[H2_GARDEN_GUARD_PLANT_SUNFLOWER].cost;
-    case H2_GARDEN_GUARD_CARD_SHOOTER:
-      return k_plants[H2_GARDEN_GUARD_PLANT_SHOOTER].cost;
-    case H2_GARDEN_GUARD_CARD_PUMPKIN:
-      return k_plants[H2_GARDEN_GUARD_PLANT_PUMPKIN].cost;
-    default:
-      return 0u;
-  }
+  return k_plants[card_plant(card)].cost;
 }
 
 uint32_t h2_garden_guard_card_cooldown(h2_garden_guard_card_t card) {
-  switch (card) {
-    case H2_GARDEN_GUARD_CARD_SUNFLOWER:
-      return k_plants[H2_GARDEN_GUARD_PLANT_SUNFLOWER].cooldown_ms;
-    case H2_GARDEN_GUARD_CARD_SHOOTER:
-      return k_plants[H2_GARDEN_GUARD_PLANT_SHOOTER].cooldown_ms;
-    case H2_GARDEN_GUARD_CARD_PUMPKIN:
-      return k_plants[H2_GARDEN_GUARD_PLANT_PUMPKIN].cooldown_ms;
-    default:
-      return 0u;
-  }
+  return k_plants[card_plant(card)].cooldown_ms;
+}
+
+uint8_t h2_garden_guard_card_unlock(int32_t card) {
+  if (card == H2_GARDEN_GUARD_CARD_FROST) return H2_GARDEN_GUARD_FROST_BIT;
+  if (card == H2_GARDEN_GUARD_CARD_BRAMBLE) return H2_GARDEN_GUARD_BRAMBLE_BIT;
+  return 0u;
+}
+
+uint32_t h2_garden_guard_offer_price(unsigned offer) {
+  return offer == 0u ? 6u : 12u;
 }
 
 float h2_garden_guard_plant_max_hp(h2_garden_guard_plant_kind_t kind) {
@@ -120,6 +116,10 @@ static h2_garden_guard_plant_kind_t card_plant(int32_t card) {
       return H2_GARDEN_GUARD_PLANT_SHOOTER;
     case H2_GARDEN_GUARD_CARD_PUMPKIN:
       return H2_GARDEN_GUARD_PLANT_PUMPKIN;
+    case H2_GARDEN_GUARD_CARD_FROST:
+      return H2_GARDEN_GUARD_PLANT_FROST;
+    case H2_GARDEN_GUARD_CARD_BRAMBLE:
+      return H2_GARDEN_GUARD_PLANT_BRAMBLE;
     default:
       return H2_GARDEN_GUARD_PLANT_NONE;
   }
@@ -192,7 +192,7 @@ static void compute_layout(h2_garden_guard_layout_t* l, int32_t width,
   if (pad < 1.0f) pad = 1.0f;
   l->card_y = pad;
   l->card_h = bar - 2.0f * pad;
-  l->card_w = floorf(l->card_h * 0.82f);
+  l->card_w = floorf(fminf(l->card_h * 0.82f, w * 0.103f));
   l->sun_x = pad;
   l->sun_w = floorf(l->card_h * 1.25f);
   float x = l->sun_x + l->sun_w + 2.0f * pad;
@@ -267,8 +267,10 @@ float h2_garden_guard_plant_height(h2_garden_guard_plant_kind_t kind) {
   switch (kind) {
     case H2_GARDEN_GUARD_PLANT_SUNFLOWER:
       return 1.17f;
+    case H2_GARDEN_GUARD_PLANT_FROST:
     case H2_GARDEN_GUARD_PLANT_SHOOTER:
       return 1.06f;
+    case H2_GARDEN_GUARD_PLANT_BRAMBLE:
     case H2_GARDEN_GUARD_PLANT_PUMPKIN:
       return 0.72f;
     default:
@@ -294,12 +296,14 @@ h2_garden_guard_plant_pose_t h2_garden_guard_plant_pose(
       pose.action = (float)plant->action_ms / H2_GARDEN_GUARD_BLOOM_POSE_MS;
       pose.lift = 0.09f * pose.action;
       break;
+    case H2_GARDEN_GUARD_PLANT_FROST:
     case H2_GARDEN_GUARD_PLANT_SHOOTER:
       pose.sway = 0.033f * sinf((float)(t % 1680u) *
                                 (2.0f * H2_GARDEN_GUARD_PI / 1680.0f));
       pose.blink = t % 2640u < H2_GARDEN_GUARD_PLANT_IDLE_MS;
       pose.action = (float)plant->action_ms / H2_GARDEN_GUARD_SHOT_POSE_MS;
       break;
+    case H2_GARDEN_GUARD_PLANT_BRAMBLE:
     case H2_GARDEN_GUARD_PLANT_PUMPKIN:
       pose.lift = 0.022f * sinf((float)(t % 3960u) *
                                 (2.0f * H2_GARDEN_GUARD_PI / 3960.0f));
@@ -329,10 +333,12 @@ bool h2_garden_guard_plant_at(const h2_garden_guard_game_t* game, float x,
       // Follow the raised head, including growth and recoil, with touch slop.
       const float raised = fmaxf(0.0f, (gy - y) / s);
       const float shift =
-          kind == H2_GARDEN_GUARD_PLANT_PUMPKIN
+          kind == H2_GARDEN_GUARD_PLANT_PUMPKIN ||
+                  kind == H2_GARDEN_GUARD_PLANT_BRAMBLE
               ? -0.075f * pose.impact
               : (pose.sway - 0.19f * pose.action * pose.action *
-                                 (kind == H2_GARDEN_GUARD_PLANT_SHOOTER)) *
+                                 (kind == H2_GARDEN_GUARD_PLANT_SHOOTER ||
+                                  kind == H2_GARDEN_GUARD_PLANT_FROST)) *
                     fminf(1.0f, raised / 0.62f);
       const float top =
           gy -
@@ -411,6 +417,7 @@ static void clear_world(h2_garden_guard_game_t* game) {
   game->hover_lane = -1;
   game->hover_col = -1;
   game->banner_ms = 0;
+  game->sighting_ms = 0;
 }
 
 static void enter_title(h2_garden_guard_game_t* game) {
@@ -433,6 +440,8 @@ static void enter_playing(h2_garden_guard_game_t* game) {
   game->phase_started_ms = game->time_ms;
   game->sun = H2_GARDEN_GUARD_START_SUN;
   game->score = 0;
+  game->defense_score = 0;
+  game->earned_coins = 0;
   game->kills = 0;
   game->new_best = false;
   game->wave = 0;
@@ -443,13 +452,26 @@ static void enter_playing(h2_garden_guard_game_t* game) {
   set_banner(game, "GET READY");
 }
 
+static uint32_t add_capped(uint32_t a, uint32_t b) {
+  return UINT32_MAX - a < b ? UINT32_MAX : a + b;
+}
+
 static void finish(h2_garden_guard_game_t* game, bool won) {
+  if (game->phase != H2_GARDEN_GUARD_PHASE_PLAYING) return;
   clear_world(game);
   if (won) game->score += H2_GARDEN_GUARD_WIN_BONUS;
+  /* Free carts still score, but only damage dealt by plants earns coins. */
+  game->earned_coins = 3u * ((game->defense_score + 9u) / 10u);
+  if (won && game->defense_score != 0u) game->earned_coins += 12u;
+  game->profile.coins = add_capped(game->profile.coins, game->earned_coins);
+  game->profile.total_score =
+      add_capped(game->profile.total_score, game->score);
+  game->profile_dirty = true;
   game->phase = won ? H2_GARDEN_GUARD_PHASE_WON : H2_GARDEN_GUARD_PHASE_LOST;
   game->phase_started_ms = game->time_ms;
   if (game->score > game->best) {
     game->best = game->score;
+    game->profile.best = game->best;
     game->best_changed = true;
     game->new_best = true;
   }
@@ -461,6 +483,7 @@ void h2_garden_guard_game_init(h2_garden_guard_game_t* game, int32_t width,
   compute_layout(&game->layout, width, height);
   game->rng = seed != 0u ? seed : 0x6A09E667u;
   game->best = best;
+  game->profile.best = best;
   game->sun = H2_GARDEN_GUARD_START_SUN;
   game->selected = H2_GARDEN_GUARD_CARD_NONE;
   enter_title(game);
@@ -476,7 +499,9 @@ bool h2_garden_guard_game_take_best(h2_garden_guard_game_t* game,
 
 static bool card_usable(const h2_garden_guard_game_t* game, int32_t card) {
   if (card < 0 || card >= H2_GARDEN_GUARD_CARD_COUNT) return false;
-  return game->card_cooldown_ms[card] == 0u &&
+  const uint8_t unlock = h2_garden_guard_card_unlock(card);
+  return (game->profile.owned & unlock) == unlock &&
+         game->card_cooldown_ms[card] == 0u &&
          game->sun >= h2_garden_guard_card_cost((h2_garden_guard_card_t)card);
 }
 
@@ -601,7 +626,78 @@ static void clear_hover(h2_garden_guard_game_t* game) {
   game->hover_col = -1;
 }
 
+static float menu_scale(const h2_garden_guard_layout_t* l) {
+  return fminf((float)l->width / 480.0f, (float)l->height / 320.0f);
+}
+
+h2_garden_guard_rect_t h2_garden_guard_menu_tab(
+    const h2_garden_guard_layout_t* l, bool result, unsigned tab) {
+  const float s = menu_scale(l);
+  const float top = ((float)l->height - 320.0f * s) * 0.5f;
+  const float y = top + (result ? 278.0f : 267.0f) * s;
+  const float x = (float)l->width * 0.5f + (tab == 0u ? -212.0f : 104.0f) * s;
+  return (h2_garden_guard_rect_t){x, y, 108.0f * s, 28.0f * s};
+}
+
+h2_garden_guard_rect_t h2_garden_guard_menu_back(
+    const h2_garden_guard_layout_t* l) {
+  const float s = menu_scale(l);
+  return (h2_garden_guard_rect_t){
+      ((float)l->width - 440.0f * s) * 0.5f,
+      ((float)l->height - 320.0f * s) * 0.5f + 16.0f * s, 80.0f * s, 32.0f * s};
+}
+
+h2_garden_guard_rect_t h2_garden_guard_menu_row(
+    const h2_garden_guard_layout_t* l, unsigned row) {
+  const float s = menu_scale(l);
+  const h2_garden_guard_rect_t back = h2_garden_guard_menu_back(l);
+  return (h2_garden_guard_rect_t){
+      back.x, back.y + (60.0f + (float)row * 70.0f) * s, 440.0f * s, 62.0f * s};
+}
+
+static bool contains(h2_garden_guard_rect_t r, float x, float y) {
+  return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h;
+}
+
+static void press_menu(h2_garden_guard_game_t* game, float x, float y) {
+  const h2_garden_guard_layout_t* l = &game->layout;
+  if (contains(h2_garden_guard_menu_back(l), x, y)) {
+    game->menu = H2_GARDEN_GUARD_MENU_NONE;
+    return;
+  }
+  if (game->menu != H2_GARDEN_GUARD_MENU_SHOP) return;
+  for (unsigned offer = 0; offer < 2u; ++offer) {
+    const h2_garden_guard_rect_t row = h2_garden_guard_menu_row(l, offer);
+    const h2_garden_guard_rect_t button = {row.x + row.w * 0.74f, row.y,
+                                           row.w * 0.26f, row.h};
+    if (!contains(button, x, y)) continue;
+    const uint8_t bit =
+        offer == 0u ? H2_GARDEN_GUARD_FROST_BIT : H2_GARDEN_GUARD_BRAMBLE_BIT;
+    const uint32_t price = h2_garden_guard_offer_price(offer);
+    if ((game->profile.owned & bit) != 0u || game->profile.coins < price)
+      return;
+    game->profile.coins -= price;
+    game->profile.owned |= bit;
+    game->profile_dirty = true;
+    return;
+  }
+}
+
 static void press(h2_garden_guard_game_t* game, float x, float y) {
+  if (game->menu != H2_GARDEN_GUARD_MENU_NONE) {
+    press_menu(game, x, y);
+    return;
+  }
+  if (game->phase != H2_GARDEN_GUARD_PHASE_PLAYING) {
+    const bool result = game->phase != H2_GARDEN_GUARD_PHASE_TITLE;
+    for (unsigned tab = 0; tab < 2u; ++tab) {
+      if (!contains(h2_garden_guard_menu_tab(&game->layout, result, tab), x, y))
+        continue;
+      game->menu =
+          tab == 0u ? H2_GARDEN_GUARD_MENU_JOURNAL : H2_GARDEN_GUARD_MENU_SHOP;
+      return;
+    }
+  }
   switch (game->phase) {
     case H2_GARDEN_GUARD_PHASE_TITLE:
       enter_playing(game);
@@ -787,7 +883,9 @@ static void step_plants(h2_garden_guard_game_t* game, uint32_t dt) {
         /* Drop from the flower head to the ground beside its stem. */
         plant->action_ms = H2_GARDEN_GUARD_BLOOM_POSE_MS;
         add_sun(game, x + 0.32f * size, y - 0.93f * size, y + 0.06f * size);
-      } else if (plant->kind == H2_GARDEN_GUARD_PLANT_SHOOTER) {
+      } else if (plant->kind == H2_GARDEN_GUARD_PLANT_SHOOTER ||
+                 plant->kind == H2_GARDEN_GUARD_PLANT_FROST) {
+        const bool frost = plant->kind == H2_GARDEN_GUARD_PLANT_FROST;
         if (plant->timer_ms > 0) plant->timer_ms -= (int32_t)dt;
         if (plant->timer_ms > 0) continue;
         plant->timer_ms = 0;
@@ -801,12 +899,14 @@ static void step_plants(h2_garden_guard_game_t* game, uint32_t dt) {
         for (unsigned i = 0; i < H2_GARDEN_GUARD_MAX_PEAS; ++i) {
           h2_garden_guard_pea_t* pea = &game->peas[i];
           if (pea->active) continue;
-          *pea = (h2_garden_guard_pea_t){
-              .active = true, .lane = (uint8_t)lane, .x = (float)col + 0.75f};
+          *pea = (h2_garden_guard_pea_t){.active = true,
+                                         .lane = (uint8_t)lane,
+                                         .frost = frost,
+                                         .x = (float)col + 0.75f};
           plant->action_ms = H2_GARDEN_GUARD_SHOT_POSE_MS;
           break;
         }
-        plant->timer_ms = SHOOTER_PERIOD_MS;
+        plant->timer_ms = frost ? 1660 : SHOOTER_PERIOD_MS;
       }
     }
   }
@@ -824,13 +924,14 @@ static uint16_t pest_color(uint8_t kind) {
 }
 
 static void kill_pest(h2_garden_guard_game_t* game,
-                      h2_garden_guard_pest_t* pest) {
+                      h2_garden_guard_pest_t* pest, bool by_plant) {
   float x, y;
   h2_garden_guard_field_point(&game->layout, pest->lane, pest->x, &x, &y);
   y -= 0.28f * h2_garden_guard_lane_size(&game->layout, pest->lane);
   add_particles(game, x, y, 10u, pest_color(pest->kind),
                 150.0f * game->layout.unit, 4.0f * game->layout.unit);
   game->score += k_pests[pest->kind].score;
+  if (by_plant) game->defense_score += k_pests[pest->kind].score;
   ++game->kills;
   pest->active = false;
   pest->exit_ms = H2_GARDEN_GUARD_PEST_EXIT_MS;
@@ -862,12 +963,13 @@ static void step_peas(h2_garden_guard_game_t* game, float seconds) {
     add_particles(game, x, y, 3u, H2_GARDEN_GUARD_RGB(140, 220, 90),
                   90.0f * game->layout.unit, 2.5f * game->layout.unit);
     hit->flash_ms = H2_GARDEN_GUARD_PEST_HIT_MS;
+    if (pea->frost) hit->slow_ms = 1450u;
     if (hit->armor > 0) {
       hit->armor -= PEA_DAMAGE;
       if (hit->armor < 0) hit->armor = 0;
     } else {
       hit->hp -= PEA_DAMAGE;
-      if (hit->hp <= 0) kill_pest(game, hit);
+      if (hit->hp <= 0) kill_pest(game, hit, true);
     }
   }
 }
@@ -881,7 +983,7 @@ static void step_carts(h2_garden_guard_game_t* game, float seconds) {
     for (unsigned i = 0; i < H2_GARDEN_GUARD_MAX_PESTS; ++i) {
       h2_garden_guard_pest_t* pest = &game->pests[i];
       if (pest->active && pest->lane == lane && pest->x <= cart->x + 0.45f)
-        kill_pest(game, pest);
+        kill_pest(game, pest, false);
     }
     if (cart->x > PEST_ENTRY_X + 0.6f) cart->state = H2_GARDEN_GUARD_CART_USED;
   }
@@ -896,6 +998,7 @@ static bool step_pests(h2_garden_guard_game_t* game, uint32_t dt,
     if (!pest->active) continue;
     const pest_spec_t* spec = &k_pests[pest->kind];
     pest->flash_ms = (uint16_t)countdown(pest->flash_ms, dt);
+    pest->slow_ms = (uint16_t)countdown(pest->slow_ms, dt);
     /* A pest chews plant column c while its center is in [c + 0.5, c + 1.15]:
      * the interval is shorter than a cell, so at most one column applies. */
     const int32_t col = (int32_t)ceilf(pest->x - 1.15f);
@@ -910,8 +1013,20 @@ static bool step_pests(h2_garden_guard_game_t* game, uint32_t dt,
       pest->eating = true;
       pest->chew_ms = after % H2_GARDEN_GUARD_PEST_BITE_MS;
       /* Keep continuous combat damage; the pose marks the jaw closing. */
-      if (before < 350u && after >= 350u)
+      if (before < 350u && after >= 350u) {
         plant->impact_ms = H2_GARDEN_GUARD_BITE_IMPACT_MS;
+        if (plant->kind == H2_GARDEN_GUARD_PLANT_BRAMBLE) {
+          pest->flash_ms = H2_GARDEN_GUARD_PEST_HIT_MS;
+          if (pest->armor > 0)
+            pest->armor = pest->armor > 24 ? pest->armor - 24 : 0;
+          else
+            pest->hp -= 24;
+          if (pest->hp <= 0) {
+            kill_pest(game, pest, true);
+            continue;
+          }
+        }
+      }
       plant->hp -= spec->bite_dps * seconds;
       if (plant->hp <= 0.0f) {
         remove_plant(game, pest->lane, (uint32_t)col,
@@ -930,7 +1045,7 @@ static bool step_pests(h2_garden_guard_game_t* game, uint32_t dt,
     pest->chew_ms = 0u;
     // All gait periods divide 8400 ms, keeping the cycle seamless at wrap.
     pest->stride_ms = (uint16_t)((pest->stride_ms + dt) % 8400u);
-    pest->x -= spec->speed * seconds;
+    pest->x -= spec->speed * seconds * (pest->slow_ms != 0u ? 0.49f : 1.0f);
     if (pest->x >= -0.15f) continue;
     h2_garden_guard_cart_t* cart = &game->carts[pest->lane];
     if (cart->state == H2_GARDEN_GUARD_CART_READY) {
@@ -990,17 +1105,42 @@ static void step_particles(h2_garden_guard_game_t* game, uint32_t dt,
   }
 }
 
+static void discover_visible_pests(h2_garden_guard_game_t* game) {
+  if (game->profile.seen == H2_GARDEN_GUARD_ALL_SIGHTINGS) return;
+  const h2_garden_guard_layout_t* l = &game->layout;
+  for (unsigned i = 0; i < H2_GARDEN_GUARD_MAX_PESTS; ++i) {
+    const h2_garden_guard_pest_t* pest = &game->pests[i];
+    if (!pest->active || pest->kind >= H2_GARDEN_GUARD_PEST_KIND_COUNT)
+      continue;
+    const uint8_t bit = (uint8_t)(1u << pest->kind);
+    if ((game->profile.seen & bit) != 0u) continue;
+    float x, y;
+    h2_garden_guard_field_point(l, pest->lane, pest->x, &x, &y);
+    /* Wait until the face can be seen at the right edge. */
+    if (x - 0.17f * h2_garden_guard_lane_size(l, pest->lane) >=
+            (float)l->width ||
+        y <= l->bar_h)
+      continue;
+    game->profile.seen |= bit;
+    game->profile_dirty = true;
+    game->sighting_kind = pest->kind;
+    game->sighting_ms = 2200u;
+  }
+}
+
 static void step_once(h2_garden_guard_game_t* game, uint32_t dt) {
   game->time_ms += dt;
   const float seconds = (float)dt * 0.001f;
   step_particles(game, dt, seconds);
   game->banner_ms = countdown(game->banner_ms, dt);
+  game->sighting_ms = (uint16_t)countdown(game->sighting_ms, dt);
   if (game->phase != H2_GARDEN_GUARD_PHASE_PLAYING) return;
   for (unsigned i = 0; i < H2_GARDEN_GUARD_CARD_COUNT; ++i) {
     game->card_cooldown_ms[i] = countdown(game->card_cooldown_ms[i], dt);
     game->card_denied_ms[i] = countdown(game->card_denied_ms[i], dt);
   }
   step_waves(game);
+  discover_visible_pests(game);
   step_sky(game);
   step_plants(game, dt);
   step_peas(game, seconds);
@@ -1021,4 +1161,50 @@ void h2_garden_guard_game_step(h2_garden_guard_game_t* game, uint32_t dt_ms) {
     step_once(game, dt);
     dt_ms -= dt;
   }
+}
+
+static void write_u32le(uint8_t* bytes, uint32_t value) {
+  for (unsigned i = 0; i < 4u; ++i) bytes[i] = (uint8_t)(value >> (8u * i));
+}
+
+static uint32_t read_u32le(const uint8_t* bytes) {
+  uint32_t value = 0u;
+  for (unsigned i = 0; i < 4u; ++i) value |= (uint32_t)bytes[i] << (8u * i);
+  return value;
+}
+
+static uint32_t profile_checksum(const uint8_t* bytes) {
+  uint32_t hash = 2166136261u;
+  for (unsigned i = 0; i < H2_GARDEN_GUARD_SAVE_BYTES - 4u; ++i)
+    hash = (hash ^ bytes[i]) * 16777619u;
+  return hash;
+}
+
+void h2_garden_guard_profile_encode(const h2_garden_guard_profile_t* profile,
+                                    uint8_t out[H2_GARDEN_GUARD_SAVE_BYTES]) {
+  memset(out, 0, H2_GARDEN_GUARD_SAVE_BYTES);
+  memcpy(out, "GG01", 4u);
+  write_u32le(out + 4, profile->total_score);
+  write_u32le(out + 8, profile->coins);
+  write_u32le(out + 12, profile->best);
+  out[16] = profile->seen;
+  out[17] = profile->owned;
+  write_u32le(out + 20, profile_checksum(out));
+}
+
+bool h2_garden_guard_profile_decode(h2_garden_guard_profile_t* profile,
+                                    const void* data, size_t size) {
+  if (data == NULL || size != H2_GARDEN_GUARD_SAVE_BYTES) return false;
+  const uint8_t* bytes = data;
+  if (memcmp(bytes, "GG01", 4u) != 0 ||
+      read_u32le(bytes + 20) != profile_checksum(bytes) ||
+      (bytes[16] & ~H2_GARDEN_GUARD_ALL_SIGHTINGS) != 0 ||
+      (bytes[17] & ~H2_GARDEN_GUARD_ALL_UNLOCKS) != 0)
+    return false;
+  *profile = (h2_garden_guard_profile_t){.total_score = read_u32le(bytes + 4),
+                                         .coins = read_u32le(bytes + 8),
+                                         .best = read_u32le(bytes + 12),
+                                         .seen = bytes[16],
+                                         .owned = bytes[17]};
+  return true;
 }

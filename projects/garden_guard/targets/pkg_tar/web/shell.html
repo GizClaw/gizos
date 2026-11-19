@@ -21,6 +21,17 @@
   const status = document.getElementById('status');
   var Module = {
     canvas: document.getElementById('canvas'),
+    preRun: [() => {
+      // Keep purchases and settlement on a single writer for this origin.
+      if (!navigator.locks) return;
+      const dependency = 'garden-guard-profile';
+      addRunDependency(dependency);
+      status.textContent = 'Waiting for access to your garden. Close any other Garden Guard tab on this address.';
+      navigator.locks.request(dependency, () => {
+        removeRunDependency(dependency);
+        return new Promise(() => {});
+      }).catch(() => { removeRunDependency(dependency); });
+    }],
     print: text => console.log(text),
     printErr: text => console.error(text),
     onRuntimeInitialized: () => {

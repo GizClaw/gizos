@@ -419,6 +419,7 @@ static void test_cart_then_loss(void) {
     h2_garden_guard_game_step(&game, 20u);
   CHECK(game.phase == H2_GARDEN_GUARD_PHASE_LOST);
   CHECK(game.score == 25u && game.best == 25u && game.new_best);
+  CHECK(game.earned_coins == 0u && game.profile.coins == 0u);
   uint32_t best = 0;
   CHECK(h2_garden_guard_game_take_best(&game, &best) && best == 25u);
   CHECK(!h2_garden_guard_game_take_best(&game, &best));
@@ -490,7 +491,109 @@ static void test_portrait_play(void) {
   CHECK(!pest->active && game.kills == 1u);
 }
 
+static void tap_rect(h2_garden_guard_game_t* g, h2_garden_guard_rect_t r) {
+  tap(g, r.x + 0.5f * r.w, r.y + 0.5f * r.h);
+}
+
+static void test_profile_and_collection(void) {
+  const h2_garden_guard_profile_t source = {
+      .total_score = 0x01020304u,
+      .coins = 55u,
+      .best = 123u,
+      .seen = H2_GARDEN_GUARD_ALL_SIGHTINGS,
+      .owned = H2_GARDEN_GUARD_FROST_BIT};
+  uint8_t bytes[H2_GARDEN_GUARD_SAVE_BYTES];
+  h2_garden_guard_profile_encode(&source, bytes);
+  CHECK(bytes[4] == 4u && bytes[7] == 1u);
+  h2_garden_guard_profile_t loaded = {0};
+  CHECK(h2_garden_guard_profile_decode(&loaded, bytes, sizeof(bytes)));
+  CHECK(loaded.total_score == source.total_score && loaded.coins == 55u &&
+        loaded.best == 123u && loaded.seen == 7u && loaded.owned == 1u);
+  CHECK(!h2_garden_guard_profile_decode(&loaded, bytes, sizeof(bytes) - 1u));
+  bytes[7] ^= 1u;
+  CHECK(!h2_garden_guard_profile_decode(&loaded, bytes, sizeof(bytes)));
+  CHECK(loaded.total_score == source.total_score);
+
+  start(&game, 480, 800, 3u);
+  freeze_spawns(&game);
+  h2_garden_guard_pest_t* pest =
+      place_pest(&game, 0u, H2_GARDEN_GUARD_PEST_SHAMBLER, 4u, 10.7f);
+  h2_garden_guard_game_step(&game, 20u);
+  CHECK(game.profile.seen == 0u && !game.profile_dirty);
+  pest->x = 9.38f;
+  h2_garden_guard_game_step(&game, 20u);
+  CHECK(game.profile.seen == 1u && game.profile_dirty &&
+        game.sighting_ms != 0u);
+  CHECK(pest->active && game.kills == 0u);
+  game.profile_dirty = false;
+  place_pest(&game, 1u, H2_GARDEN_GUARD_PEST_SHAMBLER, 1u, 9.41f);
+  h2_garden_guard_game_step(&game, 20u);
+  CHECK(!game.profile_dirty && game.profile.seen == 1u);
+  place_pest(&game, 2u, H2_GARDEN_GUARD_PEST_SHELLBACK, 2u, 9.41f);
+  place_pest(&game, 3u, H2_GARDEN_GUARD_PEST_RUNNER, 3u, 9.42f);
+  h2_garden_guard_game_step(&game, 20u);
+  CHECK(game.profile.seen == 7u && game.profile_dirty && game.kills == 0u);
+}
+
+static void test_shop_and_earned_coins(void) {
+  h2_garden_guard_game_init(&game, 368, 448, 13u, 88u);
+  const h2_garden_guard_layout_t* l = &game.layout;
+  tap_rect(&game, h2_garden_guard_menu_tab(l, false, 1u));
+  CHECK(game.menu == H2_GARDEN_GUARD_MENU_SHOP);
+  const h2_garden_guard_rect_t frost = h2_garden_guard_menu_row(l, 0u);
+  const h2_garden_guard_rect_t bramble = h2_garden_guard_menu_row(l, 1u);
+  tap(&game, frost.x + frost.w * 0.9f, frost.y + frost.h * 0.5f);
+  CHECK(game.profile.coins == 0u && game.profile.owned == 0u &&
+        !game.profile_dirty);
+  game.profile.coins = 18u;
+  tap(&game, frost.x + frost.w * 0.9f, frost.y + frost.h * 0.5f);
+  tap(&game, frost.x + frost.w * 0.9f, frost.y + frost.h * 0.5f);
+  CHECK(game.profile.coins == 12u && game.profile.owned == 1u);
+  tap(&game, bramble.x + bramble.w * 0.9f, bramble.y + bramble.h * 0.5f);
+  CHECK(game.profile.coins == 0u && game.profile.owned == 3u);
+  tap_rect(&game, h2_garden_guard_menu_back(l));
+  CHECK(game.phase == H2_GARDEN_GUARD_PHASE_TITLE &&
+        game.menu == H2_GARDEN_GUARD_MENU_NONE);
+  tap(&game, l->mid_x, l->height * 0.5f);
+  freeze_spawns(&game);
+  game.sun = 500u;
+  tap_card(&game, H2_GARDEN_GUARD_CARD_FROST);
+  tap_cell(&game, 1u, 2u);
+  tap_card(&game, H2_GARDEN_GUARD_CARD_BRAMBLE);
+  tap_cell(&game, 2u, 4u);
+  CHECK(game.plants[1][2].kind == H2_GARDEN_GUARD_PLANT_FROST &&
+        game.sun == 300u);
+  CHECK(game.plants[2][4].kind == H2_GARDEN_GUARD_PLANT_BRAMBLE);
+  h2_garden_guard_pest_t* frozen =
+      place_pest(&game, 0u, H2_GARDEN_GUARD_PEST_SHAMBLER, 1u, 4.4f);
+  h2_garden_guard_pest_t* thorned =
+      place_pest(&game, 1u, H2_GARDEN_GUARD_PEST_SHAMBLER, 2u, 5.1f);
+  thorned->hp = 20;
+  h2_garden_guard_game_step(&game, 420u);
+  CHECK(frozen->slow_ms != 0u && frozen->hp == 170);
+  CHECK(!thorned->active && game.defense_score == 10u);
+  tap_card(&game, H2_GARDEN_GUARD_CARD_SHOVEL);
+  tap_cell(&game, 2u, 4u);
+  CHECK(game.plants[2][4].kind == H2_GARDEN_GUARD_PLANT_NONE);
+  game.carts[3].state = H2_GARDEN_GUARD_CART_USED;
+  place_pest(&game, 2u, H2_GARDEN_GUARD_PEST_SHAMBLER, 3u, -0.51f);
+  h2_garden_guard_game_step(&game, 20u);
+  CHECK(game.phase == H2_GARDEN_GUARD_PHASE_LOST);
+  CHECK(game.profile.coins == 3u && game.earned_coins == 3u);
+  CHECK(game.profile.total_score == 10u && game.profile.best == 88u);
+  tap_rect(&game, h2_garden_guard_menu_tab(l, true, 0u));
+  CHECK(game.menu == H2_GARDEN_GUARD_MENU_JOURNAL);
+  h2_garden_guard_game_step(&game, H2_GARDEN_GUARD_RESTART_DELAY_MS + 300u);
+  tap_rect(&game, h2_garden_guard_menu_back(l));
+  CHECK(game.phase == H2_GARDEN_GUARD_PHASE_LOST && game.profile.coins == 3u);
+  tap(&game, l->mid_x, l->height * 0.5f);
+  CHECK(game.phase == H2_GARDEN_GUARD_PHASE_PLAYING && game.earned_coins == 0u);
+  CHECK(game.profile.coins == 3u && game.profile.owned == 3u);
+}
+
 int main(void) {
+  test_profile_and_collection();
+  test_shop_and_earned_coins();
   test_layouts();
   test_perspective_gestures();
   test_title_starts_and_plants();

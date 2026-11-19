@@ -18,6 +18,7 @@
  * Suns, particles and the toolbar use display pixels directly. */
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -78,16 +79,20 @@ typedef enum h2_garden_guard_plant_kind {
   H2_GARDEN_GUARD_PLANT_SHOOTER,
   /** A tough pumpkin that holds pests back while they chew. */
   H2_GARDEN_GUARD_PLANT_PUMPKIN,
+  H2_GARDEN_GUARD_PLANT_FROST,
+  H2_GARDEN_GUARD_PLANT_BRAMBLE,
   H2_GARDEN_GUARD_PLANT_KIND_COUNT,
 } h2_garden_guard_plant_kind_t;
 
-/** Cards in toolbar order; plant cards map to plant kind card + 1. */
+/** Cards in toolbar order. */
 typedef enum h2_garden_guard_card {
   H2_GARDEN_GUARD_CARD_SUNFLOWER = 0,
   H2_GARDEN_GUARD_CARD_SHOOTER,
   H2_GARDEN_GUARD_CARD_PUMPKIN,
   /** Removes a plant without refund. */
   H2_GARDEN_GUARD_CARD_SHOVEL,
+  H2_GARDEN_GUARD_CARD_FROST,
+  H2_GARDEN_GUARD_CARD_BRAMBLE,
   H2_GARDEN_GUARD_CARD_COUNT,
 } h2_garden_guard_card_t;
 
@@ -97,9 +102,9 @@ typedef enum h2_garden_guard_card {
 typedef enum h2_garden_guard_pest_kind {
   H2_GARDEN_GUARD_PEST_SHAMBLER = 0,
   /** A bulky zombie whose salvaged plate absorbs damage first. */
-  H2_GARDEN_GUARD_PEST_SHELLBACK,
+  H2_GARDEN_GUARD_PEST_SHELLBACK = 1,
   /** A fast, fragile courier zombie. */
-  H2_GARDEN_GUARD_PEST_RUNNER,
+  H2_GARDEN_GUARD_PEST_RUNNER = 2,
   H2_GARDEN_GUARD_PEST_KIND_COUNT,
 } h2_garden_guard_pest_kind_t;
 
@@ -174,12 +179,13 @@ typedef struct h2_garden_guard_pest {
   /** Remaining feedback after a hit, and visual-only exit after removal. */
   uint16_t flash_ms, exit_ms;
   /** The locomotion clock holds while biting. */
-  uint16_t stride_ms, chew_ms;
+  uint16_t stride_ms, chew_ms, slow_ms;
 } h2_garden_guard_pest_t;
 
 typedef struct h2_garden_guard_pea {
   bool active;
   uint8_t lane;
+  bool frost;
   float x; /**< Cells. */
 } h2_garden_guard_pea_t;
 
@@ -205,6 +211,34 @@ typedef struct h2_garden_guard_cart {
   float x;       /**< Cells while sweeping. */
 } h2_garden_guard_cart_t;
 
+/* Persisted bit positions are independent of toolbar display order. */
+#define H2_GARDEN_GUARD_FROST_BIT 1u
+#define H2_GARDEN_GUARD_BRAMBLE_BIT 2u
+#define H2_GARDEN_GUARD_ALL_UNLOCKS 3u
+#define H2_GARDEN_GUARD_ALL_SIGHTINGS 7u
+#define H2_GARDEN_GUARD_SAVE_BYTES 24u
+
+typedef struct h2_garden_guard_profile {
+  uint32_t total_score, coins, best;
+  uint8_t seen, owned;
+} h2_garden_guard_profile_t;
+
+typedef enum h2_garden_guard_menu {
+  H2_GARDEN_GUARD_MENU_NONE = 0,
+  H2_GARDEN_GUARD_MENU_JOURNAL,
+  H2_GARDEN_GUARD_MENU_SHOP,
+} h2_garden_guard_menu_t;
+
+typedef struct h2_garden_guard_rect {
+  float x, y, w, h;
+} h2_garden_guard_rect_t;
+
+typedef enum h2_garden_guard_save_state {
+  H2_GARDEN_GUARD_SAVE_READY = 0,
+  H2_GARDEN_GUARD_SAVE_SESSION,
+  H2_GARDEN_GUARD_SAVE_RETRY,
+} h2_garden_guard_save_state_t;
+
 typedef struct h2_garden_guard_game {
   h2_garden_guard_layout_t layout;
   uint32_t rng;
@@ -216,6 +250,13 @@ typedef struct h2_garden_guard_game {
   /** One-shot effect request: best rose during this run and needs saving. */
   bool best_changed;
   bool new_best;
+  h2_garden_guard_profile_t profile;
+  bool profile_dirty;
+  uint8_t save_state;
+  uint8_t menu;
+  uint16_t sighting_ms;
+  uint8_t sighting_kind;
+  uint32_t earned_coins, defense_score;
 
   /** Selected card, or H2_GARDEN_GUARD_CARD_NONE. */
   int32_t selected;
@@ -252,6 +293,22 @@ typedef struct h2_garden_guard_game {
 /** Reset to the title screen. width/height must be positive. */
 void h2_garden_guard_game_init(h2_garden_guard_game_t* game, int32_t width,
                                int32_t height, uint32_t seed, uint32_t best);
+
+/** Fixed, little-endian profile bytes with version and integrity check. */
+void h2_garden_guard_profile_encode(const h2_garden_guard_profile_t* profile,
+                                    uint8_t out[H2_GARDEN_GUARD_SAVE_BYTES]);
+bool h2_garden_guard_profile_decode(h2_garden_guard_profile_t* profile,
+                                    const void* data, size_t size);
+
+/** Shared screen-space rectangles for the menus and touch input. */
+h2_garden_guard_rect_t h2_garden_guard_menu_tab(
+    const h2_garden_guard_layout_t* layout, bool result, unsigned tab);
+h2_garden_guard_rect_t h2_garden_guard_menu_row(
+    const h2_garden_guard_layout_t* layout, unsigned row);
+h2_garden_guard_rect_t h2_garden_guard_menu_back(
+    const h2_garden_guard_layout_t* layout);
+uint8_t h2_garden_guard_card_unlock(int32_t card);
+uint32_t h2_garden_guard_offer_price(unsigned offer);
 
 /** Feed one pointer edge at the current game time. */
 void h2_garden_guard_game_pointer(h2_garden_guard_game_t* game,

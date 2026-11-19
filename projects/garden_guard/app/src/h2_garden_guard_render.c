@@ -73,6 +73,7 @@ static const uint8_t k_letters[26][7] = {
 };
 
 static const uint8_t k_plus[7] = {0x00, 0x04, 0x04, 0x1F, 0x04, 0x04, 0x00};
+static const uint8_t k_question[7] = {0x0e, 0x11, 0x02, 0x04, 0x04, 0x00, 0x04};
 static const uint8_t k_bang[7] = {0x04, 0x04, 0x04, 0x04, 0x04, 0x00, 0x04};
 static const uint8_t k_slash[7] = {0x01, 0x01, 0x02, 0x04, 0x08, 0x10, 0x10};
 static const uint8_t k_comma[7] = {0x00, 0x00, 0x00, 0x00, 0x0C, 0x04, 0x08};
@@ -84,6 +85,8 @@ static const uint8_t* glyph(char c) {
   switch (c) {
     case '+':
       return k_plus;
+    case '?':
+      return k_question;
     case '!':
       return k_bang;
     case '/':
@@ -607,13 +610,13 @@ static void draw_sunflower(h2_garden_guard_canvas_t* canvas, float gx, float gy,
               {0.158f, -0.044f}, {0.274f, -0.039f}, {0.347f, -0.018f},
               {0.315f, 0.006f}, {0.230f, 0.021f});
   }
-  oellipse(canvas, dx + 0.031f * s, dy + 0.004f * s, 0.204f * s, 0.215f * s,
-           edge, RGB(202, 124, 63), RGB(137, 75, 45));
+  oellipse(canvas, dx, dy + 0.004f * s, 0.219f * s, 0.214f * s, edge,
+           RGB(202, 124, 63), RGB(137, 75, 45));
   ellipse(canvas, dx + 0.008f * s, dy - 0.035f * s, 0.165f * s, 0.159f * s,
           RGB(242, 173, 91), 256u);
   const uint16_t ink = RGB(100, 56, 43);
   for (int side = -1; side <= 1; side += 2) {
-    const float eye_x = dx + (0.04f + (float)side * 0.075f) * s;
+    const float eye_x = dx + (0.008f + (float)side * 0.079f) * s;
     const float eye_y = dy - (side < 0 ? 0.055f : 0.037f) * s;
     const float open_height = (side < 0 ? 0.060f : 0.049f) * s;
     if (pose.blink) {
@@ -627,13 +630,13 @@ static void draw_sunflower(h2_garden_guard_canvas_t* canvas, float gx, float gy,
       disc(canvas, eye_x + 0.006f * s, eye_y - 0.012f * s, 0.011f * s,
            RGB(255, 250, 220), 256u);
     }
-    ellipse(canvas, dx + (0.026f + (float)side * 0.125f) * s, dy + 0.050f * s,
+    ellipse(canvas, dx + (0.004f + (float)side * 0.129f) * s, dy + 0.050f * s,
             0.040f * s, 0.023f * s, RGB(219, 101, 71), 200u);
   }
-  ART_ROUND(canvas, dx + 0.048f * s, dy, s, 1.0f, 0.0f, ink, {-0.081f, 0.047f},
+  ART_ROUND(canvas, dx + 0.021f * s, dy, s, 1.0f, 0.0f, ink, {-0.081f, 0.047f},
             {-0.025f, 0.073f}, {0.028f, 0.064f}, {0.078f, 0.034f},
             {0.047f, 0.100f}, {0.005f, 0.122f}, {-0.04f, 0.105f});
-  ellipse(canvas, dx + 0.054f * s, dy + 0.099f * s, 0.026f * s, 0.011f * s,
+  ellipse(canvas, dx + 0.027f * s, dy + 0.099f * s, 0.026f * s, 0.011f * s,
           RGB(239, 143, 107), 230u);
 }
 
@@ -781,6 +784,82 @@ static void draw_shovel(h2_garden_guard_canvas_t* canvas, float cx, float cy,
 
 static const h2_garden_guard_plant_pose_t k_neutral_plant = {.growth = 1.0f};
 
+static void draw_frost(h2_garden_guard_canvas_t* canvas, float x, float y,
+                       float size, uint32_t stage,
+                       h2_garden_guard_plant_pose_t pose, bool head_only) {
+  const float s = size * pose.growth;
+  const float recoil = pose.action * pose.action;
+  const float hx = x + (pose.sway - 0.16f * recoil) * s;
+  const float hy = y - (0.56f + 0.03f * recoil) * s;
+  const uint16_t ink = RGB(51, 103, 114);
+  const uint16_t leaf = darken(RGB(106, 176, 160), stage * 38u);
+  if (!head_only) {
+    ground_shadow(canvas, x, y, 0.34f * s);
+    draw_leaf(canvas, x, y - 0.053f * s, s, -0.58f, leaf, ink);
+    ocapsule(canvas, x, y - 0.04f * s, hx - 0.04f * s, hy + 0.18f * s,
+             0.061f * s, 0.65f, leaf, ink);
+    draw_leaf(canvas, x, y - 0.11f * s, s * 0.88f, 3.43f + pose.sway,
+              RGB(151, 199, 166), ink);
+  }
+  const uint16_t petal = darken(RGB(146, 213, 225), stage * 33u);
+  ART_ROUND(canvas, hx, hy, s, 1.0f, 0.0f, ink, {-0.28f, 0.025f},
+            {-0.26f, -0.18f}, {-0.14f, -0.159f}, {-0.087f, -0.31f},
+            {0.059f, -0.167f}, {0.15f, -0.25f}, {0.211f, -0.114f},
+            {0.393f, -0.117f}, {0.422f, 0.10f}, {0.162f, 0.145f},
+            {-0.059f, 0.231f}, {-0.219f, 0.174f});
+  ART_ROUND(canvas, hx, hy, s, 1.0f, 0.0f, petal, {-0.25f, 0.023f},
+            {-0.23f, -0.142f}, {-0.133f, -0.128f}, {-0.082f, -0.264f},
+            {0.053f, -0.121f}, {0.138f, -0.207f}, {0.188f, -0.074f},
+            {0.36f, -0.078f}, {0.386f, 0.076f}, {0.14f, 0.121f},
+            {-0.06f, 0.201f}, {-0.192f, 0.15f});
+  oellipse(canvas, hx + 0.336f * s, hy - 0.012f * s, 0.087f * s, 0.131f * s,
+           0.7f, RGB(218, 240, 220), ink);
+  ellipse(canvas, hx + 0.35f * s, hy - 0.012f * s, 0.047f * s, 0.086f * s,
+          recoil > 0.55f ? RGB(239, 253, 219) : RGB(67, 137, 166), 256u);
+  ellipse(canvas, hx - 0.031f * s, hy - 0.032f * s, 0.067f * s,
+          (pose.blink ? 0.02f : 0.067f) * s, RGB(247, 247, 216), 256u);
+  ellipse(canvas, hx - 0.009f * s, hy - 0.027f * s, 0.030f * s,
+          (pose.blink ? 0.012f : 0.040f) * s, ink, 256u);
+  ellipse(canvas, hx - 0.109f * s, hy + 0.072f * s, 0.034f * s, 0.022f * s,
+          RGB(232, 162, 180), 225u);
+}
+
+static void draw_bramble(h2_garden_guard_canvas_t* canvas, float x, float y,
+                         float size, uint32_t stage,
+                         h2_garden_guard_plant_pose_t pose, bool head_only) {
+  const float s = size * pose.growth;
+  x -= 0.075f * s * pose.impact;
+  const float cy = y - (0.30f + pose.lift - 0.04f * pose.impact) * s;
+  const uint16_t ink = RGB(105, 69, 102);
+  const uint16_t berry = lighten(darken(RGB(172, 89, 132), stage * 45u),
+                                 (uint32_t)(75.0f * pose.impact));
+  if (!head_only) ground_shadow(canvas, x, y, 0.42f * s);
+  draw_leaf(canvas, x, cy + 0.145f * s, s, 3.55f, RGB(116, 166, 92),
+            RGB(58, 101, 72));
+  draw_leaf(canvas, x, cy + 0.13f * s, s, -0.3f, RGB(108, 153, 86),
+            RGB(58, 101, 72));
+  ART_ROUND(canvas, x, cy, s, 1.0f, 0.0f, ink, {-0.38f, 0.097f},
+            {-0.33f, -0.106f}, {-0.42f, -0.206f}, {-0.24f, -0.17f},
+            {-0.21f, -0.343f}, {-0.055f, -0.241f}, {0.085f, -0.39f},
+            {0.133f, -0.218f}, {0.3f, -0.306f}, {0.286f, -0.123f},
+            {0.436f, -0.138f}, {0.348f, 0.055f}, {0.237f, 0.225f},
+            {-0.199f, 0.254f});
+  oellipse(canvas, x + 0.13f * s, cy - 0.02f * s, 0.202f * s, 0.214f * s, 0.64f,
+           berry, ink);
+  oellipse(canvas, x - 0.075f * s, cy, 0.256f * s, 0.224f * s, 0.66f,
+           lighten(berry, 40u), ink);
+  ellipse(canvas, x - 0.181f * s, cy - 0.078f * s, 0.078f * s, 0.095f * s,
+          RGB(218, 142, 160), 180u);
+  for (int side = -1; side <= 1; side += 2) {
+    const float eye_x = x + (float)side * 0.088f * s;
+    ellipse(canvas, eye_x, cy - 0.026f * s, 0.042f * s,
+            (pose.blink ? 0.017f : 0.057f) * s, RGB(250, 224, 171), 256u);
+    disc(canvas, eye_x + 0.011f * s, cy - 0.023f * s, 0.027f * s, ink, 256u);
+  }
+  ellipse(canvas, x + 0.012f * s, cy + 0.09f * s, 0.072f * s, 0.025f * s,
+          RGB(104, 59, 87), 256u);
+}
+
 static void draw_plant_kind(h2_garden_guard_canvas_t* canvas, uint8_t kind,
                             float gx, float gy, float s, uint32_t stage,
                             h2_garden_guard_plant_pose_t pose, bool head_only) {
@@ -793,6 +872,12 @@ static void draw_plant_kind(h2_garden_guard_canvas_t* canvas, uint8_t kind,
       break;
     case H2_GARDEN_GUARD_PLANT_PUMPKIN:
       draw_pumpkin(canvas, gx, gy, s, stage, pose, head_only);
+      break;
+    case H2_GARDEN_GUARD_PLANT_FROST:
+      draw_frost(canvas, gx, gy, s, stage, pose, head_only);
+      break;
+    case H2_GARDEN_GUARD_PLANT_BRAMBLE:
+      draw_bramble(canvas, gx, gy, s, stage, pose, head_only);
       break;
     default:
       break;
@@ -920,44 +1005,46 @@ static void zombie_head(const zombie_brush_t* brush, float x, float y,
                         float jaw, uint8_t kind, bool plated, uint16_t skin) {
   const bool runner = kind == H2_GARDEN_GUARD_PEST_RUNNER;
   const bool armored = kind == H2_GARDEN_GUARD_PEST_SHELLBACK;
-  const float width = armored ? 0.190f : (runner ? 0.138f : 0.192f);
-  const float height = runner ? 0.218f : (armored ? 0.154f : 0.181f);
-  zombie_oval(brush, x + 0.142f, y + 0.03f, 0.070f, 0.079f, darken(skin, 30u),
-              true);
-  ZOMBIE_ROUND(brush, brush->ink, {x - width, y - 0.107f},
-               {x - 0.064f, y - height}, {x + 0.094f, y - height + 0.005f},
-               {x + width, y - 0.068f}, {x + width - 0.024f, y + 0.087f},
-               {x + 0.064f, y + 0.183f}, {x - 0.112f, y + 0.160f},
-               {x - width - 0.021f, y + 0.079f});
-  ZOMBIE_ROUND(brush, skin, {x - width + 0.017f, y - 0.096f},
-               {x - 0.062f, y - height + 0.019f},
-               {x + 0.084f, y - height + 0.025f},
-               {x + width - 0.024f, y - 0.066f},
-               {x + width - 0.051f, y + 0.083f}, {x + 0.062f, y + 0.157f},
-               {x - 0.099f, y + 0.134f}, {x - width + 0.001f, y + 0.068f});
-  zombie_oval(brush, x - 0.045f, y - 0.054f, width * 0.69f, height * 0.47f,
-              lighten(skin, 53u), false);
-  zombie_oval(brush, x - 0.133f, y + 0.059f, 0.082f, 0.041f, lighten(skin, 51u),
+  const float nape = armored ? 0.204f : runner ? 0.155f : 0.187f;
+  const float crown = runner ? 0.211f : 0.173f;
+  const float drop = jaw * 0.090f;
+  // The nose and the near cheek are the forward edge of one silhouette.
+  ZOMBIE_ROUND(brush, brush->ink, {x - 0.158f, y - 0.139f},
+               {x + 0.028f, y - crown}, {x + nape, y - 0.110f},
+               {x + nape + 0.023f, y + 0.035f}, {x + 0.115f, y + 0.150f},
+               {x - 0.049f, y + 0.218f + drop}, {x - 0.202f, y + 0.168f + drop},
+               {x - 0.234f, y + 0.102f + drop * 0.73f},
+               {x - 0.195f, y + 0.067f}, {x - 0.294f, y + 0.025f},
+               {x - 0.302f, y - 0.029f}, {x - 0.212f, y - 0.069f});
+  ZOMBIE_ROUND(
+      brush, skin, {x - 0.145f, y - 0.125f}, {x + 0.028f, y - crown + 0.018f},
+      {x + nape - 0.019f, y - 0.095f}, {x + nape + 0.004f, y + 0.03f},
+      {x + 0.103f, y + 0.127f}, {x - 0.041f, y + 0.196f + drop},
+      {x - 0.183f, y + 0.151f + drop}, {x - 0.213f, y + 0.101f + drop * 0.73f},
+      {x - 0.163f, y + 0.059f}, {x - 0.274f, y + 0.011f},
+      {x - 0.274f, y - 0.021f}, {x - 0.196f, y - 0.053f});
+  zombie_oval(brush, x + nape - 0.034f, y + 0.035f, 0.055f, 0.071f,
+              darken(skin, 22u), true);
+  zombie_oval(brush, x + nape - 0.029f, y + 0.033f, 0.029f, 0.036f,
+              lighten(skin, 38u), false);
+  zombie_oval(brush, x - 0.211f, y - 0.010f, 0.054f, 0.024f, lighten(skin, 61u),
               false);
-  const float gap = 0.063f * jaw;
-  zombie_oval(brush, x - 0.028f, y + 0.132f + gap, width * 0.68f, 0.071f,
-              darken(skin, 20u), true);
-  ZOMBIE_ROUND(brush, RGB(71, 54, 57), {x - 0.157f, y + 0.083f},
-               {x - 0.071f, y + 0.093f}, {x + 0.038f, y + 0.067f},
-               {x + 0.05f, y + 0.115f + gap}, {x - 0.037f, y + 0.157f + gap},
-               {x - 0.127f, y + 0.129f + gap});
-  zombie_oval(brush, x - 0.104f, y + 0.104f, 0.031f, 0.024f, RGB(242, 225, 169),
+  ZOMBIE_ROUND(brush, RGB(70, 60, 59), {x - 0.201f, y + 0.079f},
+               {x - 0.116f, y + 0.084f}, {x + 0.020f, y + 0.061f},
+               {x - 0.002f, y + 0.115f + drop}, {x - 0.104f, y + 0.142f + drop},
+               {x - 0.188f, y + 0.112f + drop * 0.79f});
+  zombie_oval(brush, x - 0.147f, y + 0.096f, 0.026f, 0.023f, RGB(245, 231, 178),
               false);
-  zombie_oval(brush, x - 0.109f, y - 0.039f, 0.076f, 0.081f, RGB(244, 233, 190),
-              false);
-  zombie_oval(brush, x + 0.031f, y - 0.022f, 0.050f, 0.057f, RGB(227, 222, 173),
-              false);
-  zombie_oval(brush, x - 0.132f, y - 0.023f - 0.014f * jaw, 0.035f, 0.041f,
-              RGB(53, 67, 51), false);
-  zombie_oval(brush, x + 0.014f, y - 0.025f, 0.022f, 0.029f, RGB(60, 72, 53),
-              false);
-  zombie_oval(brush, x - 0.137f, y - 0.042f, 0.011f, 0.012f, RGB(253, 242, 221),
-              false);
+  // One open eye and a small brow give the gardener a puzzled side glance.
+  const float eye_y = y - (armored ? 0.035f : 0.057f);
+  zombie_oval(brush, x - 0.114f, eye_y, 0.074f, runner ? 0.065f : 0.078f,
+              RGB(244, 235, 191), false);
+  zombie_oval(brush, x - 0.144f, eye_y + 0.009f - 0.012f * jaw, 0.032f, 0.041f,
+              RGB(54, 69, 54), false);
+  zombie_oval(brush, x - 0.148f, eye_y - 0.013f, 0.012f, 0.012f,
+              RGB(253, 244, 219), false);
+  zombie_limb(brush, x - 0.164f, eye_y - 0.081f, x - 0.081f, eye_y - 0.091f,
+              0.015f, darken(skin, 51u));
   if (armored) {
     // Repurposed enamel bowl. The scuffed lid remains after the vest breaks.
     ZOMBIE_ROUND(brush, brush->ink, {x - 0.239f, y - 0.112f},
@@ -1057,7 +1144,7 @@ static void draw_zombie(h2_garden_guard_canvas_t* canvas, float gx, float gy,
                              ? RGB(79, 110, 108)
                              : (runner ? RGB(88, 115, 98) : RGB(88, 105, 129));
   const float belt = runner ? -0.48f : -0.43f;
-  const float stance = armored ? 0.091f : 0.060f;
+  const float stance = armored ? 0.105f : 0.066f;
   ground_shadow(canvas, gx + fall * 0.26f * s, gy, s * (0.34f + fall * 0.19f));
   zombie_leg(&brush, stance, belt, stride * reach * (gardener ? 0.58f : 1.0f),
              fmaxf(0.0f, step) * lift * (gardener ? 0.20f : 1.0f), false,
@@ -1070,17 +1157,18 @@ static void draw_zombie(h2_garden_guard_canvas_t* canvas, float gx, float gy,
                    (gardener ? 0.035f * step : 0.0f);
   const float sy = (armored ? -0.62f : -0.71f) +
                    (pest->eating ? 0.055f : -0.034f * fabsf(step));
-  const float hx = sx - (armored ? 0.042f : 0.077f) - lunge * 0.78f +
-                   0.032f * hit - (gardener ? 0.047f * step : 0.0f);
+  const float hx = sx - (armored ? 0.067f : (runner ? 0.135f : 0.117f)) -
+                   lunge * 0.78f + 0.032f * hit -
+                   (gardener ? 0.047f * step : 0.0f);
   const float hy =
       sy - (runner ? 0.23f : 0.257f) + (pest->eating ? 0.037f : 0.0f);
   const float hand_dx =
       pest->eating ? 0.31f + lunge
                    : (runner ? 0.05f - stride * 0.25f : 0.26f - 0.10f * stride);
-  const float hand_y = sy + (pest->eating ? 0.037f : 0.19f + 0.10f * stride);
+  const float hand_y = sy + (pest->eating ? 0.065f : 0.23f + 0.10f * stride);
   zombie_arm(&brush, (art_point_t){sx - 0.06f, sy + 0.028f},
              (art_point_t){sx - 0.18f, sy + 0.15f},
-             (art_point_t){sx - 0.12f - hand_dx * 0.58f, hand_y - 0.05f},
+             (art_point_t){sx - 0.14f - hand_dx * 0.51f, hand_y - 0.10f},
              0.078f, darken(coat, 48u), darken(skin, 41u));
   const float shoulder = armored ? 0.266f : (runner ? 0.106f : 0.182f);
   ZOMBIE_ROUND(&brush, brush.ink, {sx - shoulder, sy - 0.016f},
@@ -1131,7 +1219,7 @@ static void draw_zombie(h2_garden_guard_canvas_t* canvas, float gx, float gy,
   const float elbow =
       sx + (runner ? 0.13f + 0.11f * stride : 0.075f - 0.07f * stride);
   const float wrist = sx - hand_dx;
-  zombie_arm(&brush, (art_point_t){sx + shoulder * 0.73f, sy + 0.028f},
+  zombie_arm(&brush, (art_point_t){sx + shoulder * 0.64f, sy + 0.055f},
              (art_point_t){elbow, sy + (pest->eating ? 0.14f : 0.29f)},
              (art_point_t){wrist, hand_y}, armored ? 0.105f : 0.09f,
              gardener ? RGB(196, 172, 124) : lighten(coat, 29u), skin);
@@ -1620,8 +1708,11 @@ void h2_garden_guard_static_key(const h2_garden_guard_game_t* game,
                             cooldown_step(game, i) << 1 |
                             (game->card_denied_ms[i] != 0u ? 1u : 0u) << 8;
     }
-    out->values[6] = game->wave;
-    out->values[7] = progress_step(game);
+    out->values[8] = game->wave;
+    out->values[9] = progress_step(game);
+    out->values[10] = game->profile.owned;
+    out->values[11] = game->sighting_ms != 0u ? 1u + game->sighting_kind : 0u;
+    out->values[12] = game->menu;
     return;
   }
   uint32_t carts = 0;
@@ -1636,6 +1727,13 @@ void h2_garden_guard_static_key(const h2_garden_guard_game_t* game,
   out->values[4] = game->new_best ? 1u : 0u;
   out->values[5] = prompt_visible(game) ? 1u : 0u;
   out->values[6] = game->kills;
+  out->values[7] = game->menu;
+  out->values[8] = game->profile.total_score;
+  out->values[9] = game->profile.coins;
+  out->values[10] = game->profile.seen;
+  out->values[11] = game->profile.owned;
+  out->values[12] = game->save_state;
+  out->values[13] = game->earned_coins;
 }
 
 static void draw_card(h2_garden_guard_canvas_t* canvas,
@@ -1645,7 +1743,9 @@ static void draw_card(h2_garden_guard_canvas_t* canvas,
   const float x1 = x0 + l->card_w, y1 = y0 + l->card_h;
   const float radius = l->card_w * 0.14f;
   const uint32_t cost = h2_garden_guard_card_cost((h2_garden_guard_card_t)card);
-  const bool affordable = game->sun >= cost;
+  const uint8_t unlock = h2_garden_guard_card_unlock((int32_t)card);
+  const bool locked = (game->profile.owned & unlock) != unlock;
+  const bool affordable = game->sun >= cost && !locked;
   if (game->selected == (int32_t)card) {
     const float grow = fmaxf(2.0f, 3.0f * l->unit);
     rounded_rect(canvas, x0 - grow, y0 - grow, x1 + grow, y1 + grow,
@@ -1668,7 +1768,10 @@ static void draw_card(h2_garden_guard_canvas_t* canvas,
     draw_shovel(canvas, cx, (y0 + inset + well_y1) * 0.5f,
                 fminf(l->card_w - 2.0f * inset, well_h));
   } else {
-    const uint8_t kind = (uint8_t)(card + 1u);
+    const uint8_t kind =
+        card == H2_GARDEN_GUARD_CARD_FROST     ? H2_GARDEN_GUARD_PLANT_FROST
+        : card == H2_GARDEN_GUARD_CARD_BRAMBLE ? H2_GARDEN_GUARD_PLANT_BRAMBLE
+                                               : (uint8_t)(card + 1u);
     const float portrait_limit = l->card_w - 2.0f * inset;
     const float scale = fminf(well_h * 0.92f, portrait_limit * 0.84f);
     float gx = cx, ground_y = well_y1 - well_h * 0.12f;
@@ -1676,7 +1779,8 @@ static void draw_card(h2_garden_guard_canvas_t* canvas,
     // stem.
     if (kind == H2_GARDEN_GUARD_PLANT_SUNFLOWER) {
       ground_y = y0 + inset + well_h * 0.49f + scale * 0.725f;
-    } else if (kind == H2_GARDEN_GUARD_PLANT_SHOOTER) {
+    } else if (kind == H2_GARDEN_GUARD_PLANT_FROST ||
+               kind == H2_GARDEN_GUARD_PLANT_SHOOTER) {
       ground_y = y0 + inset + well_h * 0.57f + scale * 0.54f;
       gx -= 0.035f * scale;
     } else {
@@ -1687,7 +1791,10 @@ static void draw_card(h2_garden_guard_canvas_t* canvas,
   }
   if (cost > 0u) {
     char value[12];
-    (void)snprintf(value, sizeof(value), "%u", (unsigned)cost);
+    if (locked)
+      (void)snprintf(value, sizeof(value), "LOCK");
+    else
+      (void)snprintf(value, sizeof(value), "%u", (unsigned)cost);
     const float text_h = y1 - well_y1;
     int32_t scale = (int32_t)(text_h * 0.62f / 7.0f + 0.5f);
     if (scale < 1) scale = 1;
@@ -1703,9 +1810,19 @@ static void draw_card(h2_garden_guard_canvas_t* canvas,
     rounded_rect(canvas, x0, y0, x1, bottom, fminf(radius, bottom - y0),
                  RGB(16, 12, 8), 140u);
   }
-  if (game->card_denied_ms[card] != 0u)
+  if (game->card_denied_ms[card] != 0u && !locked)
     rounded_rect(canvas, x0, y0, x1, y1, radius, RGB(230, 40, 32), 120u);
 }
+
+static const struct {
+  const char* name;
+  const char* trait;
+  const char* counter;
+} k_zombie_cards[H2_GARDEN_GUARD_PEST_KIND_COUNT] = {
+    {"GARDENER", "DRAGS ONE FOOT", "KEEP SHOOTERS BEHIND WALLS"},
+    {"SHELLBACK", "PLATE TAKES THE FIRST HITS", "STACK SHOOTERS IN ITS LANE"},
+    {"RUNNER", "FAST BUT FRAGILE", "BLOCK IT OR USE FROST"},
+};
 
 static void draw_toolbar(h2_garden_guard_canvas_t* canvas,
                          const h2_garden_guard_game_t* game) {
@@ -1747,7 +1864,12 @@ static void draw_toolbar(h2_garden_guard_canvas_t* canvas,
   const float radius = (bar_y1 - bar_y0) * 0.5f;
   rounded_rect(canvas, x0, bar_y0, x1, bar_y1, radius, RGB(18, 38, 39), 220u);
   const uint32_t step = progress_step(game);
-  if (step > 0u) {
+  if (game->sighting_ms != 0u) {
+    const char* sighting = "NEW JOURNAL CARD";
+    text_centered(canvas, sighting, (x0 + x1) * 0.5f,
+                  bar_y0 + (bar_y1 - bar_y0 - 7.0f) * 0.5f,
+                  fit_scale(sighting, x1 - x0, 1), RGB(255, 218, 119), 256u);
+  } else if (step > 0u) {
     const float inset = fmaxf(1.0f, 2.0f * u);
     const float fill =
         (x1 - x0 - 2.0f * inset) * (float)step / (float)PROGRESS_STEPS;
@@ -1755,24 +1877,6 @@ static void draw_toolbar(h2_garden_guard_canvas_t* canvas,
                  bar_y1 - inset, fmaxf(radius - inset, 0.0f), RGB(132, 206, 72),
                  256u);
   }
-}
-
-/* Dark glass panel centred in the area below the toolbar. */
-static void panel(h2_garden_guard_canvas_t* canvas,
-                  const h2_garden_guard_layout_t* l, float width_fraction,
-                  float height_fraction, float* out_x0, float* out_y0,
-                  float* out_w, float* out_h) {
-  const float area_h = (float)l->height - l->bar_h;
-  const float w = fminf((float)l->width * width_fraction, 560.0f * l->unit);
-  const float h = fminf(area_h * height_fraction, 400.0f * l->unit);
-  const float x0 = ((float)l->width - w) * 0.5f;
-  const float y0 = l->bar_h + (area_h - h) * 0.5f;
-  rounded_rect(canvas, x0, y0, x0 + w, y0 + h, 18.0f * l->unit, RGB(22, 34, 18),
-               205u);
-  *out_x0 = x0;
-  *out_y0 = y0;
-  *out_w = w;
-  *out_h = h;
 }
 
 #include "h2_garden_guard_title.inc"
@@ -1816,6 +1920,156 @@ static void draw_title_art(h2_garden_guard_canvas_t* canvas, float x, float y,
   }
 }
 
+static void menu_button(h2_garden_guard_canvas_t* canvas,
+                        h2_garden_guard_rect_t r, const char* label,
+                        uint16_t fill, uint16_t ink) {
+  rounded_rect(canvas, r.x, r.y, r.x + r.w, r.y + r.h, r.h * 0.23f, fill, 256u);
+  const int32_t scale = fit_scale(label, r.w * 0.93f, r.h >= 25.0f ? 2 : 1);
+  const int32_t width = h2_garden_guard_text_width(label, scale);
+  text_layer(canvas, label, (int32_t)(r.x + (r.w - (float)width) * 0.5f),
+             (int32_t)(r.y + (r.h - (float)(scale * 7)) * 0.5f), scale, ink,
+             256u);
+}
+
+static void menu_tabs(h2_garden_guard_canvas_t* canvas,
+                      const h2_garden_guard_layout_t* l, bool result) {
+  menu_button(canvas, h2_garden_guard_menu_tab(l, result, 0u), "JOURNAL",
+              RGB(50, 93, 78), RGB(253, 235, 182));
+  menu_button(canvas, h2_garden_guard_menu_tab(l, result, 1u), "SHOP",
+              RGB(50, 93, 78), RGB(253, 235, 182));
+}
+
+static void draw_collection(h2_garden_guard_canvas_t* canvas,
+                            const h2_garden_guard_game_t* game) {
+  const h2_garden_guard_layout_t* l = &game->layout;
+  const bool shop = game->menu == H2_GARDEN_GUARD_MENU_SHOP;
+  const h2_garden_guard_rect_t back = h2_garden_guard_menu_back(l);
+  const float s = back.w / 80.0f;
+  const float cx = (float)l->width * 0.5f;
+  const uint16_t paper = RGB(235, 216, 173);
+  const uint16_t ink = RGB(35, 61, 51);
+  const uint16_t muted = RGB(87, 111, 88);
+  const uint16_t light = RGB(244, 226, 176);
+  fill_rect(canvas, 0.0f, 0.0f, (float)l->width, (float)l->height,
+            RGB(19, 39, 35), 256u);
+  menu_button(canvas, back, "BACK", RGB(48, 88, 76), light);
+  text_centered(canvas, shop ? "PLANT SHOP" : "FIELD JOURNAL", cx,
+                back.y + 6.0f * s,
+                fit_scale(shop ? "PLANT SHOP" : "FIELD JOURNAL", 252.0f * s,
+                          text_scale(s, 3.0f)),
+                light, 256u);
+  char label[40];
+  if (shop) {
+    (void)snprintf(label, sizeof(label), "%u COINS",
+                   (unsigned)game->profile.coins);
+  } else {
+    unsigned seen = 0;
+    for (unsigned k = 0; k < H2_GARDEN_GUARD_PEST_KIND_COUNT; ++k)
+      seen += (game->profile.seen >> k) & 1u;
+    (void)snprintf(label, sizeof(label), "%u/%u SEEN", seen,
+                   (unsigned)H2_GARDEN_GUARD_PEST_KIND_COUNT);
+  }
+  text_centered(canvas, label, cx, back.y + 39.0f * s,
+                fit_scale(label, 260.0f * s, text_scale(s, 2.0f)),
+                RGB(240, 197, 103), 256u);
+  for (unsigned i = 0; i < (shop ? 2u : H2_GARDEN_GUARD_PEST_KIND_COUNT); ++i) {
+    const h2_garden_guard_rect_t r = h2_garden_guard_menu_row(l, i);
+    const bool seen = shop || (game->profile.seen & (1u << i)) != 0u;
+    rounded_rect(canvas, r.x, r.y, r.x + r.w, r.y + r.h, 8.0f * s,
+                 seen ? paper : RGB(48, 75, 66), 256u);
+    rounded_rect(canvas, r.x + 5.0f * s, r.y + 5.0f * s, r.x + 79.0f * s,
+                 r.y + r.h - 5.0f * s, 5.0f * s,
+                 seen ? RGB(160, 177, 127) : RGB(56, 90, 76), 256u);
+    if (shop) {
+      const uint8_t kind =
+          i == 0u ? H2_GARDEN_GUARD_PLANT_FROST : H2_GARDEN_GUARD_PLANT_BRAMBLE;
+      draw_plant_kind(canvas, kind, r.x + 43.0f * s, r.y + 52.0f * s, 42.0f * s,
+                      0u, k_neutral_plant, false);
+    } else if (seen) {
+      h2_garden_guard_render_zombie_portrait(
+          canvas, (h2_garden_guard_pest_kind_t)i, r.x + 46.0f * s,
+          r.y + 52.0f * s, 37.0f * s);
+    } else {
+      text_centered(canvas, "?", r.x + 43.0f * s, r.y + 18.0f * s,
+                    text_scale(s, 3.0f), RGB(159, 185, 141), 256u);
+    }
+    const char* name = shop   ? (i == 0u ? "FROSTBELL" : "BRAMBLE")
+                       : seen ? k_zombie_cards[i].name
+                              : "UNDISCOVERED";
+    const char* trait =
+        shop ? (i == 0u ? "SLOWS WITH ICY SHOTS" : "THORNS HURT BITING ZOMBIES")
+        : seen ? k_zombie_cards[i].trait
+               : "MEET THIS ZOMBIE IN PLAY";
+    const char* hint = shop ? (i == 0u ? "125 SUN TO PLANT" : "75 SUN TO PLANT")
+                       : seen ? k_zombie_cards[i].counter
+                              : NULL;
+    if (s < 0.52f) {
+      if (shop) {
+        trait = i == 0u ? "SLOWS" : "THORN HITS";
+        hint = i == 0u ? "125 SUN" : "75 SUN";
+      } else if (seen) {
+        static const char* const compact_traits[] = {"DRAGS ONE FOOT", "PLATED",
+                                                     "FAST, FRAGILE"};
+        static const char* const compact_hints[] = {
+            "USE WALLS", "STACK SHOOTERS", "BLOCK OR FROST"};
+        trait = compact_traits[i];
+        hint = compact_hints[i];
+      } else {
+        trait = "MEET IN PLAY";
+      }
+    }
+    const float x = r.x + 92.0f * s;
+    const float available = (shop ? 226.0f : 335.0f) * s;
+    text_layer(canvas, name, (int32_t)x, (int32_t)(r.y + 10.0f * s),
+               fit_scale(name, available, text_scale(s, 2.0f)),
+               seen ? ink : light, 256u);
+    text_layer(canvas, trait, (int32_t)x, (int32_t)(r.y + 31.0f * s),
+               fit_scale(trait, available, 1), seen ? ink : light, 256u);
+    if (hint != NULL)
+      text_layer(canvas, hint, (int32_t)x, (int32_t)(r.y + 45.0f * s),
+                 fit_scale(hint, available, 1), muted, 256u);
+    if (shop) {
+      const uint32_t price = h2_garden_guard_offer_price(i);
+      const bool owned =
+          (game->profile.owned & (i == 0u ? H2_GARDEN_GUARD_FROST_BIT
+                                          : H2_GARDEN_GUARD_BRAMBLE_BIT)) != 0u;
+      const bool enough = game->profile.coins >= price;
+      (void)snprintf(label, sizeof(label),
+                     owned    ? "OWNED"
+                     : enough ? "BUY %u"
+                              : "NEED %u",
+                     (unsigned)price);
+      const h2_garden_guard_rect_t buy = {r.x + r.w * 0.74f + 7.0f * s,
+                                          r.y + 15.0f * s,
+                                          r.w * 0.26f - 14.0f * s, 32.0f * s};
+      menu_button(canvas, buy, label,
+                  owned    ? RGB(126, 162, 120)
+                  : enough ? RGB(252, 199, 91)
+                           : RGB(182, 168, 138),
+                  ink);
+    }
+  }
+  if (shop) {
+    const h2_garden_guard_rect_t row = h2_garden_guard_menu_row(l, 2u);
+    (void)snprintf(label, sizeof(label), "TOTAL SCORE %u",
+                   (unsigned)game->profile.total_score);
+    text_centered(canvas, label, cx, row.y + 9.0f * s,
+                  fit_scale(label, 420.0f * s, text_scale(s, 2.0f)), light,
+                  256u);
+    const char* hint = s < 0.52f ? "PLANT KILLS EARN COINS"
+                                 : "PLANT DEFEATS EARN COINS AT THE END";
+    text_centered(canvas, hint, cx, row.y + 38.0f * s,
+                  fit_scale(hint, 435.0f * s, 1), light, 256u);
+  }
+  if (game->save_state != H2_GARDEN_GUARD_SAVE_READY) {
+    const char* status = game->save_state == H2_GARDEN_GUARD_SAVE_SESSION
+                             ? "SESSION ONLY"
+                             : "SAVE PENDING";
+    text_centered(canvas, status, cx, back.y + 289.0f * s,
+                  fit_scale(status, 420.0f * s, 1), RGB(244, 184, 114), 256u);
+  }
+}
+
 static void draw_title(h2_garden_guard_canvas_t* canvas,
                        const h2_garden_guard_game_t* game) {
   const h2_garden_guard_layout_t* l = &game->layout;
@@ -1842,51 +2096,55 @@ static void draw_title(h2_garden_guard_canvas_t* canvas,
                y + 294.0f * s, 7.0f * s, RGB(250, 209, 112), 256u);
   text_centered(canvas, action, cx, y + 280.5f * s - 3.5f * (float)action_scale,
                 action_scale, cover_ink, 256u);
-  const char* hint = "COLLECT SUN, PICK A CARD, PLANT";
+  const char* hint =
+      s < 0.52f ? "COLLECT SUN AND PLANT" : "COLLECT SUN, PICK A CARD, PLANT";
   text_centered(canvas, hint, cx, y + 304.0f * s,
                 fit_scale(hint, 460.0f * s, 1), RGB(211, 219, 186), 256u);
-  if (game->best > 0u && s >= 0.75f) {
-    char value[24];
-    (void)snprintf(value, sizeof(value), "BEST %u", (unsigned)game->best);
-    text_centered(canvas, value, cx + 152.0f * s, y + 279.0f * s, 1,
-                  RGB(211, 219, 186), 256u);
-  }
+  menu_tabs(canvas, l, false);
 }
 
 static void draw_result(h2_garden_guard_canvas_t* canvas,
                         const h2_garden_guard_game_t* game) {
   const h2_garden_guard_layout_t* l = &game->layout;
-  const float u = l->unit;
-  float x0, y0, w, h;
-  panel(canvas, l, 0.82f, 0.76f, &x0, &y0, &w, &h);
-  const float cx = x0 + w * 0.5f;
+  const h2_garden_guard_rect_t tab = h2_garden_guard_menu_tab(l, true, 0u);
+  const float s = tab.w / 108.0f;
+  const float cx = (float)l->width * 0.5f;
+  const float y = tab.y - 278.0f * s;
+  const uint16_t ivory = RGB(252, 233, 183);
   const bool won = game->phase == H2_GARDEN_GUARD_PHASE_WON;
+  rounded_rect(canvas, cx - 218.0f * s, y + 65.0f * s, cx + 218.0f * s,
+               y + 314.0f * s, 12.0f * s, RGB(20, 42, 33), 240u);
   const char* title = won ? "GARDEN SAFE!" : "ZOMBIES GOT IN!";
-  const int32_t big = fit_scale(title, w * 0.9f, text_scale(u, 5.0f));
-  text_centered(canvas, title, cx, y0 + h * 0.08f, big,
-                won ? RGB(170, 236, 90) : RGB(255, 96, 72), 256u);
-  char value[32];
-  (void)snprintf(value, sizeof(value), "SCORE %u", (unsigned)game->score);
-  const int32_t middle = fit_scale(value, w * 0.9f, text_scale(u, 3.0f));
-  float y = y0 + h * 0.08f + (float)(big * 11);
-  text_centered(canvas, value, cx, y, middle, RGB(255, 236, 200), 256u);
-  y += (float)(middle * 11);
-  (void)snprintf(value, sizeof(value), "STOPPED %u", (unsigned)game->kills);
-  const int32_t small = fit_scale(value, w * 0.9f, text_scale(u, 2.5f));
-  text_centered(canvas, value, cx, y, small, RGB(220, 230, 200), 230u);
-  y += (float)(small * 11);
-  if (game->new_best)
-    (void)snprintf(value, sizeof(value), "NEW BEST!");
-  else
-    (void)snprintf(value, sizeof(value), "BEST %u", (unsigned)game->best);
-  text_centered(canvas, value, cx, y, small,
-                game->new_best ? RGB(255, 222, 80) : RGB(220, 214, 200), 240u);
+  text_centered(canvas, title, cx, y + 83.0f * s,
+                fit_scale(title, 424.0f * s, text_scale(s, 4.0f)),
+                won ? RGB(235, 211, 130) : RGB(255, 177, 133), 256u);
+  char value[40];
+  (void)snprintf(value, sizeof(value), "RUN SCORE %u", (unsigned)game->score);
+  text_centered(canvas, value, cx, y + 135.0f * s,
+                fit_scale(value, 420.0f * s, text_scale(s, 3.0f)), ivory, 256u);
+  (void)snprintf(value, sizeof(value), "TOTAL %u  BEST %u",
+                 (unsigned)game->profile.total_score, (unsigned)game->best);
+  text_centered(canvas, value, cx, y + 174.0f * s,
+                fit_scale(value, 420.0f * s, text_scale(s, 2.0f)), ivory, 256u);
+  (void)snprintf(value, sizeof(value),
+                 s < 0.52f ? "+%u COINS  %u" : "+%u COINS  BALANCE %u",
+                 (unsigned)game->earned_coins, (unsigned)game->profile.coins);
+  text_centered(canvas, value, cx, y + 208.0f * s,
+                fit_scale(value, 420.0f * s, text_scale(s, 2.0f)),
+                RGB(255, 206, 112), 256u);
+  if (game->save_state != H2_GARDEN_GUARD_SAVE_READY) {
+    const char* status = game->save_state == H2_GARDEN_GUARD_SAVE_SESSION
+                             ? "SESSION ONLY"
+                             : "SAVE PENDING";
+    text_centered(canvas, status, cx, y + 246.0f * s,
+                  fit_scale(status, 420.0f * s, 1), ivory, 256u);
+  }
+  menu_tabs(canvas, l, true);
   if (prompt_visible(game)) {
-    const int32_t prompt =
-        fit_scale("TAP TO PLAY AGAIN", w * 0.9f, text_scale(u, 2.5f));
-    text_centered(canvas, "TAP TO PLAY AGAIN", cx,
-                  y0 + h - (float)(prompt * 7) - 14.0f * u, prompt,
-                  RGB(255, 244, 200), 256u);
+    const h2_garden_guard_rect_t again = {cx - 92.0f * s, tab.y, 184.0f * s,
+                                          tab.h};
+    menu_button(canvas, again, "PLAY AGAIN", RGB(247, 204, 113),
+                RGB(29, 62, 49));
   }
 }
 
@@ -1908,6 +2166,10 @@ static void draw_lane_plants(h2_garden_guard_canvas_t* canvas,
 /* Cache the parked carts. On result screens the plants rest under the panel. */
 static void draw_field(h2_garden_guard_canvas_t* canvas,
                        const h2_garden_guard_game_t* game) {
+  if (game->menu != H2_GARDEN_GUARD_MENU_NONE) {
+    draw_collection(canvas, game);
+    return;
+  }
   if (game->phase == H2_GARDEN_GUARD_PHASE_TITLE) {
     draw_title(canvas, game);
     return;
@@ -1936,7 +2198,9 @@ void h2_garden_guard_render_static(h2_garden_guard_canvas_t* canvas,
   full_clip(canvas);
   depth_mode(canvas, DEPTH_OFF, 0u);
   if (part == H2_GARDEN_GUARD_PART_TOOLBAR) {
-    if (game->phase != H2_GARDEN_GUARD_PHASE_TITLE) draw_toolbar(canvas, game);
+    if (game->phase != H2_GARDEN_GUARD_PHASE_TITLE &&
+        game->menu == H2_GARDEN_GUARD_MENU_NONE)
+      draw_toolbar(canvas, game);
   } else {
     draw_field(canvas, game);
   }
@@ -1981,6 +2245,7 @@ void h2_garden_guard_render_scene(h2_garden_guard_canvas_t* canvas,
                                   const h2_garden_guard_game_t* game) {
   const h2_garden_guard_layout_t* l = &game->layout;
   const float u = l->unit;
+  if (game->menu != H2_GARDEN_GUARD_MENU_NONE) return;
   field_clip(canvas, l);
   draw_hover(canvas, game);
   // Compose all moving figures far to near; the map handles parked carts.
@@ -2001,6 +2266,8 @@ void h2_garden_guard_render_scene(h2_garden_guard_canvas_t* canvas,
         continue;
       float x, y;
       h2_garden_guard_field_point(l, lane, pest->x, &x, &y);
+      if (pest->slow_ms != 0u && pest->active)
+        ellipse(canvas, x, y, s * 0.36f, s * 0.13f, RGB(141, 223, 235), 165u);
       draw_zombie(canvas, x, y, s, pest);
     }
     for (unsigned i = 0; i < H2_GARDEN_GUARD_MAX_PEAS; ++i) {
@@ -2011,8 +2278,9 @@ void h2_garden_guard_render_scene(h2_garden_guard_canvas_t* canvas,
       const float r = s * 0.085f;
       ellipse(canvas, x, y, r * 0.9f, r * 0.3f, RGB(18, 40, 14), 80u);
       const float py = y - H2_GARDEN_GUARD_PEA_HEIGHT * s;
-      odisc(canvas, x, py, r, rim_width(s), RGB(140, 222, 84),
-            RGB(40, 104, 30));
+      odisc(canvas, x, py, r, rim_width(s),
+            pea->frost ? RGB(140, 220, 238) : RGB(140, 222, 84),
+            pea->frost ? RGB(53, 114, 159) : RGB(40, 104, 30));
       disc(canvas, x - r * 0.3f, py - r * 0.3f, r * 0.35f, RGB(220, 255, 190),
            200u);
     }

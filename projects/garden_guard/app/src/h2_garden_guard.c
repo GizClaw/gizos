@@ -12,6 +12,8 @@
 #define EVENTS_PER_DRAIN 64u
 #define DT_MAX_MS 100u
 #define STATS_PERIOD_MS 10000u
+#define PROFILE_KEY "profile"
+#define PROFILE_RETRY_MS 2000u
 #define PART_COUNT ((unsigned)H2_GARDEN_GUARD_PART_COUNT)
 
 /* Changed bands and, per band, the half-open column range that changed. */
@@ -35,7 +37,7 @@ typedef struct session {
   h2_garden_guard_static_key_t static_key[PART_COUNT];
   dirty_t static_cover[PART_COUNT];
   dirty_t previous;
-  uint64_t idle_pose_tick;
+  uint64_t idle_pose_tick, profile_retry_ms;
   uint32_t plant_revision;
   bool previous_transient;
   bool first_frame;
@@ -93,6 +95,77 @@ static void save_best(session_t* s, uint32_t best) {
   (void)snprintf(message, sizeof(message),
                  "H2_GARDEN_GUARD_BEST_SAVE best=%u rc=%d", (unsigned)best, rc);
   log_line(s, rc == H2_PAL_OK ? H2_PAL_LOG_INFO : H2_PAL_LOG_WARN, message);
+}
+
+static void load_profile(session_t* s) {
+  h2_pal_pref_namespace_t* ns = NULL;
+  int rc = h2_pal_pref_open(s->runtime->pref, H2_GARDEN_GUARD_PREF_NAMESPACE,
+                            H2_PAL_PREF_OPEN_READ_ONLY, &ns);
+  if (rc == H2_PAL_ERR_NOT_FOUND) return;
+  if (rc == H2_PAL_OK && ns != NULL) {
+    void* data = NULL;
+    size_t size = 0;
+    rc = ns->get_blob == NULL
+             ? H2_PAL_ERR_UNSUPPORTED
+             : ns->get_blob(ns, s->allocator, PROFILE_KEY, &data, &size);
+    if (rc == H2_PAL_OK) {
+      h2_garden_guard_profile_t profile;
+      if (h2_garden_guard_profile_decode(&profile, data, size)) {
+        if (profile.best < s->game.best) profile.best = s->game.best;
+        s->game.profile = profile;
+        s->game.best = profile.best;
+      } else {
+        /* Leave an unrecognized record available to a newer app. */
+        rc = H2_PAL_ERR_INVALID_ARG;
+      }
+    }
+    if (data != NULL) h2_pal_mem_free(s->allocator, data);
+    if (ns->close != NULL) (void)ns->close(ns);
+  }
+  if (rc != H2_PAL_OK && rc != H2_PAL_ERR_NOT_FOUND) {
+    s->game.save_state = H2_GARDEN_GUARD_SAVE_SESSION;
+    log_line(s, H2_PAL_LOG_WARN, "H2_GARDEN_GUARD_PROFILE_SESSION_ONLY");
+  }
+}
+
+static void save_profile(session_t* s, uint64_t now) {
+  if (!s->game.profile_dirty ||
+      s->game.save_state == H2_GARDEN_GUARD_SAVE_SESSION ||
+      now < s->profile_retry_ms)
+    return;
+  h2_pal_pref_namespace_t* ns = NULL;
+  int rc = h2_pal_pref_open(s->runtime->pref, H2_GARDEN_GUARD_PREF_NAMESPACE,
+                            H2_PAL_PREF_OPEN_READ_WRITE, &ns);
+  if (rc == H2_PAL_OK && ns != NULL) {
+    uint8_t bytes[H2_GARDEN_GUARD_SAVE_BYTES];
+    h2_garden_guard_profile_encode(&s->game.profile, bytes);
+    rc = ns->set_blob == NULL
+             ? H2_PAL_ERR_UNSUPPORTED
+             : ns->set_blob(ns, PROFILE_KEY, bytes, sizeof(bytes));
+    if (rc == H2_PAL_OK && ns->commit != NULL) rc = ns->commit(ns);
+    if (ns->close != NULL) (void)ns->close(ns);
+  } else if (rc == H2_PAL_OK) {
+    rc = H2_PAL_ERR_UNSUPPORTED;
+  }
+  if (rc == H2_PAL_OK) {
+    s->game.profile_dirty = false;
+    s->game.save_state = H2_GARDEN_GUARD_SAVE_READY;
+    char message[112];
+    (void)snprintf(
+        message, sizeof(message),
+        "H2_GARDEN_GUARD_PROFILE_SAVED seen=%u owned=%u coins=%u total=%u",
+        (unsigned)s->game.profile.seen, (unsigned)s->game.profile.owned,
+        (unsigned)s->game.profile.coins, (unsigned)s->game.profile.total_score);
+    log_line(s, H2_PAL_LOG_INFO, message);
+  } else {
+    const uint8_t state = rc == H2_PAL_ERR_UNSUPPORTED
+                              ? H2_GARDEN_GUARD_SAVE_SESSION
+                              : H2_GARDEN_GUARD_SAVE_RETRY;
+    if (s->game.save_state != state)
+      log_line(s, H2_PAL_LOG_WARN, "H2_GARDEN_GUARD_PROFILE_SAVE_FAILED");
+    s->game.save_state = state;
+    s->profile_retry_ms = now + PROFILE_RETRY_MS;
+  }
 }
 
 static h2_pal_result_t drain_events(session_t* s) {
@@ -468,6 +541,7 @@ static h2_pal_result_t play(session_t* s) {
     rc = poll_touch(s);
     if (rc != H2_PAL_OK) return rc;
     h2_garden_guard_game_step(&s->game, (uint32_t)dt);
+    save_profile(s, now);
     rc = render_frame(s);
     if (rc != H2_PAL_OK) return rc;
     ++s->frames;
@@ -538,6 +612,7 @@ static h2_pal_result_t prepare(session_t* s) {
   }
   h2_garden_guard_game_init(&s->game, s->display.width, s->display.height, seed,
                             load_best(s));
+  load_profile(s);
   h2_garden_guard_canvas_t canvas = layer_canvas(s, s->background, false);
   h2_garden_guard_render_background(&canvas, &s->game);
   s->first_frame = true;
