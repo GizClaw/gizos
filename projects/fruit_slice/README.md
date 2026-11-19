@@ -71,7 +71,7 @@ Collection counts and unseen markers live in the separate 32-byte `fruit_slice/c
 
 ## Sound
 
-The title screen has independent SFX and BGM mute buttons. Settings persist as `fruit_slice/audio_v1`, and playback starts on the first touch. The bank includes slicing, combos with a synthetic nonverbal cheer, explosions, missed fruit, results, economy/card confirmations and an original arcade music loop. See the [sound bank](app/resources/README.md) for the rebuild command, resource license, event integration and limits. Existing Audio PAL providers power desktop, Web, mobile and supported boards; backgrounding or exiting closes game playback.
+The title screen has independent SFX and BGM mute buttons. Settings persist as `fruit_slice/audio_v1`, and playback starts on the first touch. Each equipped weapon has its own fruit-contact sound. Empty swings, combos and explosions keep their shared cues. The bank also includes missed fruit, results, economy and card confirmations, and an original arcade music loop. See the [sound bank](app/resources/README.md) for the rebuild command, resource license, event integration and limits. Existing Audio PAL providers power desktop, Web, mobile and supported boards. Backgrounding or exiting closes game playback.
 
 ## Native desktop and mobile builds
 

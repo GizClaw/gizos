@@ -13,6 +13,8 @@
 static unsigned priority(unsigned sound) {
   static const uint8_t priorities[H2_FRUIT_SLICE_SOUND_COUNT] = {
       1, 2, 6, 10, 3, 7, 7, 2, 6, 4, 4, 5, 8, 5};
+  if (h2_fruit_slice_sound_is_hit((h2_fruit_slice_sound_t)sound))
+    sound = H2_FRUIT_SLICE_SOUND_SLICE;
   return priorities[sound];
 }
 
@@ -65,15 +67,18 @@ void h2_fruit_slice_audio_emit(h2_fruit_slice_audio_t* audio,
     h2_fruit_slice_audio_worker_emit(audio, sound, now_ms);
     return;
   }
-  const uint32_t bit = 1u << (unsigned)sound;
-  const uint32_t cooldown = sound == H2_FRUIT_SLICE_SOUND_SLICE   ? 35u
+  const bool hit = h2_fruit_slice_sound_is_hit(sound);
+  const unsigned cooldown_slot =
+      hit ? H2_FRUIT_SLICE_SOUND_SLICE : (unsigned)sound;
+  const uint32_t bit = 1u << cooldown_slot;
+  const uint32_t cooldown = hit                                   ? 35u
                             : sound == H2_FRUIT_SLICE_SOUND_SWING ? 100u
                                                                   : 180u;
-  if ((audio->seen & bit) && now_ms >= audio->last_sound_ms[sound] &&
-      now_ms - audio->last_sound_ms[sound] < cooldown)
+  if ((audio->seen & bit) && now_ms >= audio->last_sound_ms[cooldown_slot] &&
+      now_ms - audio->last_sound_ms[cooldown_slot] < cooldown)
     return;
   audio->seen |= bit;
-  audio->last_sound_ms[sound] = now_ms;
+  audio->last_sound_ms[cooldown_slot] = now_ms;
   if (sound == H2_FRUIT_SLICE_SOUND_BOMB)
     memset(audio->voices, 0, sizeof(audio->voices));
   unsigned slot = 0;
