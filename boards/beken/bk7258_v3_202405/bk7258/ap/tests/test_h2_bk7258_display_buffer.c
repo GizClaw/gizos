@@ -24,6 +24,9 @@ static void check_copy_boundaries(void) {
         memcpy(expected + out, src + in, size);
         h2_bk7258_display_copy_pixels(&scratch, dst + out, src + in, size);
         assert(memcmp(dst, expected, sizeof(dst)) == 0);
+        memset(dst, 0xa5, sizeof(dst));
+        h2_bk7258_display_copy_pixels(NULL, dst + out, src + in, size);
+        assert(memcmp(dst, expected, sizeof(dst)) == 0);
       }
     }
   }

@@ -106,7 +106,7 @@ static inline void h2_bk7258_display_copy_aligned(void* dst, const void* src,
 static inline void h2_bk7258_display_copy_pixels(
     h2_bk7258_display_copy_scratch_t* scratch, void* dst, const void* src,
     size_t bytes) {
-  if ((((uintptr_t)dst | (uintptr_t)src) & 3u) != 0u) {
+  if (scratch == NULL || (((uintptr_t)dst | (uintptr_t)src) & 3u) != 0u) {
     memcpy(dst, src, bytes);
     return;
   }

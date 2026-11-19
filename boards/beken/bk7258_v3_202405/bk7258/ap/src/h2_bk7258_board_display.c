@@ -97,6 +97,11 @@ static h2_bk7258_display_state_t s_display_state = {
 H2_ATOMIC_DEFINE_STATIC(bool, s_scanout_available_0, false);
 H2_ATOMIC_DEFINE_STATIC(bool, s_scanout_available_1, false);
 
+static bool display_psram_contains(uintptr_t address, size_t bytes) {
+  return bytes <= 0x800000u && address >= 0x60000000u &&
+         address <= 0x60800000u - bytes;
+}
+
 #if H2_BK7258_DISPLAY_DIAGNOSTICS
 /* Sample without allocating another framebuffer or waiting for a refresh.
  * The controller may still be scanning the preceding submitted frame. */
@@ -121,8 +126,7 @@ static void display_diagnostic(const h2_bk7258_display_state_t* state,
   uintptr_t source = lcd_disp_ll_get_mater_rd_base_addr();
   const uint16_t* scanout = NULL;
   /* Only inspect a complete frame inside this board's physical PSRAM. */
-  if (state->frame_size <= 0x800000u && source >= 0x60000000u &&
-      source <= 0x60800000u - state->frame_size && (source & 1u) == 0u)
+  if (display_psram_contains(source, state->frame_size) && (source & 1u) == 0u)
     scanout = (const uint16_t*)source;
   unsigned shadow_nonzero = 0u, scanout_nonzero = 0u;
   size_t count = state->frame_size / sizeof(uint16_t);
@@ -497,6 +501,11 @@ static int bk_draw_bitmap(void* user, const h2_display_rect_t* rect,
   const uint8_t* src = (const uint8_t*)pixels;
   src += (size_t)((int64_t)clipped.y - rect->y) * stride_bytes;
   src += (size_t)((int64_t)clipped.x - rect->x) * src_pixel_size;
+  const size_t src_span = (size_t)(clipped.height - 1) * stride_bytes +
+                          (size_t)clipped.width * src_pixel_size;
+  h2_bk7258_display_copy_scratch_t* scratch =
+      display_psram_contains((uintptr_t)src, src_span) ? &state->copy_scratch
+                                                       : NULL;
 
   for (int row = 0; row < clipped.height; ++row) {
     uint16_t* dst = (uint16_t*)state->shadow->frame +
@@ -505,7 +514,7 @@ static int bk_draw_bitmap(void* user, const h2_display_rect_t* rect,
     const uint8_t* src_row = src + (size_t)row * stride_bytes;
     if (format == H2_DISPLAY_PIXEL_RGB565) {
       if (!state->swap_rgb565_bytes) {
-        h2_bk7258_display_copy_pixels(&state->copy_scratch, dst, src_row,
+        h2_bk7258_display_copy_pixels(scratch, dst, src_row,
                                       (size_t)clipped.width * sizeof(uint16_t));
       } else {
         for (int col = 0; col < clipped.width; ++col) {
@@ -546,7 +555,9 @@ static int flush_shadow_once(h2_bk7258_display_state_t* state) {
 #endif
       size_t bytes = h2_bk7258_display_buffer_copy(
           &state->scanout[i].buffer, (const uint16_t*)state->shadow->frame,
-          state->width, &state->copy_scratch);
+          state->width,
+          state->bus == H2_BK7258_DISPLAY_BUS_RGB ? &state->copy_scratch
+                                                  : NULL);
 #if H2_BK7258_DISPLAY_DIAGNOSTICS
       state->diagnostic_copy_ms += (uint32_t)(rtos_get_time() - copy_started);
       state->diagnostic_copy_bytes += bytes;
