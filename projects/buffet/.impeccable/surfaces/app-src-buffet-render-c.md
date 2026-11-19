@@ -18,7 +18,7 @@ OWN-WORLD — Glazed ceramics, small square tiles, wood with visible thickness, 
 
 STORY — Buy the ticket. Notice the next serving and its table emblem. Walk around the stands and choose a plate. A successful pickup carries the morsel into the visitor's hands. Finish the meal and collect its prints.
 
-FIRST VIEWPORT — The ticket offers six dish portraits and one admission punch. In play, a succession of small serving slips occupies the upper left. Portions and the rice-bowl meter share the lower left. The round clock sits at the lower right. The main field belongs to the three stations and the visitor.
+FIRST VIEWPORT — The ticket offers eight dish portraits and one admission punch. In play, the next dish, destination crest and countdown form one slip at upper left. A plate count and the rice-bowl gauge share the lower left. The closing clock sits at lower right. The main field belongs to two rotary lanes, three straight serving rows and one visitor.
 
 FORM — Brief-pinned high three-quarter dining room, expanding the original house identity, seed:253d02592f2cdd7a. A plate enters from a short lift, lands and leaves a brief glint. A lifted bite follows a low arc into the near hand with the eyes visible. The visitor can interrupt walking and change destination before each bite.
 

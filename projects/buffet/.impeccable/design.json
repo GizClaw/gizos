@@ -3,7 +3,8 @@
   "title": "Tidewheel Sushi",
   "extensions": {
     "motion": [
-      {"name": "conveyor circuit", "value": "27s", "purpose": "One complete turn past the pass."},
+      {"name": "Wave circuit", "value": "24s", "purpose": "Eight single-file carriers make one clockwise lap."},
+      {"name": "Sun circuit", "value": "26.4s", "purpose": "Eight single-file carriers make one counterclockwise lap."},
       {"name": "bite", "value": "680ms", "purpose": "Dip, lift, taste and settle with feet planted."},
       {"name": "turn", "value": "115ms", "purpose": "Shift into the first step when changing facing."},
       {"name": "collector print", "value": "1000ms", "purpose": "Turn, reveal, then settle one print into this meal's rack."}
@@ -14,6 +15,6 @@
   ],
   "narrative": {
     "northStar": "The late-afternoon counter",
-    "keyCharacteristics": ["One glaze follows each plate back to the pass.", "Four facings share a heel anchor.", "The clock, lit rim and next action are visible together."]
+    "keyCharacteristics": ["Matching crests connect the serving countdown to its counter.", "Four facings share a heel anchor.", "A lit plate rim identifies a reachable serving."]
   }
 }

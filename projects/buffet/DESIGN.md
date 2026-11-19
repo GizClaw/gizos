@@ -33,23 +33,23 @@ components:
 
 ## Overview
 
-A willow window casts warm light from the left across the cedar counter. A blue-haired human visitor wears a cream hoodie and coral hair ties. The other guests have distinct profiles, hair and clothes. The player can see the counter, both ends of the belt and the entrance mat at the same time.
+An elevated view holds two rotary sushi islands, continuous rows along the walls and a raised rear pass. The blue-haired visitor in a cream hoodie can reach either loop through the central or outer aisles. Lacquered ramen bowls live on the west side, indigo custard cups on the east.
 
 ## Colors
 
-The steel track reflects the window light. Each dish retains its own ceramic glaze on the return trip. The rice bowl fills with sea-green sections. A pale notch marks capacity, a gold mark begins the pointed danger wells and a russet countdown appears above the line.
+Teal and persimmon identify the two moving loops. Each station has its own crest, repeated in the next-serving slip. The rice bowl fills with celadon sections. A pale notch marks capacity, a gold mark starts the pointed danger wells, and a triangle with a numeric countdown appears during sustained danger.
 
 ## Typography
 
-Use the Chinese or English family for the whole UI in that language, with fallback for the language switch. Typeset at twice the logical resolution for the native and browser backing surfaces. Display and section headings use 32 and 22 logical pixels. The floating dish tag uses 17 for the name and 14 for value and portion.
+Use Noto Sans SC for Chinese and Barlow Semi Condensed for English, with fallback for the language switch. The ticket and receipt carry dish names, goals and account details. During service the only type is time and portion counts.
 
 ## Layout
 
-The stage is 800×480 logical pixels. A small clock and meal goal sit at the top left. The bowl at the right shares the timber lintel. The context tag occupies only the lower corner while a dish is in reach. Place the first-play controls on the ticket. Settlement uses a paper bill at right and a rack for the current meal's new cards at left.
+The stage is 800×480 logical pixels. Show the next dish, destination crest and seconds at the upper left. Group the plate count and fullness bowl at the lower left. Place the closing clock at lower right. A reachable plate gains a pulsing rim. Settlement has a paper bill at right and a rack for this meal's new cards at left.
 
 ## Elevation & Depth
 
-Register the painted floor, back aisle, counter silhouette, plate centers and front aisle to the same collision geometry. Share a heel anchor when switching character poses. Lift the morsel to the mouth after anticipation. Settle the shoulders and sleeves as the visitor finishes the bite.
+Project the 20×13 tile floor, rounded islands, cabinets, foot contacts and service settings together. Counter bevels, treads, ceramics and contact shadows show the height of each surface. A shared arc-length path spaces eight carriers around each moving lane. The four walking facings share a sole anchor. A short reach carries the selected morsel to the near hand, below the visitor's eye.
 
 ## Components
 

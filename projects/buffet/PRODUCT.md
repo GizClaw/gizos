@@ -6,11 +6,11 @@
 
 web
 
-The game also runs in a desktop SDL3 window. Both launch the portable GizOS App and draw its RGB565 surface.
+The GizOS App draws its RGB565 surface through PAL. The Web launcher is the normal browser entry.
 
 ## Players and purpose
 
-A player buys a seat, moves around the conveyor, and chooses what to eat before the shop closes. Make the ticket worthwhile or try every dish. The first shop is a complete, replayable 150-second meal.
+A player buys a meal, chooses between two moving sushi conveyors and three fixed serving rows, and decides what to eat before closing. Cover the ticket price or taste the original six sushi. Each meal lasts 150 seconds.
 
 ## Product commitments
 
@@ -18,4 +18,4 @@ An original small restaurant, intelligible characters and food that reads at two
 
 ## Implementation assumptions
 
-The first store uses a session purse, can clear its own plates on the belt, and offers value and tasting goals. Store naming, prices, digestion and timing are adjustable. The album stores three achievement cards with stable identifiers. The player and other diners are full-body human anime chibi characters, with the player's Peetty reference guiding hair, eyes, proportions and facing. The first audience is a player trying one complete meal on a desktop or landscape touch display.
+The first store uses a session purse and returns dishes to its own service. Both side dishes contribute to score and fullness. The album stores three achievement cards with stable identifiers. The solo visitor is a full-body anime chibi human. The Peetty reference guides her face, hair, proportions and walk. Players can complete a meal with a keyboard or a single pointer.
