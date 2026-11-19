@@ -1184,18 +1184,19 @@ static void test_eighth_record_ownership(void) {
   use_prefs = false;
 }
 
-/* Original PAL bytes from the independently accepted eighth-chapter WASM
- * (9cacf296144cdd16d735f0ceec800075aef95aaf), actual west-first play,
- * medicine treatment and Wen Zhou support. Kept raw, not made by this codec. */
+/* Original PAL bytes from the public v0.8 ZIP (924cc5d4...35a17), built
+ * at 686f356b4d12ac6479e45f570f135f1564a40ab7. Fresh Chromium really played
+ * west-first, medicine/coal kept, Wen Zhou, all pills spent, lamp defeat,
+ * eight-turn retry and ending. No new codec generated this fixture. */
 static void plant_eighth_clear(void) {
   static const uint8_t bytes[36] = {
-      0x03, 0x08, 0x32, 0x0b, 0x03, 0x15, 0x07, 0x06, 0x15, 0x07, 0x06, 0x00,
-      0x57, 0x03, 0x00, 0x00, 0x9c, 0x00, 0x00, 0x00, 0x01, 0x00, 0x08, 0x00,
-      0x00, 0x00, 0x00, 0x00, 0x08, 0xf8, 0xdf, 0x00, 0x63, 0x74, 0xb9, 0x6c};
+      0x03, 0x08, 0x32, 0x0b, 0x00, 0x15, 0x07, 0x06, 0x15, 0x07, 0x06, 0x00,
+      0x57, 0x03, 0x00, 0x00, 0x9c, 0x00, 0x00, 0x00, 0x01, 0x00, 0x0c, 0x00,
+      0x00, 0x00, 0x00, 0x00, 0x08, 0xf8, 0xdf, 0x00, 0x10, 0xb5, 0xda, 0x8a};
   static const uint8_t table[168] = {
-      [0] = 2,    [1] = 10,     [2] = 128,    [116] = 11,   [117] = 3,
-      [119] = 31, [120] = 0x57, [121] = 3,    [124] = 0x9c, [128] = 1,
-      [130] = 8,  [164] = 0xe6, [165] = 0x7a, [166] = 0xb5, [167] = 0x9c};
+      [0] = 2,      [1] = 10,     [2] = 128,    [116] = 11,  [119] = 31,
+      [120] = 0x57, [121] = 3,    [124] = 0x9c, [128] = 1,   [130] = 12,
+      [164] = 0x7b, [165] = 0x2f, [166] = 0x6f, [167] = 0x57};
   pref_put(H2_XIANXIA_RPG_PREF_JOURNEY8_KEY, H2_PAL_PREF_ENTRY_BLOB, bytes,
            sizeof(bytes))
       ->writes = 0;
@@ -1228,7 +1229,7 @@ static void test_ninth_record_ownership(void) {
   uint32_t tag = 0;
   CHECK(j9 && j9->writes == 1 &&
         h2_xianxia_rpg_journey9_decode(j9->value, j9->size, &save, &tag));
-  CHECK(save.chapter == 9 && save.level == 11 && save.pills == 3 &&
+  CHECK(save.chapter == 9 && save.level == 11 && save.pills == 0 &&
         save.trust == 0 &&
         save.facts == (0xDFF808u | H2_XIANXIA_RPG_FACT_C9_ACTIVE_WEN));
   CHECK(tag == h2_xianxia_rpg_predecessor_tag(0, old.value, old.size));
