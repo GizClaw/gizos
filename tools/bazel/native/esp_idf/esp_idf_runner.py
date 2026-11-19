@@ -445,7 +445,7 @@ def resolve_prebuilt_components(
             not archive_value
             or relative_archive.is_absolute()
             or ".." in relative_archive.parts
-            or relative_archive.suffix not in (".a", ".lo")
+            or relative_archive.suffix != ".a"
         ):
             raise RunnerError(f"invalid ESP-IDF prebuilt archive path: {archive_value}")
         archive = required_file(

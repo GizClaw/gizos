@@ -160,6 +160,34 @@ static void contextual_boundary(void) {
   assert(observation.sends == 1u && observation.statuses == 1u);
 }
 
+static void failed_generation_preserves_context(h2_app_test_time_t* time) {
+  static const uint8_t next_tag[] =
+      "x?scheme=x%3FpageParams%3D%7B%22k%22%3A%22"
+      "fedcba9876543210_SIG_a_b_c_d_0%22%7D";
+  uint8_t token[] = "0123456789abcdef";
+  uint8_t next_token[] = "fedcba9876543210";
+  uint8_t previous[32] = {0}, output[32] = {0};
+  uint32_t previous_length = 0u, length = 0u;
+  expect(standard_reply, NFC_PAYMENT_STATUS_SUCCESS,
+         NFC_PAYMENT_FAIL_ERROR_SUCCESS, 0);
+  assert(alipay_nfc_recv_data_handle(standard_tag, sizeof(standard_tag) - 1u) ==
+         0);
+  assert(alipay_get_plain_paycode_with_nfc_token(
+             token, sizeof(token) - 1u, previous, &previous_length) == 0);
+  assert(previous_length != 0u);
+
+  time->read = (h2_app_test_fault_t){.result = H2_PAL_ERR_IO, .remaining = 1u};
+  expect(NULL, NFC_PAYMENT_STATUS_FAIL, NFC_PAYMENT_FAIL_ERROR_OTHER, 0);
+  assert(alipay_nfc_recv_data_handle(next_tag, sizeof(next_tag) - 1u) == 99);
+  assert(observation.sends == 0u && observation.statuses == 1u);
+  assert(alipay_get_plain_paycode_with_nfc_token(
+             next_token, sizeof(next_token) - 1u, output, &length) == 99);
+  assert(length == 0u && output[0] == 0u);
+  assert(alipay_get_plain_paycode_with_nfc_token(token, sizeof(token) - 1u,
+                                                 output, &length) == 0);
+  assert(length == previous_length && memcmp(output, previous, length) == 0);
+}
+
 static void rejected_tags(void) {
   static const uint8_t collection[] = "x?scheme=x%3FcodeContent%3DTEST0";
   static const uint8_t unknown[] = "x?other=TEST0";
@@ -216,6 +244,7 @@ int main(void) {
   seed_binding(&config);
   wallet_replies();
   contextual_boundary();
+  failed_generation_preserves_context(&time);
   rejected_tags();
   assert(h2_alipay_independent_release() == 0);
   assert(pref.active_handles == 0u);

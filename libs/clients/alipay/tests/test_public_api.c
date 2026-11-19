@@ -154,17 +154,20 @@ static void static_cipher_init(h2_app_test_mem_t* memory) {
 static void static_cipher_output(h2_app_test_mem_t* memory) {
   assert(h2_alipay_independent_set_nfc_context("TOKEN123", "SQUEEZE123",
                                                "123456789012345678") == 0);
+  uint8_t token[] = {'T', 'O', 'K', 'E', 'N', '1', '2', '3'};
   uint8_t output[128];
   memset(output, 0xa5, sizeof(output));
   uint32_t size = 0u;
-  assert(alipay_get_paycode_with_nfc_token((uint8_t*)"TOKEN123", 1u, output,
+  assert(alipay_get_paycode_with_nfc_token(token, 1u, output, &size) == 99);
+  assert(size == 0u && output[0] == 0xa5u);
+  assert(alipay_get_paycode_with_nfc_token(token, sizeof(token), output,
                                            &size) == 0);
   assert(size == 44u && output[44] == 0xa5u);
   size_t baseline = memory->live_blocks;
   memset(output, 0xa5, sizeof(output));
   size = 7u;
   memory->fail_at = memory->calls + 1u;
-  assert(alipay_get_paycode_with_nfc_token((uint8_t*)"TOKEN123", 8u, output,
+  assert(alipay_get_paycode_with_nfc_token(token, sizeof(token), output,
                                            &size) == 99);
   memory->fail_at = 0u;
   assert(size == 7u && memory->live_blocks == baseline);

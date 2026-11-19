@@ -144,7 +144,8 @@ typedef struct rx_observation {
 
 static int transceive_observe(h2_fm175xx_t* reader, const uint8_t* in,
                               size_t in_len, uint8_t* out, size_t out_cap,
-                              size_t* out_bits, rx_observation_t* observation) {
+                              size_t* out_bits, rx_observation_t* observation,
+                              uint8_t* out_irq) {
   if ((in_len > 0u && in == NULL) || out == NULL || out_bits == NULL) {
     return H2_FM175XX_ERR_INVALID_ARG;
   }
@@ -270,6 +271,7 @@ static int transceive_observe(h2_fm175xx_t* reader, const uint8_t* in,
       out_len += fifo_level;
       *out_bits =
           last_bits > 0u ? ((out_len - 1u) * 8u) + last_bits : out_len * 8u;
+      if (out_irq != NULL) *out_irq = irq;
       return post_cmd(reader, H2_FM175XX_OK);
     }
     sleep_ms(reader, 1u);
@@ -279,7 +281,8 @@ static int transceive_observe(h2_fm175xx_t* reader, const uint8_t* in,
 
 static int transceive(h2_fm175xx_t* reader, const uint8_t* in, size_t in_len,
                       uint8_t* out, size_t out_cap, size_t* out_bits) {
-  return transceive_observe(reader, in, in_len, out, out_cap, out_bits, NULL);
+  return transceive_observe(reader, in, in_len, out, out_cap, out_bits, NULL,
+                            NULL);
 }
 
 static int type_a_halt(h2_fm175xx_t* reader, uint32_t timeout_ms,
@@ -446,7 +449,8 @@ static int ntag_read_once_diagnostic(
   int rc = set_timer(reader, 5u);
   if (rc == H2_FM175XX_OK) {
     rc = transceive_observe(reader, send, sizeof(send), reply, sizeof(reply),
-                            &bits, diagnostics == NULL ? NULL : &observation);
+                            &bits, diagnostics == NULL ? NULL : &observation,
+                            NULL);
   }
   int transfer_result = rc;
   if (rc == H2_FM175XX_OK) rc = type_a_check_reply(reply, 16u, bits);
@@ -852,6 +856,7 @@ static int ntag_write_page(h2_fm175xx_t* reader, uint8_t page,
                            h2_fm175xx_write_diagnostics_t* diagnostics) {
   const uint8_t command[] = {0xa2u, page, data[0], data[1], data[2], data[3]};
   uint8_t reply[3] = {0};
+  uint8_t irq = 0u;
   size_t bits = 0u;
   rx_observation_t observation = {.result = H2_FM175XX_ERR_UNAVAILABLE};
   int rc = clear_bit_mask(reader, H2_FM175XX_REG_RX_MODE, 0x80u);
@@ -870,7 +875,8 @@ static int ntag_write_page(h2_fm175xx_t* reader, uint8_t page,
   if (rc == H2_FM175XX_OK)
     rc = transceive_observe(reader, command, sizeof(command), reply,
                             sizeof(reply), &bits,
-                            diagnostics == NULL ? NULL : &observation);
+                            diagnostics == NULL ? NULL : &observation, &irq);
+  if (rc == H2_FM175XX_OK && (irq & 0x02u) != 0u) rc = H2_FM175XX_ERR_PROTOCOL;
   int restored = set_bit_mask(reader, H2_FM175XX_REG_RX_MODE, 0x80u);
   int crc_valid =
       bits == 24u && type_a_check_reply(reply, 1u, bits) == H2_FM175XX_OK;

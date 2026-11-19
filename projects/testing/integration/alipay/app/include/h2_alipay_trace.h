@@ -42,6 +42,14 @@ void h2_alipay_trace_push(h2_alipay_trace_t* trace,
                           const void* data, size_t length);
 bool h2_alipay_trace_next(h2_alipay_trace_t* trace,
                           h2_alipay_trace_event_t* event);
+/** Begin a distinct export using a boot-random nonce and caller-owned sequence
+ * initialized to zero once per boot. Writes 32 lowercase hex digits plus NUL.
+ * Call only for a new export; summary replays retain the last ID. Independent
+ * of trace reset/draining. Serialized, synchronous, with no allocation or IO.
+ * All pointers are required and borrowed only for this call. Returns false
+ * without changing outputs for invalid arguments or an exhausted sequence. */
+bool h2_alipay_trace_capture_begin(const uint8_t boot_nonce[16],
+                                   uint64_t* sequence, char run_id[33]);
 #ifdef __cplusplus
 }
 #endif

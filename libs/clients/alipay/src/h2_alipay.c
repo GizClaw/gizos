@@ -1686,7 +1686,8 @@ retval_e alipay_get_paycode_with_nfc_token(uint8_t* token,
   char current_token[32] = {0}, code[32] = {0};
   rc = h2_alipay_tap_payment_context(s_tap, code, current_token);
   if (rc == H2_PAL_OK && (current_token[0] == '\0' || code[0] == '\0' ||
-                          strcmp(current_token, (const char*)token) != 0))
+                          strlen(current_token) != token_length ||
+                          memcmp(current_token, token, token_length) != 0))
     rc = H2_PAL_ERR_NOT_FOUND;
   if (rc == H2_PAL_OK) rc = ensure_nfc_keys();
   uint8_t cipher[48] = {0};

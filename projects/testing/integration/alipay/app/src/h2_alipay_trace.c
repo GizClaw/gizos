@@ -40,3 +40,25 @@ bool h2_alipay_trace_next(h2_alipay_trace_t* trace,
   *event = trace->events[trace->read++];
   return true;
 }
+
+bool h2_alipay_trace_capture_begin(const uint8_t boot_nonce[16],
+                                   uint64_t* sequence, char run_id[33]) {
+  if (boot_nonce == NULL || sequence == NULL || run_id == NULL ||
+      *sequence == UINT64_MAX)
+    return false;
+  uint64_t next = *sequence + 1u;
+  uint8_t encoded[8], digest[32];
+  for (size_t index = 0u; index < sizeof(encoded); ++index)
+    encoded[sizeof(encoded) - index - 1u] = (uint8_t)(next >> (index * 8u));
+  h2_sha256_t sha;
+  h2_sha256_init(&sha);
+  h2_sha256_update(&sha, boot_nonce, 16u);
+  h2_sha256_update(&sha, encoded, sizeof(encoded));
+  h2_sha256_finish(&sha, digest);
+  char hex[65];
+  h2_sha256_hex(digest, hex);
+  memcpy(run_id, hex, 32u);
+  run_id[32] = '\0';
+  *sequence = next;
+  return true;
+}

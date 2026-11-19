@@ -940,16 +940,23 @@ static void tap_static_case(fixture_t* fixture, yyjson_val* root) {
   uint8_t output[128];
   memset(output, 0xa5, sizeof(output));
   uint32_t length = (uint32_t)number(root, "initial_length");
+  uint32_t supplied_length = (uint32_t)number(root, "token_length");
   int rc = alipay_get_paycode_with_nfc_token(
-      boolean(root, "null_token") ? NULL : (uint8_t*)input,
-      (uint32_t)number(root, "token_length"), output, &length);
-  if (rc != integer(root, "result"))
-    fprintf(stderr, "static NFC case=%llu result=%d/%d\n",
-            (unsigned long long)number(root, "case"), rc,
-            integer(root, "result"));
-  assert(rc == integer(root, "result"));
-  assert(length == number(root, "length"));
-  match(root, "output", output, sizeof(output));
+      boolean(root, "null_token") ? NULL : (uint8_t*)input, supplied_length,
+      output, &length);
+  int reference_result = integer(root, "result");
+  if (reference_result == 0 && strlen(token) != supplied_length) {
+    assert(rc == 99 && length == number(root, "initial_length"));
+    for (size_t index = 0u; index < sizeof(output); ++index)
+      assert(output[index] == 0xa5u);
+  } else {
+    if (rc != reference_result)
+      fprintf(stderr, "static NFC case=%llu result=%d/%d\n",
+              (unsigned long long)number(root, "case"), rc, reference_result);
+    assert(rc == reference_result);
+    assert(length == number(root, "length"));
+    match(root, "output", output, sizeof(output));
+  }
   assert(alipay_npay_ble_broadcast_init() == integer(root, "init_result"));
   assert(alipay_npay_ble_broadcast_init() == integer(root, "reinit_result"));
 }

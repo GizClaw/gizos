@@ -170,7 +170,8 @@ bool alipay_npay_get_quick_pay_flag(void);
 retval_e alipay_npay_set_quick_pay_flag(bool flag);
 bool alipay_npay_need_show_quick_open_guide(void);
 
-/** Ciphertext output retains the compatibility ABI's output-only length.
+/** token is a byte span whose length must exactly match the active token.
+ * Ciphertext output retains the compatibility ABI's output-only length.
  * Callers provide at least 44 bytes for a normal 18/19-digit payer code. */
 retval_e alipay_get_paycode_with_nfc_token(uint8_t* token,
                                            uint32_t token_length,

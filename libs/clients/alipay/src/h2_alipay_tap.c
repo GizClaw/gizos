@@ -189,8 +189,6 @@ int h2_alipay_tap_generate(h2_alipay_tap_t* tap, const char* token,
   char next_token[32] = {0}, code[32] = {0}, squeeze[16] = {0};
   int rc = bounded_copy(next_token, token);
   if (rc != H2_PAL_OK || next_token[0] == '\0') return H2_PAL_ERR_INVALID_ARG;
-  memcpy(tap->token, next_token, sizeof(tap->token));
-  if (reset_write_result) tap->write_result = 0u;
   size_t length = sizeof(code);
   rc = h2_alipay_client_get_paycode(&tap->config, (uint8_t*)code, &length,
                                     diagnostics);
@@ -198,12 +196,14 @@ int h2_alipay_tap_generate(h2_alipay_tap_t* tap, const char* token,
     rc = H2_PAL_ERR_FORMAT;
   if (rc == H2_PAL_OK) {
     code[length] = '\0';
-    rc = h2_alipay_tap_squeeze(token, squeeze);
+    rc = h2_alipay_tap_squeeze(next_token, squeeze);
   }
   if (rc == H2_PAL_OK) {
+    memcpy(tap->token, next_token, sizeof(tap->token));
     memcpy(tap->paycode, code, sizeof(tap->paycode));
     memset(tap->squeeze, 0, sizeof(tap->squeeze));
     memcpy(tap->squeeze, squeeze, sizeof(squeeze));
+    if (reset_write_result) tap->write_result = 0u;
   }
   h2_alipay_client_wipe(next_token, sizeof(next_token));
   h2_alipay_client_wipe(code, sizeof(code));

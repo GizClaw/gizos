@@ -15,10 +15,72 @@ const testRun = "0123456789abcdef0123456789abcdef"
 const testCase = "alipay/binding-code"
 
 func row(kind string, fields map[string]any) string {
-	fields["run_id"] = testRun
+	return rowForRun(testRun, kind, fields)
+}
+func rowForRun(run, kind string, fields map[string]any) string {
+	fields["run_id"] = run
 	fields["case_id"] = testCase
 	data, _ := json.Marshal(fields)
 	return "H2_ALIPAY_" + kind + " " + string(data) + "\n"
+}
+
+func TestSuccessiveBindingCaptures(t *testing.T) {
+	runs := []string{"112ac280cda01f4cd59e4150e2be4230", "8e87288ec670948426d95202777216b2"}
+	var input strings.Builder
+	for index, run := range runs {
+		input.WriteString(rowForRun(run, "META", map[string]any{"source": "independent", "private_raw": false}))
+		for sequence := 1; sequence <= index+1; sequence++ {
+			input.WriteString(rowForRun(run, "EVENT", map[string]any{
+				"source": "runtime_independent", "seq": sequence, "call_id": sequence,
+				"operation": "independent.binding_query", "boundary": "independent",
+			}))
+		}
+		input.WriteString(rowForRun(run, "RESULT", map[string]any{"binding_state": 3}))
+		input.WriteString(rowForRun(run, "END", map[string]any{"events": index + 1, "complete": true}))
+		fmt.Fprintf(&input, "H2_ALIPAY_E2E_SUMMARY run_id=%s replay=false\n", run)
+		fmt.Fprintf(&input, "H2_ALIPAY_E2E_SUMMARY run_id=%s replay=true\n", run)
+	}
+	out := dir(t)
+	if err := capture(strings.NewReader(input.String()), out, opts(false)); err != nil {
+		t.Fatal(err)
+	}
+	for index, run := range runs {
+		folder := filepath.Join(out, run+"-alipay--binding-code")
+		data, err := os.ReadFile(filepath.Join(folder, "integrity.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var status struct {
+			Complete bool `json:"events_complete"`
+			Count    int  `json:"event_count"`
+			Error    bool `json:"capture_error"`
+		}
+		if err := json.Unmarshal(data, &status); err != nil {
+			t.Fatal(err)
+		}
+		if !status.Complete || status.Count != index+1 || status.Error {
+			t.Fatalf("capture %s integrity: %s", run, data)
+		}
+		metadata, err := os.ReadFile(filepath.Join(folder, "run.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var identity struct {
+			Run string `json:"run_id"`
+		}
+		if err := json.Unmarshal(metadata, &identity); err != nil || identity.Run != run {
+			t.Fatalf("capture identity: %s, %v", metadata, err)
+		}
+	}
+}
+
+func TestRejectsReusedCaptureIdentityAfterEnd(t *testing.T) {
+	snapshot := meta(false) + eventRow(1, nil) +
+		row("END", map[string]any{"events": 1, "complete": true})
+	err := capture(strings.NewReader(snapshot+snapshot), dir(t), opts(false))
+	if err == nil || !strings.Contains(err.Error(), "trace record follows its terminal") {
+		t.Fatalf("reused capture identity: %v", err)
+	}
 }
 func meta(private bool) string {
 	return row("META", map[string]any{"source": "independent", "private_raw": private})

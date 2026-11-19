@@ -965,7 +965,7 @@ int h2_alipay_transit_generate(const h2_alipay_client_config_t* config,
   }
   if ((native || scripted) && rc == H2_PAL_OK) {
     uint32_t timestamp = 0u;
-    transit_usage_t usage;
+    transit_usage_t usage = {0};
     rc = now(config, &timestamp);
     if (rc == H2_PAL_OK) rc = usage_load(config, record, &usage);
     if (rc != H2_PAL_OK) {
@@ -991,7 +991,7 @@ int h2_alipay_transit_generate(const h2_alipay_client_config_t* config,
           if (rc == H2_PAL_OK) rc = usage_load(config, record, &usage);
         }
       }
-      if (usage_expired(usage.mg_checked, timestamp)) {
+      if (rc == H2_PAL_OK && usage_expired(usage.mg_checked, timestamp)) {
         usage.mg_used = 0u;
         usage.mg_checked = timestamp;
       }

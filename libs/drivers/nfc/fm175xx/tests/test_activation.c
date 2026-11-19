@@ -34,6 +34,7 @@ typedef struct fixture {
   bool discard_all_writes;
   uint8_t write_reply_bits, write_reply_low4, write_error;
   uint8_t write_reply_tail[2];
+  uint8_t write_reply_irq;
   bool write_timeout;
   bool clear_error_on_idle;
   bool write_reply_crc, corrupt_write_reply_crc;
@@ -208,6 +209,10 @@ static void exchange(fixture_t* f) {
       if (f->corrupt_write_reply_crc) f->rx[2] ^= 1u;
       f->rx_len = 3u;
       f->rx_last_bits = 0u;
+    }
+    if (f->write_reply_irq != 0u) {
+      f->registers[H2_FM175XX_REG_COMIRQ] = f->write_reply_irq;
+      return;
     }
   } else {
     return;
@@ -899,6 +904,47 @@ static void test_write_reply_crc(void) {
   }
 }
 
+static void test_write_ack_error_irq(void) {
+  const uint8_t message[] = {0xd1u, 1u, 2u, 'U', 4u, 'y'};
+  const uint8_t irqs[] = {0x20u, 0x21u, 0x22u, 0x23u};
+  for (unsigned crc = 0u; crc < 2u; ++crc) {
+    for (unsigned observed = 0u; observed < 2u; ++observed) {
+      for (size_t index = 0u; index < sizeof(irqs); ++index) {
+        fixture_t fixture;
+        h2_fm175xx_t reader;
+        h2_fm175xx_write_diagnostics_t diagnostics;
+        prepare_ndef_reader(&fixture, &reader);
+        fixture.write_reply_crc = crc != 0u;
+        fixture.write_reply_irq = irqs[index];
+        bool rejected = (irqs[index] & 0x02u) != 0u;
+        int expected = rejected ? H2_FM175XX_ERR_PROTOCOL : H2_FM175XX_OK;
+        assert(h2_fm175xx_ntag_write_ndef_diagnostic(
+                   &reader, message, sizeof(message),
+                   observed ? &diagnostics : NULL) == expected);
+        assert(fixture.writes == (rejected ? 1u : 4u) &&
+               fixture.reads_after_writes == 0u &&
+               fixture.registers[H2_FM175XX_REG_RX_MODE] == 0x80u &&
+               fixture.registers[H2_FM175XX_REG_COMMAND] ==
+                   H2_FM175XX_CMD_IDLE);
+        if (observed) {
+          assert(diagnostics.phase == (rejected ? H2_FM175XX_WRITE_INVALIDATE
+                                                : H2_FM175XX_WRITE_COMPLETE) &&
+                 diagnostics.write_calls == fixture.writes &&
+                 diagnostics.last_command_result == expected &&
+                 diagnostics.last_restore_result == H2_FM175XX_OK &&
+                 diagnostics.last_reply_bits == (crc ? 24u : 4u) &&
+                 diagnostics.last_reply_low4 == 10u &&
+                 diagnostics.last_reply_crc_valid == crc &&
+                 diagnostics.rx_status_result == H2_FM175XX_OK &&
+                 diagnostics.rx_irq == irqs[index] &&
+                 diagnostics.rx_error == 0u &&
+                 diagnostics.rx_fifo == (crc ? 3u : 1u));
+        }
+      }
+    }
+  }
+}
+
 static void prepare_control_ndef(fixture_t* fixture, h2_fm175xx_t* reader,
                                  size_t ndef_offset) {
   prepare_ndef_reader(fixture, reader);
@@ -1200,6 +1246,7 @@ int main(void) {
   test_acknowledged_unchanged_tag();
   test_prepared_ndef_commit();
   test_write_reply_crc();
+  test_write_ack_error_irq();
   test_activation_diagnostics();
   test_read_error_snapshot();
   test_read_partial_error_snapshot();

@@ -714,17 +714,6 @@ class EspIdfRunnerTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("invalid ESP-IDF prebuilt archive path", result.stderr)
 
-    def test_alwayslink_prebuilt_archive_is_accepted(self):
-        archive = self.source / "bazel-out" / "libfixture.lo"
-        archive.parent.mkdir(parents=True, exist_ok=True)
-        archive.write_bytes(b"archive")
-        result, output = self._run(
-            name="alwayslink",
-            prebuilt_component="h2_fixture=bazel-out/libfixture.lo",
-        )
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertTrue(output.joinpath("app.bin").is_file())
-
     def test_custom_native_build_jobs_is_ignored(self):
         result, _ = self._run(
             name="custom-jobs",

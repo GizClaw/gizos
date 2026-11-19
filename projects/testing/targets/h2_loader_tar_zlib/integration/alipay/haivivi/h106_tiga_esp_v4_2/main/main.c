@@ -30,6 +30,8 @@ static uint16_t* transferred;
 static int capture_width, capture_height, capture_rc;
 static size_t transfer_count;
 static char run_id[33];
+static uint8_t run_nonce[16];
+static uint64_t capture_sequence;
 static bool confirmed;
 static int storage_audit_rc;
 
@@ -263,6 +265,8 @@ static void report(h2_runtime_t* rt, void* user,
                    const h2_alipay_e2e_result_t* r, bool replay) {
   (void)user;
   if (!replay) {
+    if (!h2_alipay_trace_capture_begin(run_nonce, &capture_sequence, run_id))
+      fail("capture-id", H2_PAL_ERR_INVALID_STATE);
     storage_audit_rc = h2_alipay_tiga_storage_audit();
     trace_report(r);
   }
@@ -411,10 +415,8 @@ static void run(void* user) {
       (unsigned)(product.company_rc == 0 && product.model_rc == 0 &&
                  strcmp(registration_model,
                         H2_ALIPAY_TIGA_REGISTRATION_MODEL) == 0));
-  uint8_t nonce[16];
-  rc = h2_pal_crypto_random(runtime->crypto, nonce, sizeof(nonce));
+  rc = h2_pal_crypto_random(runtime->crypto, run_nonce, sizeof(run_nonce));
   if (rc != H2_PAL_OK) fail("run-id", rc);
-  hex(nonce, sizeof(nonce), run_id);
   h2_display_info_t info = h2_alipay_e2e_target_capture(NULL, NULL);
   if (info.width < 240 || info.height < 240 || info.width > 1024 ||
       info.height > 1024 || info.native_format != H2_DISPLAY_PIXEL_RGB565)
