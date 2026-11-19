@@ -135,8 +135,8 @@ static void reset_sink(void) {
 }
 
 static int join_failures, start_failures, queue_create_failures,
-    queue_close_failures;
-static unsigned live_queues;
+    queue_close_failures, queue_partial_close_failures;
+static unsigned live_queues, queue_close_calls, command_sends;
 static int queue_create(void* u, const h2_pal_queue_config_t* c,
                         h2_pal_queue_t** q) {
   (void)u;
@@ -156,11 +156,25 @@ static void queue_destroy(void* u, h2_pal_queue_t* q) {
 }
 static int queue_close(void* u, h2_pal_queue_t* q) {
   (void)u;
+  ++queue_close_calls;
   if (queue_close_failures) {
     --queue_close_failures;
     return H2_PAL_ERR_IO;
   }
-  return h2_pal_queue_close(h2_desktop_platform_queue_api(), q);
+  const int rc = h2_pal_queue_close(h2_desktop_platform_queue_api(), q);
+  if (queue_partial_close_failures) {
+    --queue_partial_close_failures;
+    assert(rc == H2_PAL_OK);
+    return H2_PAL_ERR_IO; /* Predicate changed, but close not confirmed. */
+  }
+  return rc;
+}
+static int queue_send(void* u, h2_pal_queue_t* q, const void* item,
+                      uint32_t timeout_ms) {
+  (void)u;
+  ++command_sends;
+  return h2_pal_queue_send(h2_desktop_platform_queue_api(), q, item,
+                           timeout_ms);
 }
 static h2_pal_queue_vtable_t queue_vt;
 static h2_pal_queue_api_t queue_api;
@@ -169,6 +183,7 @@ static void init_queue_api(void) {
   queue_vt.create = queue_create;
   queue_vt.destroy = queue_destroy;
   queue_vt.close = queue_close;
+  queue_vt.send = queue_send;
   queue_api =
       (h2_pal_queue_api_t){h2_desktop_platform_queue_api()->user, &queue_vt};
 }
@@ -292,25 +307,38 @@ static void test_pcm_identity(void) {
   }
 }
 static void test_mute_shutdown_retry(void) {
-  for (unsigned failure = 0u; failure < 2u; ++failure) {
+  /* Idle/pre-enable and active producers, close before/after predicate change
+   * and join failure. Confirmed close is not repeated after failed join. */
+  for (unsigned scenario = 0u; scenario < 6u; ++scenario) {
+    const unsigned failure = scenario % 3u;
     reset_sink();
     h2_runtime_t rt = direct_runtime();
     h2_fruit_slice_audio_t a;
     assert(h2_fruit_slice_audio_init(&a, &rt) == H2_PAL_OK);
     a.worker_requested = true;
-    assert(h2_fruit_slice_audio_pump(&a, now()) == H2_PAL_OK);
+    assert(h2_fruit_slice_audio_prepare(&a) == H2_PAL_OK);
+    assert(h2_fruit_slice_audio_worker_start(&a) == H2_PAL_OK);
+    if (scenario >= 3u)
+      assert(h2_fruit_slice_audio_pump(&a, now()) == H2_PAL_OK);
     delay(65u);
     if (failure == 0u)
       queue_close_failures = 1;
-    else
+    else if (failure == 1u)
       join_failures = 1;
+    else
+      queue_partial_close_failures = 1;
+    const unsigned closes = queue_close_calls;
     assert(h2_fruit_slice_audio_set_mute(&a, 3u) ==
-           (failure == 0u ? H2_PAL_ERR_IO : H2_PAL_ERR_BUSY));
+           (failure == 1u ? H2_PAL_ERR_BUSY : H2_PAL_ERR_IO));
     assert(a.mute == 0u && a.worker && live_queues == 2u);
-    /* The App still sees requested!=applied and retries next frame. Its
-     * intervening service must not disable audio after a failed join. */
+    /* Retained ownership is quiescent from the first stop request, even if
+     * close failed before changing state or before waking the idle worker. */
+    const unsigned sent = command_sends;
+    h2_fruit_slice_audio_emit(&a, H2_FRUIT_SLICE_SOUND_SLICE, now());
     assert(h2_fruit_slice_audio_pump(&a, now()) == H2_PAL_OK);
+    assert(command_sends == sent);
     assert(h2_fruit_slice_audio_set_mute(&a, 3u) == H2_PAL_ERR_UNSUPPORTED);
+    assert(queue_close_calls - closes == (failure == 1u ? 1u : 2u));
     assert(a.mute == 3u && !a.worker && !a.track && live_queues == 0u);
     const unsigned written = sink.writes;
     delay(50u);
@@ -366,6 +394,7 @@ static void test_backpressure_error_and_burst(void) {
  */
 static unsigned frames, commits, touch_phase, display_pressure_ms;
 static unsigned mute_failure_mode, audio_setting_commits, mute_writes;
+static bool mute_first_gesture;
 static uint32_t stored_audio_setting, pending_audio_setting;
 static const unsigned event_frames[] = {5u, 35u, 40u, 45u, 65u, 85u, 90u};
 static const unsigned event_buttons[] = {
@@ -414,24 +443,31 @@ static int touch_info(void* u, h2_pal_touch_info_t* i) {
 static int touch_poll(void* u, h2_pal_touch_event_t* e) {
   (void)u;
   const unsigned event = touch_phase / 2u;
-  if (mute_failure_mode != 0u) {
+  if (mute_failure_mode != 0u || mute_first_gesture) {
     const unsigned mute_frames[] = {5u, 20u, 40u, 70u};
-    if (event >= 4u || frames < mute_frames[event])
+    const unsigned first_frames[] = {5u, 70u};
+    if (event >= (mute_first_gesture ? 2u : 4u) ||
+        frames <
+            (mute_first_gesture ? first_frames[event] : mute_frames[event]))
       return H2_PAL_ERR_WOULD_BLOCK;
     h2_fruit_slice_game_t g;
     h2_fruit_slice_game_init(&g, 480, 320, 42, 0);
     h2_fruit_slice_rect_t r = {20, 100, 20,
                                100}; /* Gesture without a control. */
-    if (event != 0u)
-      assert(h2_fruit_slice_game_button_rect(
-          &g,
-          event == 2u ? H2_FRUIT_SLICE_BUTTON_MUSIC : H2_FRUIT_SLICE_BUTTON_SFX,
-          &r));
-    if (event == 2u && touch_phase % 2u != 0u) {
+    const unsigned full_mute_event = mute_first_gesture ? 0u : 2u;
+    if (event != 0u || mute_first_gesture)
+      assert(h2_fruit_slice_game_button_rect(&g,
+                                             event == full_mute_event
+                                                 ? H2_FRUIT_SLICE_BUTTON_MUSIC
+                                                 : H2_FRUIT_SLICE_BUTTON_SFX,
+                                             &r));
+    if (event == full_mute_event && touch_phase % 2u != 0u) {
       if (mute_failure_mode == 1u)
         queue_close_failures = 1;
-      else
+      else if (mute_failure_mode == 2u)
         join_failures = 1;
+      else if (mute_failure_mode == 3u)
+        queue_partial_close_failures = 1;
     }
     *e = (h2_pal_touch_event_t){
         (touch_phase++ % 2u) ? H2_PAL_TOUCH_EVENT_UP : H2_PAL_TOUCH_EVENT_DOWN,
@@ -524,16 +560,18 @@ static const h2_pal_pref_vtable_t pvt = {.open = pref_open};
 static const h2_pal_pref_api_t pref_api = {.vtable = &pvt};
 static bool exit_app(void* u) {
   (void)u;
-  if (mute_failure_mode != 0u &&
+  if ((mute_failure_mode != 0u || mute_first_gesture) &&
       (frames == 60u || frames == 69u || frames == 95u)) {
+    const unsigned stopped_tracks = mute_first_gesture ? 1u : 2u;
     pthread_mutex_lock(&sink.lock);
     if (frames == 95u) {
-      assert(sink.opens == 3u && sink.writes > mute_writes);
+      assert(sink.opens == stopped_tracks + 1u && sink.writes > mute_writes);
       assert((stored_audio_setting & 3u) == H2_FRUIT_SLICE_MUTE_MUSIC);
-      assert(audio_setting_commits == 3u);
+      assert(audio_setting_commits == stopped_tracks + 1u);
     } else {
-      assert(sink.opens == 2u && sink.closes == 2u);
-      assert((stored_audio_setting & 3u) == 3u && audio_setting_commits == 2u);
+      assert(sink.opens == stopped_tracks && sink.closes == stopped_tracks);
+      assert((stored_audio_setting & 3u) == 3u &&
+             audio_setting_commits == stopped_tracks);
       if (frames == 60u)
         mute_writes = sink.writes;
       else
@@ -547,7 +585,9 @@ static bool exit_app(void* u) {
 static uint64_t run_app(bool worker, unsigned pressure) {
   reset_sink();
   frames = commits = touch_phase = 0;
-  stored_audio_setting = pending_audio_setting = audio_setting_commits = 0u;
+  pending_audio_setting = audio_setting_commits = 0u;
+  stored_audio_setting =
+      mute_first_gesture ? 0x41550101u : 0u; /* Saved SFX mute. */
   display_pressure_ms = pressure;
   h2_runtime_config_t c = {
       .board = "continuity", .chip = "host", .target = "desktop"};
@@ -605,11 +645,13 @@ static uint64_t run_app(bool worker, unsigned pressure) {
   assert(h2_runtime_destroy(&rt) == 0);
   assert(sink.opens == sink.closes && sink.writes > 0u && commits >= 2u);
   assert(live_queues == 0u);
-  if (mute_failure_mode != 0u) {
-    assert(touch_phase == 8u && sink.opens == 3u &&
-           audio_setting_commits == 3u);
-    printf("public-App mute retry mode=%u: stopped, persisted and resumed\n",
-           mute_failure_mode);
+  if (mute_failure_mode != 0u || mute_first_gesture) {
+    assert(touch_phase == (mute_first_gesture ? 4u : 8u));
+    assert(sink.opens == (mute_first_gesture ? 2u : 3u) &&
+           audio_setting_commits == sink.opens);
+    printf(
+        "public-App mute retry mode=%u first_gesture=%d: stopped, persisted and resumed\n",
+        mute_failure_mode, mute_first_gesture);
   } else {
     assert(touch_phase == 2u * sizeof(event_frames) / sizeof(event_frames[0]));
   }
@@ -632,7 +674,10 @@ int main(void) {
     const uint64_t independent = run_app(true, pressures[i]);
     assert(cooperative >= 200u && independent < cooperative / 4u);
   }
-  for (mute_failure_mode = 1u; mute_failure_mode <= 2u; ++mute_failure_mode)
+  for (mute_failure_mode = 1u; mute_failure_mode <= 3u; ++mute_failure_mode)
+    (void)run_app(true, 8u);
+  mute_first_gesture = true;
+  for (mute_failure_mode = 0u; mute_failure_mode <= 3u; ++mute_failure_mode)
     (void)run_app(true, 8u);
   puts("audio worker continuity tests passed");
 }

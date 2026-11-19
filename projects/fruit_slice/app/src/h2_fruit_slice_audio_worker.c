@@ -22,7 +22,7 @@ struct h2_fruit_slice_audio_worker {
   h2_pal_queue_t* snapshots;
   h2_pal_task_t* task;
   audio_snapshot_t seen; /* Only the main thread accesses these fields. */
-  bool enabled, closing;
+  bool enabled, stop_requested, close_confirmed;
 };
 
 static audio_snapshot_t snapshot(const h2_fruit_slice_audio_t* audio,
@@ -137,18 +137,23 @@ int h2_fruit_slice_audio_worker_start(h2_fruit_slice_audio_t* audio) {
 void h2_fruit_slice_audio_worker_emit(h2_fruit_slice_audio_t* audio,
                                       h2_fruit_slice_sound_t sound,
                                       uint64_t now_ms) {
+  struct h2_fruit_slice_audio_worker* w = audio->worker;
+  if (w->stop_requested) {
+    ++audio->dropped_commands;
+    return;
+  }
   const audio_command_t command = {.at_ms = now_ms, .sound = sound};
-  if (h2_pal_queue_send(audio->runtime->queue, audio->worker->commands,
-                        &command, 0u) != H2_PAL_OK)
+  if (h2_pal_queue_send(audio->runtime->queue, w->commands, &command, 0u) !=
+      H2_PAL_OK)
     ++audio->dropped_commands;
 }
 
 int h2_fruit_slice_audio_worker_poll(h2_fruit_slice_audio_t* audio) {
   struct h2_fruit_slice_audio_worker* w = audio->worker;
-  /* A failed join leaves an intentionally closed producer for the caller to
-   * retire on its next mute/lifecycle retry. Do not restart it or turn this
-   * pending shutdown into the App's permanent audio-disable error path. */
-  if (w->closing) return H2_PAL_OK;
+  /* Close can fail after changing the queue predicate but before waking its
+   * receiver. Suppress activation and polling from the first stop request;
+   * the caller must retry close/join without permanently disabling audio. */
+  if (w->stop_requested) return H2_PAL_OK;
   if (!w->enabled) {
     const audio_command_t command = {.enable = true};
     int rc =
@@ -172,10 +177,13 @@ int h2_fruit_slice_audio_worker_poll(h2_fruit_slice_audio_t* audio) {
 int h2_fruit_slice_audio_worker_stop(h2_fruit_slice_audio_t* audio) {
   struct h2_fruit_slice_audio_worker* w = audio->worker;
   if (w == NULL) return H2_PAL_OK;
-  if (!w->closing) {
+  w->stop_requested = true;
+  if (!w->close_confirmed) {
     int rc = h2_pal_queue_close(audio->runtime->queue, w->commands);
     if (rc != H2_PAL_OK) return rc;
-    w->closing = true;
+    /* Only successful close confirms all blocked queue users were notified.
+     * Joining earlier could deadlock an idle producer after a failed wake. */
+    w->close_confirmed = true;
   }
   int rc = h2_pal_task_join(audio->runtime->task, w->task);
   if (rc != H2_PAL_OK) return rc;

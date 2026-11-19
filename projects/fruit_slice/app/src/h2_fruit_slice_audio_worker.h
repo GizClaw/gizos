@@ -10,9 +10,10 @@ void h2_fruit_slice_audio_worker_emit(h2_fruit_slice_audio_t* audio,
                                       h2_fruit_slice_sound_t sound,
                                       uint64_t now_ms);
 int h2_fruit_slice_audio_worker_poll(h2_fruit_slice_audio_t* audio);
-/* Close commands, join, return mixer ownership. On failure retain all handles
- * and context for retry; never access the worker's mixer before join succeeds.
- */
+/* Stop accepting commands immediately, confirm queue close/wake, then join
+ * and return mixer ownership. Failed close is retried even if it changed the
+ * queue predicate. Pending stop makes emit drop/count commands and poll return
+ * OK; only a successful join permits mixer access or resource reclamation. */
 int h2_fruit_slice_audio_worker_stop(h2_fruit_slice_audio_t* audio);
 
 #endif
