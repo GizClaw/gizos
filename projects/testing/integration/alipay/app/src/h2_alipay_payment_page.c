@@ -319,7 +319,7 @@ static int write_reply(void* user, const uint8_t* data, size_t length) {
       page->config->user, data, length, message, sizeof(message), &size);
   if (rc == H2_PAL_OK && (size == 0u || size > sizeof(message)))
     rc = H2_PAL_ERR_FORMAT;
-  h2_pal_periph_id_t id;
+  h2_pal_periph_id_t id = 0u;
   if (rc == H2_PAL_OK)
     rc = h2_runtime_periph_id(page->rt, page->config->payment_nfc_component_id,
                               &id);
@@ -417,7 +417,7 @@ static void work(void* user) {
       break;
     }
     case J_FRAME: {
-      h2_pal_periph_id_t id;
+      h2_pal_periph_id_t id = 0u;
       h2_pal_nfc_data_read_t data = {0};
       p->call_rc =
           h2_runtime_periph_id(p->rt, p->config->payment_nfc_component_id, &id);
