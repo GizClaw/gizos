@@ -6,6 +6,7 @@
 #include "h2_fm175xx.h"
 #include "hal/h2_pal_input.h"
 #include "os/h2_pal_time.h"
+#include "os/h2_pal_log.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -21,6 +22,9 @@ typedef struct h2_esp_nfc_fm175xx_config {
   size_t read_capacity;
   /** Optional borrowed monotonic clock for prepared NDEF writes. */
   const h2_pal_time_api_t* time;
+  /** Optional borrowed log sink; NULL disables diagnostics. Keep the API
+   * and its user context valid for the initialized adapter lifetime. */
+  const h2_pal_log_api_t* log;
 } h2_esp_nfc_fm175xx_config_t;
 
 typedef struct h2_esp_nfc_fm175xx_spi_config {
@@ -34,6 +38,9 @@ typedef struct h2_esp_nfc_fm175xx_spi_config {
   uint32_t clock_speed_hz;
   size_t read_capacity;
   const h2_pal_time_api_t* time;
+  /** Optional borrowed log sink; NULL disables diagnostics. Keep the API
+   * and its user context valid for the initialized adapter lifetime. */
+  const h2_pal_log_api_t* log;
 } h2_esp_nfc_fm175xx_spi_config_t;
 
 typedef enum h2_esp_nfc_fm175xx_transport_kind {

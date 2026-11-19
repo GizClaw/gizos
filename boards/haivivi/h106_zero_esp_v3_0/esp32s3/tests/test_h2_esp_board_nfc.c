@@ -13,10 +13,16 @@ i2c_master_bus_handle_t h2_esp_zero_esp_board_i2c_bus(void) {
   return (i2c_master_bus_handle_t)&bus_storage;
 }
 const h2_pal_periph_api_t* h2_esp_board_periph_api(void) { return NULL; }
+const h2_pal_log_api_t* h2_esp_board_log_api(void) {
+  static const h2_pal_log_api_t log = {0};
+  return &log;
+}
+
 h2_pal_result_t h2_esp_nfc_fm175xx_init(
     h2_esp_nfc_fm175xx_t* adapter, const h2_esp_nfc_fm175xx_config_t* config) {
   (void)adapter;
   assert(config->i2c_address == 0x28u);
+  assert(config->log == h2_esp_board_log_api());
   ++init_calls;
   return init_result;
 }

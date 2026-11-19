@@ -1,17 +1,15 @@
 #include "h2_esp_nfc_fm175xx_internal.h"
 #include "h2_app_test_mem.h"
 #include "h2_app_test_time.h"
-#include "esp_log.h"
 
 #include <assert.h>
-#include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
 
 static struct {
   h2_fm175xx_type_a_card_t card;
-  int activate_result, read_result, write_result;
+  int activate_result, read_result, write_result, log_result;
   int activation_results[3];
   unsigned activation_result_count, activations, sleeps;
   unsigned reads, writes;
@@ -24,19 +22,23 @@ static struct {
 static const uint8_t message[] = {0xd1u, 1u, 2u, 'U', 4u, 'x'};
 static const uint8_t uid[] = {4u, 1u, 2u, 3u};
 
-void h2_nfc_test_log(const char* tag, const char* format, ...) {
-  assert(strcmp(tag, "h2_nfc_fm175xx") == 0);
+static int capture_log(void* user, h2_pal_log_level_t level, const char* scope,
+                       const char* message) {
+  assert(user == &fixture && level == H2_PAL_LOG_WARN);
+  assert(strcmp(scope, "h2_nfc_fm175xx") == 0);
   size_t available = sizeof(fixture.diagnostics) - fixture.diagnostic_length;
-  va_list args;
-  va_start(args, format);
-  int length = vsnprintf(fixture.diagnostics + fixture.diagnostic_length,
-                         available, format, args);
-  va_end(args);
-  assert(length >= 0 && (size_t)length + 1u < available);
-  fixture.diagnostic_length += (size_t)length;
+  size_t length = strlen(message);
+  assert(length + 1u < available);
+  memcpy(fixture.diagnostics + fixture.diagnostic_length, message, length);
+  fixture.diagnostic_length += length;
   fixture.diagnostics[fixture.diagnostic_length++] = '\n';
   fixture.diagnostics[fixture.diagnostic_length] = '\0';
+  return fixture.log_result;
 }
+
+static const h2_pal_log_vtable_t log_vtable = {.write = capture_log};
+static const h2_pal_log_api_t log_api = {.user = &fixture,
+                                         .vtable = &log_vtable};
 
 int h2_fm175xx_init(h2_fm175xx_t* reader,
                     const h2_fm175xx_transport_t* transport) {
@@ -228,7 +230,8 @@ static void setup(h2_esp_nfc_fm175xx_t* adapter) {
       .i2c_address = 0x28u,
       .i2c_speed_hz = 400000u,
       .read_capacity = 128u,
-      .time = &fixture.clock.api};
+      .time = &fixture.clock.api,
+      .log = &log_api};
   assert(h2_esp_nfc_fm175xx_init(adapter, &config) == H2_PAL_OK);
   adapter->opened = 1;
   adapter->reader.transport.user = &fixture;
@@ -463,7 +466,32 @@ static void test_prepared_ndef_write(void) {
   assert(memory.live_blocks == 0u);
 }
 
+static void test_optional_log(void) {
+  h2_app_test_mem_t memory;
+  h2_app_test_mem_init(&memory, NULL);
+  h2_esp_nfc_fm175xx_t adapter;
+  h2_pal_nfc_data_read_t data = {0};
+
+  setup(&adapter);
+  adapter.config.log = NULL;
+  assert(read_ndef(&adapter, &memory.api, &data) == H2_PAL_OK);
+  assert(write_ndef(&adapter) == H2_PAL_OK);
+  assert(fixture.diagnostic_length == 0u && fixture.reads == 1u &&
+         fixture.writes == 1u);
+  h2_pal_mem_free(&memory.api, data.bytes);
+
+  setup(&adapter);
+  fixture.log_result = H2_PAL_ERR_IO;
+  assert(read_ndef(&adapter, &memory.api, &data) == H2_PAL_OK);
+  assert(write_ndef(&adapter) == H2_PAL_OK);
+  assert(fixture.diagnostic_length != 0u && fixture.reads == 1u &&
+         fixture.writes == 1u);
+  h2_pal_mem_free(&memory.api, data.bytes);
+  assert(memory.live_blocks == 0u);
+}
+
 int main(void) {
+  test_optional_log();
   test_prepared_ndef_write();
   test_write_read_selection();
   test_write_selection_recovery();

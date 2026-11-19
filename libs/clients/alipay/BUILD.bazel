@@ -19,7 +19,7 @@ cc_library(
     copts = H2_WARNING_COPTS,
     visibility = ["//visibility:private"],
     deps = [
-        "//libs/crypto/constructions",
+        "//libs/crypto/common",
         "//pal",
     ],
 )
@@ -56,7 +56,7 @@ cc_library(
     deps = [
         ":crypto_compat",
         ":protocol",
-        "//libs/crypto/constructions",
+        "//libs/crypto/common",
         "//libs/crypto/sha256",
         "//libs/encoding",
         "//pal",
@@ -80,7 +80,7 @@ cc_library(
         ":api",
         ":client",
         ":crypto_compat",
-        "//libs/crypto/constructions",
+        "//libs/crypto/common",
         "//libs/encoding",
         "//libs/sync/atomic",
         "@h2_vendor_yyjson//:yyjson",
@@ -134,7 +134,7 @@ cc_test(
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
     deps = [
         ":crypto_compat",
-        "//libs/crypto/constructions",
+        "//libs/crypto/common",
         "//libs/testing:testing_pal",
         "//pal/providers/backends/wolfssl:wolfcrypt_test_support",
     ],
@@ -210,7 +210,7 @@ cc_test(
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
     deps = [
         ":alipay",
-        "//libs/crypto/constructions",
+        "//libs/crypto/common",
         "//libs/sync/atomic/providers/c11",
         "//libs/testing:testing_pal",
         "//pal/providers/backends/wolfssl:wolfcrypt_test_support",

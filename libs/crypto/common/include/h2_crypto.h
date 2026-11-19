@@ -9,7 +9,7 @@
 extern "C" {
 #endif
 
-/** Portable cryptographic constructions over caller-injected Crypto PAL.
+/** Common cryptographic operations over caller-injected Crypto PAL.
  * No concrete provider is selected. Provider and allocator APIs stay borrowed
  * for each synchronous call. Missing provider operations report UNSUPPORTED.
  * Standalone digests belong to their algorithm packages; raw provider

@@ -39,7 +39,6 @@ cc_test(
         "src/h2_esp_nfc_fm175xx_spi_address.h",
         "tests/sdk/driver/i2c_master.h",
         "tests/sdk/driver/spi_master.h",
-        "tests/sdk/esp_log.h",
         "tests/test_h2_esp_nfc_fm175xx_reader.c",
     ],
     conlyopts = H2_C11_OPTS,

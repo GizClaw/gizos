@@ -58,6 +58,7 @@ static h2_pal_result_t ensure_nfc_adapter(void) {
       .i2c_address = H2_TIGA_ESP_NFC_I2C_ADDR,
       .i2c_speed_hz = H2_TIGA_ESP_PERIPHERAL_I2C_SPEED_HZ,
       .read_capacity = H2_TIGA_ESP_NFC_READ_CAP,
+      .log = h2_esp_board_log_api(),
       .time = h2_esp_board_time_api(),
   };
   h2_pal_result_t rc = h2_esp_nfc_fm175xx_init(&s_nfc, &config);
