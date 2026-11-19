@@ -74,6 +74,14 @@
     onRuntimeInitialized: () => {
       state = 'ready';
       showStatus();
+      const motion = matchMedia('(prefers-reduced-motion: reduce)');
+      const setMotion = () => Module['_h2_garden_guard_web_reduce_motion'](motion.matches ? 1 : 0);
+      setMotion();
+      motion.addEventListener('change', setMotion);
+      document.addEventListener('keydown', event => {
+        if (event.key === 'Escape' && !event.repeat && !event.defaultPrevented)
+          Module['_h2_garden_guard_web_back']();
+      });
     },
     onAbort: () => { state = 'error'; showStatus(); },
   };

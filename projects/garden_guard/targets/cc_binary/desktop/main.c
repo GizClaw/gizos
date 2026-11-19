@@ -9,19 +9,27 @@
 
 typedef struct window {
   h2_sdl3_t* sdl;
-  bool closed;
+  bool closed, back;
 } window_t;
 
 static bool should_exit(void* user) {
   window_t* window = user;
   h2_sdl3_event_t event;
   while (h2_sdl3_poll_event(window->sdl, &event) == H2_PAL_OK) {
-    if (event.kind == H2_SDL3_EVENT_CLOSE ||
-        (event.kind == H2_SDL3_EVENT_KEY && event.pressed &&
-         event.key == H2_SDL3_KEY_ESCAPE))
+    if (event.kind == H2_SDL3_EVENT_CLOSE)
       window->closed = true;
+    else if (event.kind == H2_SDL3_EVENT_KEY && event.pressed &&
+             event.key == H2_SDL3_KEY_ESCAPE)
+      window->back = true;
   }
   return window->closed;
+}
+
+static bool back_pressed(void* user) {
+  window_t* window = user;
+  const bool pressed = window->back;
+  window->back = false;
+  return pressed;
 }
 
 static h2_runtime_config_t runtime_config(h2_sdl3_t* sdl) {
@@ -93,6 +101,8 @@ int main(int argc, char** argv) {
   int rc = h2_runtime_init(&config, &runtime);
   if (rc == H2_PAL_OK) {
     const h2_garden_guard_config_t game = {.should_exit = should_exit,
+                                           .back_pressed = back_pressed,
+                                           .exit_on_unhandled_back = true,
                                            .user = &window};
     rc = h2_garden_guard_run(runtime, &game);
   }

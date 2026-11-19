@@ -660,7 +660,52 @@ static void test_pause_and_language(void) {
         game.sun == H2_GARDEN_GUARD_START_SUN);
 }
 
+static void test_journal_focus(void) {
+  static const int sizes[][2] = {{480, 320}, {480, 800}, {160, 160}};
+  for (unsigned i = 0; i < sizeof(sizes) / sizeof(sizes[0]); ++i) {
+    h2_garden_guard_game_init(&game, sizes[i][0], sizes[i][1], 13u, 0u);
+    game.profile.seen = 5u;
+    const h2_garden_guard_layout_t* l = &game.layout;
+    const h2_garden_guard_rect_t first =
+        h2_garden_guard_journal_card_rect(l, 0u);
+    const h2_garden_guard_rect_t locked =
+        h2_garden_guard_journal_card_rect(l, 1u);
+    const h2_garden_guard_rect_t last =
+        h2_garden_guard_journal_card_rect(l, 2u);
+    const h2_garden_guard_rect_t detail =
+        h2_garden_guard_journal_detail_rect(l);
+    const h2_garden_guard_rect_t close = h2_garden_guard_journal_close_rect(l);
+    CHECK(first.x >= 0.0f && last.x + last.w <= (float)l->width);
+    CHECK(detail.y >= 0.0f && detail.y + detail.h <= (float)l->height);
+    CHECK(close.x >= detail.x && close.x + close.w <= detail.x + detail.w);
+    tap_rect(&game, h2_garden_guard_menu_tab(l, false, 0u));
+    tap_rect(&game, locked);
+    CHECK(game.menu == H2_GARDEN_GUARD_MENU_JOURNAL && game.journal_card == 0u);
+    tap_rect(&game, first);
+    CHECK(game.journal_card == 1u && h2_garden_guard_journal_animating(&game));
+    tap_rect(&game, last);
+    tap_rect(&game, close);
+    CHECK(game.journal_card == 1u && !game.journal_closing);
+    h2_garden_guard_game_step(&game, H2_GARDEN_GUARD_JOURNAL_MS);
+    CHECK(!h2_garden_guard_journal_animating(&game));
+    tap_rect(&game, close);
+    CHECK(game.journal_closing);
+    tap_rect(&game, h2_garden_guard_menu_back(l));
+    CHECK(game.menu == H2_GARDEN_GUARD_MENU_JOURNAL);
+    h2_garden_guard_game_step(&game, H2_GARDEN_GUARD_JOURNAL_MS);
+    CHECK(game.journal_card == 0u && !h2_garden_guard_journal_animating(&game));
+    game.reduce_motion = true;
+    tap_rect(&game, last);
+    CHECK(game.journal_card == 3u && !h2_garden_guard_journal_animating(&game));
+    CHECK(h2_garden_guard_game_back(&game) && game.journal_card == 0u);
+    CHECK(h2_garden_guard_game_back(&game) &&
+          game.menu == H2_GARDEN_GUARD_MENU_NONE);
+    CHECK(game.profile.seen == 5u && !game.profile_dirty);
+  }
+}
+
 int main(void) {
+  test_journal_focus();
   test_pause_and_language();
   test_profile_and_collection();
   test_shop_and_earned_coins();

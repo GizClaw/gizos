@@ -39,6 +39,13 @@ typedef struct h2_garden_guard_config {
   /** Optional notification on the run thread after loading or switching
    * language. language_tag is a borrowed static BCP 47 tag. */
   void (*language_changed)(void* user, const char* language_tag);
+  /** Optional input adapter. Return true once for a requested Back action. */
+  bool (*back_pressed)(void* user);
+  /** When true, a Back action outside a menu exits the app. */
+  bool exit_on_unhandled_back;
+  /** Optional platform preference. If true, show the journal detail
+   * immediately. */
+  bool (*reduce_motion)(void* user);
   /** Borrowed user value passed to the configured callbacks. */
   void* user;
 } h2_garden_guard_config_t;

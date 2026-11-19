@@ -8,6 +8,7 @@
 #include <emscripten/proxying.h>
 #include <emscripten/threading.h>
 #include <stdio.h>
+#include <stdatomic.h>
 
 #define WIDTH 480
 #define HEIGHT 320
@@ -80,6 +81,28 @@ static void language_changed(void* user, const char* language_tag) {
                               apply_language, (void*)language_tag);
 }
 
+/* The page delivers input while the game's state stays on the run thread. */
+static atomic_bool web_back;
+static atomic_bool web_reduce_motion;
+
+EMSCRIPTEN_KEEPALIVE void h2_garden_guard_web_back(void) {
+  atomic_store(&web_back, true);
+}
+
+EMSCRIPTEN_KEEPALIVE void h2_garden_guard_web_reduce_motion(int enabled) {
+  atomic_store(&web_reduce_motion, enabled != 0);
+}
+
+static bool back_pressed(void* user) {
+  (void)user;
+  return atomic_exchange(&web_back, false);
+}
+
+static bool reduce_motion(void* user) {
+  (void)user;
+  return atomic_load(&web_reduce_motion);
+}
+
 int main(void) {
   if (emscripten_is_main_runtime_thread()) return 2;
   const h2_web_platform_config_t surface = {.display_width = WIDTH,
@@ -92,7 +115,9 @@ int main(void) {
   const h2_runtime_config_t config = runtime_config(platform);
   h2_runtime_t* runtime = NULL;
   int rc = h2_runtime_init(&config, &runtime);
-  const h2_garden_guard_config_t game = {.language_changed = language_changed};
+  const h2_garden_guard_config_t game = {.language_changed = language_changed,
+                                         .back_pressed = back_pressed,
+                                         .reduce_motion = reduce_motion};
   if (rc == H2_PAL_OK) rc = h2_garden_guard_run(runtime, &game);
   printf("H2_GARDEN_GUARD_WEB_EXIT rc=%d\n", rc);
   const int destroyed = runtime != NULL ? h2_runtime_destroy(&runtime) : 0;

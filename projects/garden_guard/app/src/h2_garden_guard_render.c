@@ -1613,7 +1613,7 @@ void h2_garden_guard_static_key(const h2_garden_guard_game_t* game,
   out->values[3] = game->best;
   out->values[4] = game->new_best ? 1u : 0u;
   out->values[5] = prompt_visible(game) ? 1u : 0u;
-  out->values[6] = game->kills;
+  out->values[6] = game->journal_card;
   out->values[8] = game->profile.total_score;
   out->values[9] = game->profile.coins;
   out->values[10] = game->profile.seen;
@@ -1870,10 +1870,165 @@ static void menu_tabs(h2_garden_guard_canvas_t* canvas,
               L("SHOP", "商店"), RGB(50, 93, 78), RGB(253, 235, 182));
 }
 
-static void draw_collection(h2_garden_guard_canvas_t* canvas,
-                            const h2_garden_guard_game_t* game) {
+static void journal_card_face(h2_garden_guard_canvas_t* canvas,
+                              const h2_garden_guard_game_t* game,
+                              h2_garden_guard_rect_t r, unsigned kind,
+                              bool detail) {
+  const bool known = (game->profile.seen & (1u << kind)) != 0u;
+  const float k = r.w / 128.0f;
+  const float cx = r.x + r.w * 0.5f;
+  const float x1 = r.x + r.w, y1 = r.y + r.h;
+  const float edge = fmaxf(1.0f, 2.0f * k);
+  const float picture_bottom = r.y + r.h * (detail ? 0.55f : 0.72f);
+  const float picture_top = r.y + 9.0f * k;
+  static const uint16_t backgrounds[] = {RGB(160, 168, 113), RGB(125, 160, 150),
+                                         RGB(178, 150, 100)};
+  const uint16_t paper = known ? RGB(237, 219, 178) : RGB(63, 88, 71);
+  const uint16_t ink = known ? RGB(35, 59, 47) : RGB(239, 225, 179);
+  const uint16_t accent = known ? RGB(144, 107, 57) : RGB(145, 161, 124);
+  rounded_rect(canvas, r.x, r.y + 3.0f * k, x1, y1 + 3.0f * k, 8.0f * k,
+               RGB(10, 25, 19), 204u);
+  rounded_rect(canvas, r.x, r.y, x1, y1, 8.0f * k, accent, 256u);
+  rounded_rect(canvas, r.x + edge, r.y + edge, x1 - edge, y1 - edge, 7.0f * k,
+               paper, 256u);
+  rounded_rect(canvas, r.x + 9.0f * k, picture_top, x1 - 9.0f * k,
+               picture_bottom, 6.0f * k,
+               known ? backgrounds[kind] : RGB(44, 70, 57), 256u);
+  if (known) {
+    // The bust uses the authored portrait and is rerasterized at the displayed
+    // size.
+    const float picture_height = picture_bottom - picture_top;
+    h2_garden_guard_render_zombie_portrait(
+        canvas, (h2_garden_guard_pest_kind_t)kind, cx,
+        picture_bottom - 4.0f * k, fminf(r.w * 0.76f, picture_height * 0.82f));
+  } else {
+    const float cy = (picture_top + picture_bottom) * 0.5f;
+    odisc(canvas, cx, cy, 21.5f * k, edge, RGB(51, 80, 63), RGB(112, 135, 103));
+    text_centered(canvas, "?", cx, cy - 10.0f * k, text_scale(k, 3.0f),
+                  RGB(214, 212, 161), 256u);
+  }
+  const zombie_words_t* words =
+      &k_zombie_cards[game->language == H2_GARDEN_GUARD_LANG_ZH][kind];
+  const char* name = known ? words->name : L("UNKNOWN", "未收录");
+  if (r.w < 63.0f && known) {
+    static const char* const short_names[2][3] = {
+        {"GARDEN", "PLATED", "RUNNER"}, {"园丁", "铁甲", "疾跑"}};
+    name = short_names[game->language == H2_GARDEN_GUARD_LANG_ZH][kind];
+  }
+  const int32_t name_scale =
+      fit_scale(name, r.w - 16.0f * k, text_scale(k, detail ? 2.2f : 2.0f));
+  const float name_y = picture_bottom + 8.0f * k;
+  text_layer(
+      canvas, name,
+      (int32_t)(cx -
+                (float)h2_garden_guard_text_width(name, name_scale) * 0.5f),
+      (int32_t)name_y, name_scale, ink, 256u);
+  if (!detail) {
+    const char* action = known          ? L("VIEW", "查看")
+                         : r.w >= 80.0f ? L("MEET IN PLAY", "对局中遇见")
+                                        : L("IN PLAY", "去对局");
+    text_centered(canvas, action, cx, y1 - 21.0f * k, text_scale(k, 1.0f),
+                  known ? RGB(68, 96, 63) : ink, 256u);
+    return;
+  }
+  capsule(canvas, r.x + 12.0f * k, r.y + 132.0f * k, x1 - 12.0f * k,
+          r.y + 132.0f * k, fmaxf(0.5f, 0.6f * k), accent, 168u);
+  const char* trait = words->trait;
+  const char* counter = words->counter;
+  if (r.w < 158.0f) {
+    static const char* const short_traits[2][3] = {
+        {"DRAGS ONE FOOT", "ABSORBS HITS", "FAST, FRAGILE"},
+        {"拖着脚走", "护甲挡伤", "跑快血少"}};
+    static const char* const short_counters[2][3] = {
+        {"USE WALLS", "STACK SHOOTERS", "BLOCK OR FROST"},
+        {"用墙阻挡", "多种射手", "用墙或冰铃"}};
+    const bool zh = game->language == H2_GARDEN_GUARD_LANG_ZH;
+    trait = short_traits[zh][kind];
+    counter = short_counters[zh][kind];
+  }
+  const float text_x = r.x + 12.0f * k;
+  const char* labels[] = {L("TRAIT", "特征"), L("COUNTER", "应对")};
+  if (r.w < 85.0f && game->language == H2_GARDEN_GUARD_LANG_EN) {
+    static const char* const compact_traits[] = {"DRAG STEP", "ARMORED",
+                                                 "FAST"};
+    static const char* const compact_counters[] = {"USE WALLS", "MORE PEAS",
+                                                   "USE FROST"};
+    trait = compact_traits[kind];
+    counter = compact_counters[kind];
+  }
+  const char* info[] = {trait, counter};
+  for (unsigned i = 0; i < 2u; ++i) {
+    const float line_y = r.y + (137.0f + 25.0f * (float)i) * k;
+    text_layer(canvas, labels[i], (int32_t)text_x, (int32_t)line_y, 1,
+               RGB(111, 80, 41), 256u);
+    text_layer(canvas, info[i], (int32_t)text_x,
+               (int32_t)(line_y + fmaxf(9.0f, 12.0f * k)), 1, ink, 256u);
+  }
+}
+
+static void draw_journal(h2_garden_guard_canvas_t* canvas,
+                         const h2_garden_guard_game_t* game) {
   const h2_garden_guard_layout_t* l = &game->layout;
-  const bool shop = game->menu == H2_GARDEN_GUARD_MENU_SHOP;
+  const h2_garden_guard_rect_t back = h2_garden_guard_menu_back(l);
+  const float s = back.w / 80.0f;
+  const float cx = (float)l->width * 0.5f;
+  const float top = back.y - 16.0f * s;
+  const uint16_t cream = RGB(252, 228, 172);
+  fill_rect(canvas, 0.0f, 0.0f, (float)l->width, (float)l->height,
+            RGB(22, 44, 37), 256u);
+  capsule(canvas, cx - 205.0f * s, top + 69.0f * s, cx + 205.0f * s,
+          top + 69.0f * s, fmaxf(0.5f, s), RGB(141, 130, 82), 235u);
+  menu_button(canvas, back, L("BACK", "返回"), RGB(47, 88, 74), cream);
+  const char* heading =
+      s < 0.52f ? L("JOURNAL", "图鉴") : L("FIELD JOURNAL", "僵尸图鉴");
+  text_centered(canvas, heading, cx, top + 22.0f * s,
+                fit_scale(heading, 248.0f * s, text_scale(s, 3.0f)), cream,
+                256u);
+  unsigned known = 0;
+  for (unsigned i = 0; i < H2_GARDEN_GUARD_PEST_KIND_COUNT; ++i) {
+    known += (game->profile.seen >> i) & 1u;
+    if (game->journal_card != i + 1u)
+      journal_card_face(canvas, game, h2_garden_guard_journal_card_rect(l, i),
+                        i, false);
+  }
+  char count[32];
+  (void)snprintf(count, sizeof(count), L("%u/%u COLLECTED", "已收录%u/%u"),
+                 known, (unsigned)H2_GARDEN_GUARD_PEST_KIND_COUNT);
+  text_centered(canvas, count, cx, top + 50.0f * s,
+                fit_scale(count, 250.0f * s, text_scale(s, 2.0f)),
+                RGB(240, 197, 103), 256u);
+}
+
+static void draw_journal_focus(h2_garden_guard_canvas_t* canvas,
+                               const h2_garden_guard_game_t* game) {
+  const unsigned kind = game->journal_card - 1u;
+  const h2_garden_guard_layout_t* l = &game->layout;
+  const float progress =
+      (float)game->journal_progress_ms / H2_GARDEN_GUARD_JOURNAL_MS;
+  // A single, reversible cubic ease keeps the opening and closing paths
+  // aligned.
+  const float eased = progress * progress * (3.0f - 2.0f * progress);
+  const h2_garden_guard_rect_t from =
+      h2_garden_guard_journal_card_rect(l, kind);
+  const h2_garden_guard_rect_t to = h2_garden_guard_journal_detail_rect(l);
+  h2_garden_guard_rect_t paint = {
+      from.x + (to.x - from.x) * eased, from.y + (to.y - from.y) * eased,
+      from.w + (to.w - from.w) * eased, from.h + (to.h - from.h) * eased};
+  if (eased > 0.0f)
+    fill_rect(canvas, 0.0f, 0.0f, (float)l->width, (float)l->height,
+              RGB(13, 26, 21), (uint32_t)(eased * 180.0f));
+  const bool settled = !h2_garden_guard_journal_animating(game);
+  journal_card_face(canvas, game, paint, kind, settled);
+  if (settled) {
+    const h2_garden_guard_rect_t close = h2_garden_guard_journal_close_rect(l);
+    menu_button(canvas, close, close.w < 23.0f ? "X" : L("X", "关闭"),
+                RGB(39, 74, 62), RGB(251, 231, 185));
+  }
+}
+
+static void draw_shop(h2_garden_guard_canvas_t* canvas,
+                      const h2_garden_guard_game_t* game) {
+  const h2_garden_guard_layout_t* l = &game->layout;
   const h2_garden_guard_rect_t back = h2_garden_guard_menu_back(l);
   const float s = back.w / 80.0f;
   const float cx = (float)l->width * 0.5f;
@@ -1884,133 +2039,81 @@ static void draw_collection(h2_garden_guard_canvas_t* canvas,
   fill_rect(canvas, 0.0f, 0.0f, (float)l->width, (float)l->height,
             RGB(19, 39, 35), 256u);
   menu_button(canvas, back, L("BACK", "返回"), RGB(48, 88, 76), light);
-  text_centered(
-      canvas,
-      shop ? L("PLANT SHOP", "植物商店") : L("FIELD JOURNAL", "僵尸图鉴"), cx,
-      back.y + 6.0f * s,
-      fit_scale(
-          shop ? L("PLANT SHOP", "植物商店") : L("FIELD JOURNAL", "僵尸图鉴"),
-          252.0f * s, text_scale(s, 3.0f)),
-      light, 256u);
+  const char* heading = L("PLANT SHOP", "植物商店");
+  text_centered(canvas, heading, cx, back.y + 6.0f * s,
+                fit_scale(heading, 252.0f * s, text_scale(s, 3.0f)), light,
+                256u);
   char label[40];
-  if (shop) {
-    (void)snprintf(label, sizeof(label), L("%u COINS", "%u金币"),
-                   (unsigned)game->profile.coins);
-  } else {
-    unsigned seen = 0;
-    for (unsigned k = 0; k < H2_GARDEN_GUARD_PEST_KIND_COUNT; ++k)
-      seen += (game->profile.seen >> k) & 1u;
-    (void)snprintf(label, sizeof(label), L("%u/%u SEEN", "已收录%u/%u"), seen,
-                   (unsigned)H2_GARDEN_GUARD_PEST_KIND_COUNT);
-  }
+  (void)snprintf(label, sizeof(label), L("%u COINS", "%u金币"),
+                 (unsigned)game->profile.coins);
   text_centered(canvas, label, cx, back.y + 39.0f * s,
                 fit_scale(label, 260.0f * s, text_scale(s, 2.0f)),
                 RGB(240, 197, 103), 256u);
-  for (unsigned i = 0; i < (shop ? 2u : H2_GARDEN_GUARD_PEST_KIND_COUNT); ++i) {
+  for (unsigned i = 0; i < 2u; ++i) {
     const h2_garden_guard_rect_t r = h2_garden_guard_menu_row(l, i);
-    const bool seen = shop || (game->profile.seen & (1u << i)) != 0u;
-    rounded_rect(canvas, r.x, r.y, r.x + r.w, r.y + r.h, 8.0f * s,
-                 seen ? paper : RGB(48, 75, 66), 256u);
+    rounded_rect(canvas, r.x, r.y, r.x + r.w, r.y + r.h, 8.0f * s, paper, 256u);
     rounded_rect(canvas, r.x + 5.0f * s, r.y + 5.0f * s, r.x + 79.0f * s,
-                 r.y + r.h - 5.0f * s, 5.0f * s,
-                 seen ? RGB(160, 177, 127) : RGB(56, 90, 76), 256u);
-    if (shop) {
-      const uint8_t kind =
-          i == 0u ? H2_GARDEN_GUARD_PLANT_FROST : H2_GARDEN_GUARD_PLANT_BRAMBLE;
-      draw_plant_kind(canvas, kind, r.x + 43.0f * s, r.y + 52.0f * s, 42.0f * s,
-                      0u, k_neutral_plant, false);
-    } else if (seen) {
-      h2_garden_guard_render_zombie_portrait(
-          canvas, (h2_garden_guard_pest_kind_t)i, r.x + 46.0f * s,
-          r.y + 52.0f * s, 37.0f * s);
-    } else {
-      text_centered(canvas, "?", r.x + 43.0f * s, r.y + 18.0f * s,
-                    text_scale(s, 3.0f), RGB(159, 185, 141), 256u);
-    }
+                 r.y + r.h - 5.0f * s, 5.0f * s, RGB(160, 177, 127), 256u);
+    const uint8_t kind =
+        i == 0u ? H2_GARDEN_GUARD_PLANT_FROST : H2_GARDEN_GUARD_PLANT_BRAMBLE;
+    draw_plant_kind(canvas, kind, r.x + 43.0f * s, r.y + 52.0f * s, 42.0f * s,
+                    0u, k_neutral_plant, false);
     const char* name =
-        shop ? (i == 0u ? L("FROSTBELL", "冰铃") : L("BRAMBLE", "荆棘球"))
-        : seen
-            ? k_zombie_cards[game->language == H2_GARDEN_GUARD_LANG_ZH][i].name
-            : L("UNDISCOVERED", "未发现");
-    const char* trait =
-        shop ? (i == 0u ? L("SLOWS WITH ICY SHOTS", "冰弹减缓僵尸")
-                        : L("THORNS HURT BITING ZOMBIES", "反击啃咬的僵尸"))
-        : seen
-            ? k_zombie_cards[game->language == H2_GARDEN_GUARD_LANG_ZH][i].trait
-            : L("MEET THIS ZOMBIE IN PLAY", "遇见后自动收录");
-    const char* hint =
-        shop   ? (i == 0u ? L("125 SUN TO PLANT", "种植需125阳光")
-                          : L("75 SUN TO PLANT", "种植需75阳光"))
-        : seen ? k_zombie_cards[game->language == H2_GARDEN_GUARD_LANG_ZH][i]
-                     .counter
-               : NULL;
+        i == 0u ? L("FROSTBELL", "冰铃") : L("BRAMBLE", "荆棘球");
+    const char* trait = i == 0u
+                            ? L("SLOWS WITH ICY SHOTS", "冰弹减缓僵尸")
+                            : L("THORNS HURT BITING ZOMBIES", "反击啃咬的僵尸");
+    const char* hint = i == 0u ? L("125 SUN TO PLANT", "种植需125阳光")
+                               : L("75 SUN TO PLANT", "种植需75阳光");
     if (s < 0.52f) {
-      if (shop) {
-        trait = i == 0u ? L("SLOWS", "减速") : L("THORN HITS", "反伤");
-        hint = i == 0u ? L("125 SUN", "125阳光") : L("75 SUN", "75阳光");
-      } else if (seen && game->language == H2_GARDEN_GUARD_LANG_EN) {
-        static const char* const compact_traits[] = {"DRAGS ONE FOOT", "PLATED",
-                                                     "FAST, FRAGILE"};
-        static const char* const compact_hints[] = {
-            "USE WALLS", "STACK SHOOTERS", "BLOCK OR FROST"};
-        trait = compact_traits[i];
-        hint = compact_hints[i];
-      } else if (!seen) {
-        trait = L("MEET IN PLAY", "遇见后收录");
-      }
+      trait = i == 0u ? L("SLOWS", "减速") : L("THORN HITS", "反伤");
+      hint = i == 0u ? L("125 SUN", "125阳光") : L("75 SUN", "75阳光");
     }
     const float x = r.x + 92.0f * s;
-    const float available = (shop ? 226.0f : 335.0f) * s;
+    const float available = 226.0f * s;
     const float name_y = r.y + (s < 0.42f ? 0.0f : 10.0f * s);
     const float trait_y = r.y + (s < 0.42f ? 7.0f : 31.0f * s);
     const float hint_y = r.y + (s < 0.42f ? 14.0f : 45.0f * s);
     text_layer(canvas, name, (int32_t)x, (int32_t)name_y,
-               fit_scale(name, available, text_scale(s, 2.0f)),
-               seen ? ink : light, 256u);
+               fit_scale(name, available, text_scale(s, 2.0f)), ink, 256u);
     text_layer(canvas, trait, (int32_t)x, (int32_t)trait_y,
-               fit_scale(trait, available, 1), seen ? ink : light, 256u);
+               fit_scale(trait, available, 1), ink, 256u);
     if (hint != NULL)
       text_layer(canvas, hint, (int32_t)x, (int32_t)hint_y,
                  fit_scale(hint, available, 1), muted, 256u);
-    if (shop) {
-      const uint32_t price = h2_garden_guard_offer_price(i);
-      const bool owned =
-          (game->profile.owned & (i == 0u ? H2_GARDEN_GUARD_FROST_BIT
-                                          : H2_GARDEN_GUARD_BRAMBLE_BIT)) != 0u;
-      const bool enough = game->profile.coins >= price;
+    const uint32_t price = h2_garden_guard_offer_price(i);
+    const bool owned =
+        (game->profile.owned & (i == 0u ? H2_GARDEN_GUARD_FROST_BIT
+                                        : H2_GARDEN_GUARD_BRAMBLE_BIT)) != 0u;
+    const bool enough = game->profile.coins >= price;
+    (void)snprintf(label, sizeof(label),
+                   owned    ? L("OWNED", "已拥有")
+                   : enough ? L("BUY %u", "买入%u")
+                            : L("NEED %u", "需%u"),
+                   (unsigned)price);
+    const h2_garden_guard_rect_t buy = {r.x + r.w * 0.74f + 7.0f * s,
+                                        r.y + 15.0f * s,
+                                        r.w * 0.26f - 14.0f * s, 32.0f * s};
+    if (!owned && (float)h2_garden_guard_text_width(label, 1) > buy.w)
       (void)snprintf(label, sizeof(label),
-                     owned    ? L("OWNED", "已拥有")
-                     : enough ? L("BUY %u", "买入%u")
-                              : L("NEED %u", "需%u"),
+                     enough ? L("%u C", "%u币") : L("NO %u", "需%u"),
                      (unsigned)price);
-      const h2_garden_guard_rect_t buy = {r.x + r.w * 0.74f + 7.0f * s,
-                                          r.y + 15.0f * s,
-                                          r.w * 0.26f - 14.0f * s, 32.0f * s};
-      if (!owned && (float)h2_garden_guard_text_width(label, 1) > buy.w)
-        (void)snprintf(label, sizeof(label),
-                       enough ? L("%u C", "%u币") : L("NO %u", "需%u"),
-                       (unsigned)price);
-      menu_button(canvas, buy, label,
-                  owned    ? RGB(126, 162, 120)
-                  : enough ? RGB(252, 199, 91)
-                           : RGB(182, 168, 138),
-                  ink);
-    }
+    menu_button(canvas, buy, label,
+                owned    ? RGB(126, 162, 120)
+                : enough ? RGB(252, 199, 91)
+                         : RGB(182, 168, 138),
+                ink);
   }
-  if (shop) {
-    const h2_garden_guard_rect_t row = h2_garden_guard_menu_row(l, 2u);
-    (void)snprintf(label, sizeof(label), L("TOTAL SCORE %u", "累计%u分"),
-                   (unsigned)game->profile.total_score);
-    text_centered(canvas, label, cx, row.y + 9.0f * s,
-                  fit_scale(label, 420.0f * s, text_scale(s, 2.0f)), light,
-                  256u);
-    const char* hint = s < 0.52f
-                           ? L("PLANT KILLS EARN COINS", "击倒僵尸可赚金币")
-                           : L("PLANT DEFEATS EARN COINS AT THE END",
-                               "植物击倒僵尸可获结算金币");
-    text_centered(canvas, hint, cx, row.y + 38.0f * s,
-                  fit_scale(hint, 435.0f * s, 1), light, 256u);
-  }
+  const h2_garden_guard_rect_t row = h2_garden_guard_menu_row(l, 2u);
+  (void)snprintf(label, sizeof(label), L("TOTAL SCORE %u", "累计%u分"),
+                 (unsigned)game->profile.total_score);
+  text_centered(canvas, label, cx, row.y + 9.0f * s,
+                fit_scale(label, 420.0f * s, text_scale(s, 2.0f)), light, 256u);
+  const char* hint = s < 0.52f ? L("PLANT KILLS EARN COINS", "击倒僵尸可赚金币")
+                               : L("PLANT DEFEATS EARN COINS AT THE END",
+                                   "植物击倒僵尸可获结算金币");
+  text_centered(canvas, hint, cx, row.y + 38.0f * s,
+                fit_scale(hint, 435.0f * s, 1), light, 256u);
   if (game->save_state != H2_GARDEN_GUARD_SAVE_READY ||
       game->language_unsaved) {
     const char* status = (game->save_state == H2_GARDEN_GUARD_SAVE_SESSION ||
@@ -2103,7 +2206,9 @@ static void draw_title(h2_garden_guard_canvas_t* canvas,
   }
   for (unsigned i = 0; i < 2u; ++i) {
     const h2_garden_guard_rect_t r = h2_garden_guard_menu_tab(l, false, i);
-    const char* label = i == 0u ? L("JOURNAL", "图鉴") : L("SHOP", "商店");
+    const char* label =
+        i == 0u ? (r.w < 42.0f ? L("LOG", "图鉴") : L("JOURNAL", "图鉴"))
+                : L("SHOP", "商店");
     const int32_t scale = fit_scale(label, r.w, text_scale(s, 2.0f));
     text_layer(
         canvas, label,
@@ -2115,9 +2220,11 @@ static void draw_title(h2_garden_guard_canvas_t* canvas,
   }
   disc(canvas, cx, y + 304.0f * s, fmaxf(1.0f, 1.5f * s), RGB(151, 140, 88),
        256u);
-  menu_button(canvas,
-              h2_garden_guard_action_rect(l, H2_GARDEN_GUARD_ACTION_LANGUAGE),
-              L("中文", "ENGLISH"), RGB(31, 61, 51), cream);
+  const h2_garden_guard_rect_t language =
+      h2_garden_guard_action_rect(l, H2_GARDEN_GUARD_ACTION_LANGUAGE);
+  menu_button(canvas, language,
+              language.w < 44.0f ? L("中文", "EN") : L("中文", "ENGLISH"),
+              RGB(31, 61, 51), cream);
   if (game->language_unsaved)
     text_centered(canvas, L("LANGUAGE FOR THIS SESSION", "语言仅本次有效"), cx,
                   y + 235.0f * s, 1, cream, 256u);
@@ -2244,9 +2351,12 @@ static void draw_frozen_scene(h2_garden_guard_canvas_t* canvas,
 
 static void draw_field(h2_garden_guard_canvas_t* canvas,
                        const h2_garden_guard_game_t* game) {
-  if (game->menu == H2_GARDEN_GUARD_MENU_JOURNAL ||
-      game->menu == H2_GARDEN_GUARD_MENU_SHOP) {
-    draw_collection(canvas, game);
+  if (game->menu == H2_GARDEN_GUARD_MENU_JOURNAL) {
+    draw_journal(canvas, game);
+    return;
+  }
+  if (game->menu == H2_GARDEN_GUARD_MENU_SHOP) {
+    draw_shop(canvas, game);
     return;
   }
   if (game->phase == H2_GARDEN_GUARD_PHASE_TITLE) {
@@ -2430,5 +2540,9 @@ static void draw_frozen_scene(h2_garden_guard_canvas_t* canvas,
 
 void h2_garden_guard_render_scene(h2_garden_guard_canvas_t* canvas,
                                   const h2_garden_guard_game_t* game) {
+  if (game->menu == H2_GARDEN_GUARD_MENU_JOURNAL && game->journal_card != 0u) {
+    draw_journal_focus(canvas, game);
+    return;
+  }
   paint_scene(canvas, game, false);
 }

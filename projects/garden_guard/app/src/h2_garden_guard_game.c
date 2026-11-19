@@ -693,6 +693,49 @@ h2_garden_guard_rect_t h2_garden_guard_menu_tab(
   return menu_rect(l, tab == 0u ? 135.0f : 246.0f, 291.0f, 99.0f, 26.0f);
 }
 
+h2_garden_guard_rect_t h2_garden_guard_journal_card_rect(
+    const h2_garden_guard_layout_t* l, unsigned card) {
+  return menu_rect(l, 38.0f + (float)card * 138.0f, 88.0f, 128.0f, 192.0f);
+}
+
+h2_garden_guard_rect_t h2_garden_guard_journal_detail_rect(
+    const h2_garden_guard_layout_t* l) {
+  return menu_rect(l, 142.0f, 13.0f, 196.0f, 294.0f);
+}
+
+h2_garden_guard_rect_t h2_garden_guard_journal_close_rect(
+    const h2_garden_guard_layout_t* l) {
+  return menu_rect(l, 295.0f, 17.0f, 39.0f, 38.0f);
+}
+
+bool h2_garden_guard_journal_animating(const h2_garden_guard_game_t* game) {
+  return game->journal_card != 0u &&
+         (game->journal_closing ||
+          game->journal_progress_ms < H2_GARDEN_GUARD_JOURNAL_MS);
+}
+
+static void close_journal_card(h2_garden_guard_game_t* game) {
+  game->journal_closing = true;
+  if (game->reduce_motion) {
+    game->journal_card = 0u;
+    game->journal_progress_ms = 0u;
+    game->journal_closing = false;
+  }
+}
+
+bool h2_garden_guard_game_back(h2_garden_guard_game_t* game) {
+  if (game->menu == H2_GARDEN_GUARD_MENU_JOURNAL && game->journal_card != 0u) {
+    close_journal_card(game);
+  } else if (game->menu == H2_GARDEN_GUARD_MENU_JOURNAL ||
+             game->menu == H2_GARDEN_GUARD_MENU_SHOP) {
+    game->menu = H2_GARDEN_GUARD_MENU_NONE;
+  } else {
+    return false;
+  }
+  game->modal_press = 0u;
+  return true;
+}
+
 h2_garden_guard_rect_t h2_garden_guard_menu_back(
     const h2_garden_guard_layout_t* l) {
   const float s = menu_scale(l);
@@ -749,10 +792,30 @@ static void toggle_language(h2_garden_guard_game_t* game) {
   game->language_dirty = true;
 }
 
+enum { JOURNAL_BACK = 6, JOURNAL_CLOSE, JOURNAL_CARD_FIRST };
+
+static unsigned journal_action(const h2_garden_guard_game_t* game, float x,
+                               float y) {
+  const h2_garden_guard_layout_t* l = &game->layout;
+  if (h2_garden_guard_journal_animating(game)) return 0u;
+  if (game->journal_card != 0u)
+    return contains(h2_garden_guard_journal_close_rect(l), x, y) ? JOURNAL_CLOSE
+                                                                 : 0u;
+  if (contains(h2_garden_guard_menu_back(l), x, y)) return JOURNAL_BACK;
+  for (unsigned k = 0; k < H2_GARDEN_GUARD_PEST_KIND_COUNT; ++k) {
+    if ((game->profile.seen & (1u << k)) != 0u &&
+        contains(h2_garden_guard_journal_card_rect(l, k), x, y))
+      return JOURNAL_CARD_FIRST + k;
+  }
+  return 0u;
+}
+
 /* Modal controls activate on release over the same control. A second state
  * cannot receive the release that opened it. */
 static unsigned modal_action(const h2_garden_guard_game_t* game, float x,
                              float y) {
+  if (game->menu == H2_GARDEN_GUARD_MENU_JOURNAL)
+    return journal_action(game, x, y);
   if (game->menu == H2_GARDEN_GUARD_MENU_PAUSE) {
     if (hits_action(game, H2_GARDEN_GUARD_ACTION_RESUME, x, y)) return 1u;
     if (hits_action(game, H2_GARDEN_GUARD_ACTION_PAUSE_LANGUAGE, x, y))
@@ -766,7 +829,8 @@ static unsigned modal_action(const h2_garden_guard_game_t* game, float x,
 }
 
 static void press(h2_garden_guard_game_t* game, float x, float y) {
-  if (h2_garden_guard_paused(game)) {
+  if (h2_garden_guard_paused(game) ||
+      game->menu == H2_GARDEN_GUARD_MENU_JOURNAL) {
     game->modal_press = (uint8_t)modal_action(game, x, y);
     return;
   }
@@ -837,7 +901,8 @@ void h2_garden_guard_game_pointer(h2_garden_guard_game_t* game,
       press(game, x, y);
       break;
     case H2_GARDEN_GUARD_POINTER_MOVE: {
-      if (h2_garden_guard_paused(game) &&
+      if ((h2_garden_guard_paused(game) ||
+           game->menu == H2_GARDEN_GUARD_MENU_JOURNAL) &&
           game->modal_press != modal_action(game, x, y))
         game->modal_press = 0u;
       if (!game->pointer_down || h2_garden_guard_paused(game) ||
@@ -856,8 +921,9 @@ void h2_garden_guard_game_pointer(h2_garden_guard_game_t* game,
       break;
     }
     case H2_GARDEN_GUARD_POINTER_UP: {
-      if (h2_garden_guard_paused(game) && game->pointer_down &&
-          game->modal_press == modal_action(game, x, y)) {
+      if ((h2_garden_guard_paused(game) ||
+           game->menu == H2_GARDEN_GUARD_MENU_JOURNAL) &&
+          game->pointer_down && game->modal_press == modal_action(game, x, y)) {
         switch (game->modal_press) {
           case 1u:
             game->menu = H2_GARDEN_GUARD_MENU_NONE;
@@ -875,7 +941,17 @@ void h2_garden_guard_game_pointer(h2_garden_guard_game_t* game,
             game->menu = H2_GARDEN_GUARD_MENU_NONE;
             enter_title(game);
             break;
+          case JOURNAL_BACK:
+          case JOURNAL_CLOSE:
+            (void)h2_garden_guard_game_back(game);
+            break;
           default:
+            if (game->modal_press >= JOURNAL_CARD_FIRST) {
+              game->journal_card =
+                  (uint8_t)(game->modal_press - JOURNAL_CARD_FIRST + 1u);
+              game->journal_progress_ms =
+                  game->reduce_motion ? H2_GARDEN_GUARD_JOURNAL_MS : 0u;
+            }
             break;
         }
       }
@@ -1278,8 +1354,28 @@ static void step_once(h2_garden_guard_game_t* game, uint32_t dt) {
     finish(game, true);
 }
 
+static void step_journal(h2_garden_guard_game_t* game, uint32_t dt_ms) {
+  if (!h2_garden_guard_journal_animating(game)) return;
+  if (game->reduce_motion) dt_ms = H2_GARDEN_GUARD_JOURNAL_MS;
+  if (game->journal_closing) {
+    if (dt_ms >= game->journal_progress_ms) {
+      game->journal_card = 0u;
+      game->journal_progress_ms = 0u;
+      game->journal_closing = false;
+    } else {
+      game->journal_progress_ms -= (uint16_t)dt_ms;
+    }
+  } else {
+    const uint32_t remaining =
+        H2_GARDEN_GUARD_JOURNAL_MS - game->journal_progress_ms;
+    game->journal_progress_ms +=
+        (uint16_t)(dt_ms < remaining ? dt_ms : remaining);
+  }
+}
+
 void h2_garden_guard_game_step(h2_garden_guard_game_t* game, uint32_t dt_ms) {
   if (h2_garden_guard_paused(game)) return;
+  step_journal(game, dt_ms);
   while (dt_ms > 0u) {
     const uint32_t dt = dt_ms > STEP_MAX_MS ? STEP_MAX_MS : dt_ms;
     step_once(game, dt);

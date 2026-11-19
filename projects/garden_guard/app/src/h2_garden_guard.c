@@ -433,6 +433,8 @@ static h2_pal_result_t push_dirty(session_t* s, const dirty_t* dirty) {
  * displayed pixels alone unless the current or previous scene has effects
  * that can move at full speed. This includes the last frame of an exit. */
 static bool scene_has_transient(const h2_garden_guard_game_t* game) {
+  if (game->menu == H2_GARDEN_GUARD_MENU_JOURNAL)
+    return h2_garden_guard_journal_animating(game);
   if (h2_garden_guard_paused(game)) return false;
   if (game->banner_ms != 0u || game->hover_lane >= 0) return true;
   for (unsigned i = 0; i < H2_GARDEN_GUARD_MAX_PARTICLES; ++i)
@@ -579,9 +581,16 @@ static h2_pal_result_t play(session_t* s) {
     if (dt > DT_MAX_MS) dt = DT_MAX_MS;
     last = now;
 
+    if (s->config.reduce_motion != NULL)
+      s->game.reduce_motion = s->config.reduce_motion(s->config.user);
     const bool was_paused = h2_garden_guard_paused(&s->game);
     rc = poll_touch(s);
     if (rc != H2_PAL_OK) return rc;
+    if (s->config.back_pressed != NULL &&
+        s->config.back_pressed(s->config.user) &&
+        !h2_garden_guard_game_back(&s->game) &&
+        s->config.exit_on_unhandled_back)
+      return H2_PAL_OK;
     if (!was_paused) h2_garden_guard_game_step(&s->game, (uint32_t)dt);
     save_language(s);
     save_profile(s, now);
@@ -605,7 +614,10 @@ static h2_pal_result_t play(session_t* s) {
     if (h2_garden_guard_game_take_best(&s->game, &best)) save_best(s, best);
     report_stats(s, now);
 
-    rc = wait_frame(s, frame_start + period);
+    const uint32_t wait_ms =
+        h2_garden_guard_journal_animating(&s->game) && period > 24u ? 24u
+                                                                    : period;
+    rc = wait_frame(s, frame_start + wait_ms);
     if (rc != H2_PAL_OK) return rc;
   }
 }

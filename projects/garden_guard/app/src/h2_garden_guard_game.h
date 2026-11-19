@@ -64,6 +64,7 @@ extern "C" {
 #define H2_GARDEN_GUARD_PEST_EXIT_MS 400u
 #define H2_GARDEN_GUARD_PEST_BITE_MS 720u
 #define H2_GARDEN_GUARD_PEST_BITE_CONTACT_MS 350u
+#define H2_GARDEN_GUARD_JOURNAL_MS 220u
 
 typedef enum h2_garden_guard_phase {
   H2_GARDEN_GUARD_PHASE_TITLE = 0,
@@ -275,6 +276,9 @@ typedef struct h2_garden_guard_game {
   bool profile_dirty;
   uint8_t save_state;
   uint8_t menu;
+  uint8_t journal_card; /**< 0 for the shelf, otherwise pest kind + 1. */
+  uint16_t journal_progress_ms;
+  bool journal_closing, reduce_motion;
   uint8_t language, modal_press;
   bool language_dirty, language_unsaved;
   uint16_t sighting_ms;
@@ -326,6 +330,16 @@ bool h2_garden_guard_profile_decode(h2_garden_guard_profile_t* profile,
 bool h2_garden_guard_paused(const h2_garden_guard_game_t* game);
 h2_garden_guard_rect_t h2_garden_guard_action_rect(
     const h2_garden_guard_layout_t* layout, h2_garden_guard_action_t action);
+
+/** Close a focused journal card or return from a journal/shop menu. */
+bool h2_garden_guard_game_back(h2_garden_guard_game_t* game);
+bool h2_garden_guard_journal_animating(const h2_garden_guard_game_t* game);
+h2_garden_guard_rect_t h2_garden_guard_journal_card_rect(
+    const h2_garden_guard_layout_t* layout, unsigned card);
+h2_garden_guard_rect_t h2_garden_guard_journal_detail_rect(
+    const h2_garden_guard_layout_t* layout);
+h2_garden_guard_rect_t h2_garden_guard_journal_close_rect(
+    const h2_garden_guard_layout_t* layout);
 
 /** Shared screen-space rectangles for the menus and touch input. */
 h2_garden_guard_rect_t h2_garden_guard_menu_tab(
