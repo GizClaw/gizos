@@ -499,6 +499,7 @@ def parse_arguments(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--managed-app-output", required=True)
     parser.add_argument("--recovery-output", required=True)
     parser.add_argument("--partition-metadata-output", required=True)
+    parser.add_argument("--partition-table")
     parser.add_argument("--ram-regions", required=True)
     parser.add_argument("--memory-contract")
     parser.add_argument("--memory-checker")
@@ -801,6 +802,12 @@ def run(arguments: argparse.Namespace) -> None:
                 raise RunnerError(f"BK7258 project support file has an invalid board layout path: {support_file}")
             relative = Path(*parts[layout_index + 2:])
             copy_output(support_file, project_copy / relative)
+        if arguments.partition_table:
+            destination = project_copy / "partitions" / arguments.target / "auto_partitions.csv"
+            if destination.exists():
+                raise RunnerError("BK7258 partition table was supplied twice")
+            table = required_file(source_root / arguments.partition_table, "BK7258 partition table")
+            copy_output(table, destination)
         stage_unit_inputs(
             source_root,
             project_copy,

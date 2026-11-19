@@ -99,16 +99,16 @@ h2loader_bk7258_firmware(
     layout_files = {
         "ap_config": [
             "//boards/haivivi/h106_zero_bk_2_0/bk7258:ap.defaults",
-            "//boards/haivivi/h106_zero_bk_2_0/bk7258/layouts/e2e:ap.defaults",
+            "//boards/haivivi/h106_zero_bk_2_0/bk7258/layouts/h2loader:ap.e2e.defaults",
         ],
-        "ap_gpio": "//boards/haivivi/h106_zero_bk_2_0/bk7258/layouts/e2e:ap_gpio",
+        "ap_gpio": "//boards/haivivi/h106_zero_bk_2_0/bk7258/layouts/h2loader:ap_gpio",
         "cp_config": [
             "//boards/haivivi/h106_zero_bk_2_0/bk7258:cp.defaults",
-            "//boards/haivivi/h106_zero_bk_2_0/bk7258/layouts/e2e:cp.defaults",
+            "//boards/haivivi/h106_zero_bk_2_0/bk7258/layouts/h2loader:cp.e2e.defaults",
         ],
-        "cp_gpio": "//boards/haivivi/h106_zero_bk_2_0/bk7258/layouts/e2e:cp_gpio",
-        "project_support_files": ["//boards/haivivi/h106_zero_bk_2_0/bk7258/layouts/e2e:layout"],
-        "ram_regions": "//boards/haivivi/h106_zero_bk_2_0/bk7258/layouts/e2e:ram_regions",
+        "cp_gpio": "//boards/haivivi/h106_zero_bk_2_0/bk7258/layouts/h2loader:cp_gpio",
+        "project_support_files": ["//boards/haivivi/h106_zero_bk_2_0/bk7258/layouts/h2loader:layout"],
+        "ram_regions": "//boards/haivivi/h106_zero_bk_2_0/bk7258/layouts/h2loader:ram_regions",
         "recovery_config": "//boards/haivivi/h106_zero_bk_2_0/bk7258/layouts/h2loader:bk_loader.json",
     },
     project = "CMakeLists.txt",

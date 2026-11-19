@@ -227,6 +227,7 @@ def h2loader_bk7258_firmware(
         cp_config = layout_files["cp_config"],
         ap_gpio = layout_files["ap_gpio"],
         cp_gpio = layout_files["cp_gpio"],
+        partition_table = layout_files.get("partition_table"),
         project_support_files = layout_files["project_support_files"],
         recovery_config = layout_files.get("recovery_config"),
         ram_regions = layout_files["ram_regions"],

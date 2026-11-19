@@ -81,6 +81,10 @@ if mode == "ccache":
         raise SystemExit("runner did not resolve the BK7258 ccache base directory")
     if not str(build).startswith(base_dir + os.sep):
         raise SystemExit("BK7258 build directory is outside the ccache base directory")
+if mode == "partition-table":
+    staged = project / "partitions/bk7258/auto_partitions.csv"
+    if staged.read_bytes() != source_root.joinpath("partition.csv").read_bytes():
+        raise SystemExit("runner staged the wrong SDK partition view")
 if mode == "native-graph":
     manifest = Path(os.environ["H2_BAZEL_COMPONENT_MANIFEST"])
     manifest_text = manifest.read_text(encoding="utf-8")
@@ -603,6 +607,20 @@ class Bk7258RunnerTest(unittest.TestCase):
             },
         )
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_explicit_partition_table_is_staged_under_the_sdk_name(self):
+        result, _ = self._run(
+            mode="partition-table", extra_arguments=["--partition-table", "partition.csv"]
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_two_partition_tables_are_rejected(self):
+        existing = self.project / "partitions/bk7258/auto_partitions.csv"
+        existing.parent.mkdir(parents=True, exist_ok=True)
+        existing.write_text("existing table\n", encoding="utf-8")
+        result, _ = self._run(extra_arguments=["--partition-table", "partition.csv"])
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("partition table was supplied twice", result.stderr)
 
     def test_native_component_graph_is_staged_and_isolated_by_execution_unit(self):
         result, output = self._run(
