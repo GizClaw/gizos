@@ -15,7 +15,8 @@ import wave
 RATE = 8000
 ROOT = Path(__file__).resolve().parent
 NAMES = ("swing", "slice", "combo", "bomb", "miss", "fail", "result", "coin",
-         "task", "purchase", "equip", "card", "rare", "cheer", "music")
+         "task", "purchase", "equip", "card", "rare", "cheer", "slice_jade",
+         "slice_flame", "slice_bamboo", "slice_frost", "slice_storm", "music")
 
 
 def envelope(t, duration, attack=0.004):
@@ -90,6 +91,60 @@ def slice_hit():
     return out
 
 
+def impact(t, start_ms, attack_ms, decay_ms):
+    age = t - start_ms
+    return (1.0 - math.exp(-age / attack_ms)) * math.exp(-age / decay_ms) if age > 0 else 0.0
+
+
+def cut_noise(seed, duration_ms, center_hz, q, *bursts):
+    """Deterministic band-pass noise shaped by (start, attack, decay, gain) bursts."""
+    rng = random.Random(seed)
+    omega = 2.0 * math.pi * center_hz / RATE
+    alpha = math.sin(omega) / (2.0 * q)
+    b0 = alpha / (1.0 + alpha)
+    a1 = -2.0 * math.cos(omega) / (1.0 + alpha)
+    a2 = (1.0 - alpha) / (1.0 + alpha)
+    x1 = x2 = y1 = y2 = 0.0
+    out = []
+    for i in range(round(duration_ms * RATE / 1000)):
+        t = i * 1000 / RATE
+        x = rng.uniform(-1.0, 1.0)
+        y = b0 * (x - x2) - a1 * y1 - a2 * y2
+        x1, x2, y1, y2 = x, x1, y, y1
+        contour = sum(gain * impact(t, start, attack, decay)
+                      for start, attack, decay, gain in bursts)
+        out.append(y * contour * min(1.0, (duration_ms - t) / 5.0))
+    return out
+
+
+def weapon_hits():
+    # Jade: a bright, narrow cut that opens from a wet edge into a fast sheen.
+    jade = mix(cut_noise(31, 50, 1200, 1.0, (0, 0.55, 4.5, 0.59)),
+               cut_noise(32, 50, 2400, 1.85, (1, 3.2, 7.5, 0.70)),
+               cut_noise(33, 50, 760, 1.0, (6, 2.3, 9, 0.38)))
+    # Flame: meaty impact with a damped low-mid knock and a short pulp crunch.
+    flame = mix(cut_noise(41, 48, 660, 0.93, (0, 1.2, 10, 0.76)),
+                cut_noise(42, 48, 1250, 0.9, (0, 0.7, 6, 0.43), (10, 1.8, 5, 0.25)),
+                tone(395, 0.027, 0.32, -2600))
+    # Bamboo: two separated, dry knocks, with different wood resonances.
+    bamboo = mix(cut_noise(51, 38, 1450, 2.2, (0, 0.45, 3.6, 0.91)),
+                 cut_noise(52, 38, 840, 2.0, (0, 0.8, 5.7, 0.54), (14, 0.7, 4.6, 0.80)),
+                 cut_noise(53, 38, 2200, 1.8, (14, 0.55, 2.4, 0.47)))
+    # Frost: short rind impact followed by small, staggered ice fractures.
+    frost = mix(cut_noise(61, 60, 950, 1.2, (0, 0.55, 4.3, 0.87)),
+                cut_noise(62, 60, 1900, 3.7, (3, 0.85, 5.0, 0.60), (22, 0.8, 4, 0.49)),
+                cut_noise(63, 60, 2630, 3.0, (11, 0.75, 4, 0.62), (32, 0.7, 4, 0.38)),
+                cut_noise(64, 60, 580, 1.0, (1, 1.5, 8, 0.30)))
+    # Storm: a fast front-loaded crack with close, irregular secondary sparks.
+    storm = mix(cut_noise(71, 40, 1780, 0.86, (0, 0.42, 2.7, 1.08),
+                          (4.2, 0.38, 2.4, 0.83), (8.5, 0.45, 3.3, 0.56)),
+                cut_noise(72, 40, 570, 1.0, (0.8, 0.7, 6, 0.74)),
+                cut_noise(73, 40, 1110, 1.35, (9, 0.8, 6, 0.52)))
+    return tuple([sample * gain for sample in clip]
+                 for clip, gain in ((jade, 2.7), (flame, 1.75), (bamboo, 2.7),
+                                    (frost, 2.7), (storm, 1.6)))
+
+
 def cheer():
     # Harmonic source filtered by three moving vowel formants: /w/ -> /u:/.
     duration = 0.42
@@ -150,7 +205,7 @@ def bank():
         mix(noise(0.055, 0.25, 4), tone(880, 0.13, 0.5)),
         notes((72, 79, 84), 0.10, 0.4),
         notes((72, 79, 84, 88, 91), 0.10, 0.5),
-        cheer(), music())))
+        cheer(), *weapon_hits(), music())))
 
 
 def generate(destination, previews=None):

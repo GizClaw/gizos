@@ -368,60 +368,78 @@ static void rounded_rect(h2_fruit_slice_canvas_t* canvas, float x0, float y0,
   }
 }
 
-int32_t h2_fruit_slice_text_height(const char* value, int32_t scale) {
-  if (value == NULL || *value == '\0' || scale <= 0) return 0;
-  for (uint32_t cp; (cp = h2_fruit_slice_utf8_next(&value)) != 0u;)
-    if (cp > 127u) return scale * 7 > 12 ? scale * 7 : 12;
-  return scale * 7;
+static bool text_has_non_ascii(const char* value) {
+  for (; *value != '\0'; ++value)
+    if ((unsigned char)*value >= 128u) return true;
+  return false;
 }
 
-static int32_t text_advance(uint32_t cp, int32_t scale) {
-  if (cp < 128u) return 6 * scale;
-  return (scale * 7 > 12 ? scale * 7 : 12) + scale;
+int32_t h2_fruit_slice_text_height(const char* value, int32_t scale) {
+  if (value == NULL || *value == '\0' || scale <= 0) return 0;
+  const int32_t latin_height = 7 * scale;
+  if (!text_has_non_ascii(value)) return latin_height;
+  const int32_t height = h2_fruit_slice_font_strike(scale)->height;
+  return height > latin_height ? height : latin_height;
+}
+
+static int32_t text_advance(uint32_t cp, int32_t scale, int32_t cell_width) {
+  return cp < 128u ? 6 * scale : cell_width + scale;
 }
 
 int32_t h2_fruit_slice_text_width(const char* value, int32_t scale) {
   if (value == NULL || *value == '\0' || scale <= 0) return 0;
+  const int32_t cell_width = h2_fruit_slice_font_strike(scale)->width;
   int32_t width = 0;
   for (uint32_t cp; (cp = h2_fruit_slice_utf8_next(&value)) != 0u;)
-    width += text_advance(cp, scale);
+    width += text_advance(cp, scale, cell_width);
   return width - scale;
 }
 
-/* Area sampling preserves one-pixel strokes when the 15px ink envelope is
- * reduced for a compact button. Coordinates use integer overlap weights. */
-static uint32_t font_coverage(const lv_font_fmt_txt_glyph_dsc_t* g,
-                              const uint8_t* bits, int32_t dx, int32_t dy,
-                              int32_t cell) {
-  const int32_t x0 = dx * 15, x1 = x0 + 15;
-  const int32_t y0 = dy * 15, y1 = y0 + 15;
-  const int32_t top = 13 - (int32_t)g->box_h - g->ofs_y;
-  uint32_t sum = 0;
-  for (int32_t y = y0 / cell; y * cell < y1; ++y) {
-    const int32_t sy = y - top;
-    if (sy < 0 || sy >= g->box_h) continue;
-    const int32_t wy = (y1 < (y + 1) * cell ? y1 : (y + 1) * cell) -
-                       (y0 > y * cell ? y0 : y * cell);
-    for (int32_t x = x0 / cell; x * cell < x1; ++x) {
-      const int32_t sx = x - g->ofs_x;
-      if (sx < 0 || sx >= g->box_w) continue;
-      const int32_t wx = (x1 < (x + 1) * cell ? x1 : (x + 1) * cell) -
-                         (x0 > x * cell ? x0 : x * cell);
-      const uint32_t index = (uint32_t)sy * g->box_w + (uint32_t)sx;
-      const uint32_t a = (bits[index / 4u] >> (6u - 2u * (index % 4u))) & 3u;
-      sum += a * (uint32_t)(wx * wy);
+/* Read each native coverage pixel once. The palette is prepared per layer,
+ * so neither resampling nor integer division is needed in the pixel loop. */
+static void draw_native_glyph(h2_fruit_slice_canvas_t* canvas,
+                              const h2_fruit_slice_font_strike_t* strike,
+                              const lv_font_fmt_txt_glyph_dsc_t* glyph_dsc,
+                              int32_t x, int32_t y, uint16_t color,
+                              const uint16_t* opacity) {
+  const lv_font_fmt_txt_dsc_t* dsc = strike->font->dsc;
+  const uint8_t* bits = dsc->glyph_bitmap + glyph_dsc->bitmap_index;
+  int32_t left = glyph_dsc->ofs_x;
+  if (left < 0) left = 0;
+  if (left + glyph_dsc->box_w > strike->width)
+    left = strike->width - glyph_dsc->box_w;
+  x += left;
+  y += strike->baseline - glyph_dsc->box_h - glyph_dsc->ofs_y;
+  region_t region;
+  if (!region_begin(canvas, (float)x, (float)y, (float)(x + glyph_dsc->box_w),
+                    (float)(y + glyph_dsc->box_h), &region))
+    return;
+  const unsigned shift = dsc->bpp == 4u ? 1u : 2u;
+  const unsigned position_mask = (1u << shift) - 1u;
+  const unsigned alpha_mask = (1u << dsc->bpp) - 1u;
+  for (int32_t py = region.y0; py < region.y1; ++py) {
+    uint16_t* row = row_at(canvas, py);
+    unsigned index =
+        (unsigned)(py - y) * glyph_dsc->box_w + (unsigned)(region.x0 - x);
+    for (int32_t px = region.x0; px < region.x1; ++px, ++index) {
+      const unsigned bit = (position_mask - (index & position_mask)) * dsc->bpp;
+      const unsigned coverage = (bits[index >> shift] >> bit) & alpha_mask;
+      if (coverage != 0u) row[px] = blend(row[px], color, opacity[coverage]);
     }
   }
-  return sum;
 }
 
 static void text_layer(h2_fruit_slice_canvas_t* canvas, const char* value,
                        int32_t x, int32_t y, int32_t scale, uint16_t color,
                        uint32_t alpha) {
   if (value == NULL || scale <= 0) return;
+  const h2_fruit_slice_font_strike_t* strike =
+      h2_fruit_slice_font_strike(scale);
   const int32_t height = h2_fruit_slice_text_height(value, scale);
+  uint16_t opacity[16];
+  bool palette_ready = false;
   for (uint32_t cp; (cp = h2_fruit_slice_utf8_next(&value)) != 0u;
-       x += text_advance(cp, scale)) {
+       x += text_advance(cp, scale, strike->width)) {
     if (cp < 128u) {
       const uint8_t* rows = glyph((char)cp);
       if (rows == NULL && cp != ' ') rows = k_question;
@@ -434,40 +452,45 @@ static void text_layer(h2_fruit_slice_canvas_t* canvas, const char* value,
                       color, alpha);
       continue;
     }
-    const lv_font_fmt_txt_glyph_dsc_t* g = h2_fruit_slice_font_glyph(cp);
+    const lv_font_fmt_txt_glyph_dsc_t* g =
+        h2_fruit_slice_font_glyph(strike, cp);
     if (g == NULL) {
-      /* Missing/malformed input is visible and occupies the measured cell. */
+      /* Keep the replacement mark inside the same measured cell, even
+       * when the largest native strike caps the CJK size. */
+      const int32_t max_scale = strike->width / 5;
+      const int32_t mark_scale = scale < max_scale ? scale : max_scale;
+      const int32_t left = x + (strike->width - 5 * mark_scale) / 2;
+      const int32_t top = y + (height - 7 * mark_scale) / 2;
       for (int32_t row = 0; row < 7; ++row)
         for (int32_t col = 0; col < 5; ++col)
           if (k_question[row] & (0x10u >> col))
-            fill_rect(canvas, x + col * scale, y + row * scale, scale, scale,
-                      color, alpha);
+            fill_rect(canvas, left + col * mark_scale, top + row * mark_scale,
+                      mark_scale, mark_scale, color, alpha);
       continue;
     }
-    const int32_t cell = text_advance(cp, scale) - scale;
-    const lv_font_fmt_txt_dsc_t* dsc = h2_fruit_slice_font_asset.font->dsc;
-    const uint8_t* bits = dsc->glyph_bitmap + g->bitmap_index;
-    region_t region;
-    if (!region_begin(canvas, (float)x, (float)y, (float)(x + cell),
-                      (float)(y + height), &region))
-      continue;
-    for (int32_t py = region.y0; py < region.y1; ++py) {
-      uint16_t* row = row_at(canvas, py);
-      for (int32_t px = region.x0; px < region.x1; ++px) {
-        const uint32_t coverage = font_coverage(g, bits, px - x, py - y, cell);
-        if (coverage != 0u)
-          row[px] = blend(row[px], color, coverage * alpha / (3u * 15u * 15u));
-      }
+    if (!palette_ready) {
+      const lv_font_fmt_txt_dsc_t* dsc = strike->font->dsc;
+      const unsigned maximum = (1u << dsc->bpp) - 1u;
+      for (unsigned i = 1; i <= maximum; ++i)
+        opacity[i] = (uint16_t)((i * alpha + maximum / 2u) / maximum);
+      palette_ready = true;
     }
+    draw_native_glyph(canvas, strike, g, x, y + (height - strike->height) / 2,
+                      color, opacity);
   }
 }
 
 /* Text with a soft drop shadow; (x, y) is the top-left corner. */
 static void text(h2_fruit_slice_canvas_t* canvas, const char* value, int32_t x,
                  int32_t y, int32_t scale, uint16_t color, uint32_t alpha) {
-  const int32_t offset = scale / 2 > 0 ? scale / 2 : 1;
-  text_layer(canvas, value, x + offset, y + offset, scale,
-             H2_FRUIT_SLICE_RGB(28, 16, 8), alpha * 3u / 4u);
+  const bool native = value != NULL && text_has_non_ascii(value);
+  const int32_t offset = !native && scale >= 4 ? scale / 2 : 1;
+  /* On bright buttons dark Chinese ink already has contrast. A second dark
+   * silhouette would fill the one-pixel spaces between fine strokes. */
+  if (!native || ((color >> 5) & 63u) >= 24u)
+    text_layer(canvas, value, x + offset, y + offset, scale,
+               H2_FRUIT_SLICE_RGB(28, 16, 8),
+               native ? alpha / 2u : alpha * 3u / 4u);
   text_layer(canvas, value, x, y, scale, color, alpha);
 }
 
@@ -482,6 +505,14 @@ static void text_centered(h2_fruit_slice_canvas_t* canvas, const char* value,
 static int32_t text_scale(float unit, float base) {
   const int32_t scale = (int32_t)(base * unit + 0.5f);
   return scale > 0 ? scale : 1;
+}
+
+/* Body text used to fall into the compact strike at 480 x 320. Request
+ * the body strike there, and let the available line width/height decide. */
+int32_t h2_fruit_slice_body_scale(const char* value, float unit,
+                                  float preferred) {
+  const int32_t scale = text_scale(unit, preferred);
+  return scale < 2 && unit >= 0.65f && text_has_non_ascii(value) ? 2 : scale;
 }
 
 /* Largest scale up to preferred for which text fits within max_width. */
@@ -1113,10 +1144,12 @@ static void draw_hud(h2_fruit_slice_canvas_t* canvas,
                      const h2_fruit_slice_game_t* game) {
   const float u = game->unit, w = (float)canvas->width;
   const float margin = fmaxf(8.0f, 12.0f * u);
-  const int32_t small = text_scale(u, 1.5f);
+  const int32_t small = h2_fruit_slice_body_scale(TR("SCORE"), u, 1.5f);
   const float label_h = (float)h2_fruit_slice_text_height(TR("SCORE"), small);
+  const uint32_t label_alpha =
+      game->language == H2_FRUIT_SLICE_LANGUAGE_ZH_CN ? 256u : 240u;
   text(canvas, TR("SCORE"), (int32_t)margin, (int32_t)margin, small,
-       H2_FRUIT_SLICE_RGB(240, 232, 214), 240u);
+       H2_FRUIT_SLICE_RGB(240, 232, 214), label_alpha);
   char value[16];
   (void)snprintf(value, sizeof(value), "%u", (unsigned)game->score);
   text(canvas, value, (int32_t)margin, (int32_t)(margin + label_h + 4.0f),
@@ -1128,7 +1161,7 @@ static void draw_hud(h2_fruit_slice_canvas_t* canvas,
   const float right = w - margin;
   text(canvas, TR("LIVES"),
        (int32_t)(right - (float)h2_fruit_slice_text_width(TR("LIVES"), small)),
-       (int32_t)margin, small, H2_FRUIT_SLICE_RGB(240, 232, 214), 240u);
+       (int32_t)margin, small, H2_FRUIT_SLICE_RGB(240, 232, 214), label_alpha);
   for (uint32_t i = 0; i < H2_FRUIT_SLICE_LIVES; ++i) {
     const float x = right - radius - spacing * (float)(2u - i);
     const float y = margin + label_h + 6.0f + radius;
@@ -1174,8 +1207,8 @@ static void draw_title(h2_fruit_slice_canvas_t* canvas,
       label = i == 0u ? (muted ? "FX-" : "FX+") : (muted ? "BG-" : "BG+");
     rounded_rect(canvas, r.x0, r.y0, r.x1, r.y1, 6.0f * u,
                  H2_FRUIT_SLICE_RGB(22, 18, 16), 230u);
-    const int32_t scale =
-        fit_scale(label, r.x1 - r.x0 - 6.0f, text_scale(u, 1.5f));
+    const int32_t scale = fit_scale(label, r.x1 - r.x0 - 6.0f,
+                                    h2_fruit_slice_body_scale(label, u, 1.5f));
     text_centered(
         canvas, label, (r.x0 + r.x1) * 0.5f,
         (r.y0 + r.y1 - (float)h2_fruit_slice_text_height(label, scale)) * 0.5f,
@@ -1284,9 +1317,11 @@ static void draw_button(h2_fruit_slice_canvas_t* canvas,
                                  : H2_FRUIT_SLICE_RGB(54, 36, 22);
   rounded_rect(canvas, r.x0, r.y0, r.x1, r.y1, 8.0f * game->unit,
                enabled ? color : H2_FRUIT_SLICE_RGB(38, 32, 28), 256u);
-  const int32_t scale =
-      fit_scale(label, (r.x1 - r.x0) * 0.90f,
-                text_scale(game->unit, primary ? 3.0f : 2.5f));
+  int32_t scale = fit_scale(label, (r.x1 - r.x0) * 0.90f,
+                            text_scale(game->unit, primary ? 3.0f : 2.5f));
+  while (scale > 1 &&
+         h2_fruit_slice_text_height(label, scale) + 2.0f > r.y1 - r.y0)
+    --scale;
   const float label_h = (float)h2_fruit_slice_text_height(label, scale);
   const int32_t hint_scale = text_scale(game->unit, 1.5f);
   const bool storage_hint = id == H2_FRUIT_SLICE_BUTTON_BACK &&
@@ -1339,8 +1374,9 @@ static void draw_progress_line(h2_fruit_slice_canvas_t* canvas,
                                unsigned line, float preferred, uint16_t color) {
   const float inset = fmaxf(2.0f, 4.0f * game->unit);
   const float line_h = (row.y1 - row.y0 - 2.0f * inset) / 3.0f;
-  int32_t scale = fit_scale(value, row.x1 - row.x0 - 2.0f * inset,
-                            text_scale(game->unit, preferred));
+  int32_t scale =
+      fit_scale(value, row.x1 - row.x0 - 2.0f * inset,
+                h2_fruit_slice_body_scale(value, game->unit, preferred));
   while (scale > 1 && (float)(h2_fruit_slice_text_height(value, scale) +
                               (scale / 2 > 0 ? scale / 2 : 1)) > line_h)
     --scale;

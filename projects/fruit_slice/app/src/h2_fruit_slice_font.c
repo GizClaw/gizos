@@ -97,11 +97,29 @@ static const char k_font_license[] =
     "FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM\n"
     "OTHER DEALINGS IN THE FONT SOFTWARE.\n";
 
-const h2_fruit_slice_font_asset_t h2_fruit_slice_font_asset = {
-    .font = &h2_fruit_slice_font_zh, .license_notice = k_font_license};
+extern const lv_font_t h2_fruit_slice_font_zh_compact;
+extern const lv_font_t h2_fruit_slice_font_zh_body;
+extern const lv_font_t h2_fruit_slice_font_zh_heading;
+extern const lv_font_t h2_fruit_slice_font_zh_display;
 
-const lv_font_fmt_txt_glyph_dsc_t* h2_fruit_slice_font_glyph(uint32_t cp) {
-  const lv_font_fmt_txt_dsc_t* dsc = h2_fruit_slice_font_zh.dsc;
+const h2_fruit_slice_font_asset_t h2_fruit_slice_font_asset = {
+    .strikes = {{&h2_fruit_slice_font_zh_compact, 13, 13, 11},
+                {&h2_fruit_slice_font_zh_body, 16, 17, 14},
+                {&h2_fruit_slice_font_zh_heading, 21, 21, 18},
+                {&h2_fruit_slice_font_zh_display, 26, 27, 23}},
+    .license_notice = k_font_license,
+};
+
+const h2_fruit_slice_font_strike_t* h2_fruit_slice_font_strike(int32_t scale) {
+  const unsigned count = sizeof(h2_fruit_slice_font_asset.strikes) /
+                         sizeof(h2_fruit_slice_font_asset.strikes[0]);
+  const unsigned index = scale <= 1 ? 0u : (unsigned)scale - 1u;
+  return &h2_fruit_slice_font_asset.strikes[index < count ? index : count - 1u];
+}
+
+const lv_font_fmt_txt_glyph_dsc_t* h2_fruit_slice_font_glyph(
+    const h2_fruit_slice_font_strike_t* strike, uint32_t cp) {
+  const lv_font_fmt_txt_dsc_t* dsc = strike->font->dsc;
   for (unsigned i = 0; i < dsc->cmap_num; ++i) {
     const lv_font_fmt_txt_cmap_t* map = &dsc->cmaps[i];
     if (cp < map->range_start || cp - map->range_start >= map->range_length)

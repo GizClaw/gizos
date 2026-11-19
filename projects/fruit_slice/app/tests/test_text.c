@@ -45,22 +45,30 @@ static void test_coverage(void) {
     for (uint32_t cp; (cp = h2_fruit_slice_utf8_next(&s)) != 0u;) {
       CHECK(cp != 0xFFFDu);
       if (cp < 128u) continue;
-      const lv_font_fmt_txt_glyph_dsc_t* g = h2_fruit_slice_font_glyph(cp);
-      CHECK(g != NULL && g->box_w != 0u && g->box_h != 0u);
-      /* No Chinese stroke can fall outside the normalized em cell. */
-      CHECK(13 - g->box_h - g->ofs_y >= 0);
-      CHECK(13 - g->ofs_y <= 15);
-      CHECK(g->ofs_x >= 0 && g->ofs_x + g->box_w <= 15);
+      for (int scale = 1; scale <= 4; ++scale) {
+        const h2_fruit_slice_font_strike_t* strike =
+            h2_fruit_slice_font_strike(scale);
+        const lv_font_fmt_txt_glyph_dsc_t* g =
+            h2_fruit_slice_font_glyph(strike, cp);
+        CHECK(g != NULL && g->box_w != 0u && g->box_h != 0u);
+        /* Horizontal bearings may be moved inside the cell by one pixel.
+         * Baselines are shared, so vertical overshoots must already fit. */
+        CHECK(g->box_w <= strike->width && g->ofs_x >= -1 &&
+              g->ofs_x + g->box_w <= strike->width + 1);
+        CHECK(strike->baseline - g->box_h - g->ofs_y >= 0);
+        CHECK(strike->baseline - g->ofs_y <= strike->height);
+      }
       ++glyphs;
     }
   }
   CHECK(strcmp(h2_fruit_slice_translate(H2_FRUIT_SLICE_LANGUAGE_ZH_CN, "SCORE"),
                "得分") == 0);
-  CHECK(h2_fruit_slice_font_glyph(0x751Fu) != NULL); /* 生 */
-  CHECK(h2_fruit_slice_font_glyph(0x547Du) != NULL); /* 命 */
-  CHECK(h2_fruit_slice_font_glyph(0x6216u) != NULL); /* 或 */
+  const h2_fruit_slice_font_strike_t* compact = h2_fruit_slice_font_strike(1);
+  CHECK(h2_fruit_slice_font_glyph(compact, 0x751Fu) != NULL); /* 生 */
+  CHECK(h2_fruit_slice_font_glyph(compact, 0x547Du) != NULL); /* 命 */
+  CHECK(h2_fruit_slice_font_glyph(compact, 0x6216u) != NULL); /* 或 */
   CHECK(glyphs > 300u);
-  CHECK(h2_fruit_slice_font_glyph(0x1F600u) == NULL);
+  CHECK(h2_fruit_slice_font_glyph(compact, 0x1F600u) == NULL);
   printf("validated %zu translated glyph occurrences across %zu strings\n",
          glyphs, h2_fruit_slice_translation_count);
 }
@@ -86,7 +94,7 @@ static void test_utf8(void) {
 static void test_measure_and_draw(void) {
   const char* values[] = {"切水果", "金币 999999", "翡翠太刀", "\xE4", "AB"};
   for (unsigned v = 0; v < sizeof(values) / sizeof(values[0]); ++v) {
-    for (int scale = 1; scale <= 3; ++scale) {
+    for (int scale = 1; scale <= 9; ++scale) {
       memset(pixels, 0, sizeof(pixels));
       h2_fruit_slice_canvas_t c = {
           .pixels = pixels, .width = 256, .height = 64, .stride_pixels = 256};
@@ -104,8 +112,53 @@ static void test_measure_and_draw(void) {
       CHECK(changed != 0u);
     }
   }
-  CHECK(h2_fruit_slice_text_width("中A文", 1) == 31);
-  CHECK(h2_fruit_slice_text_width("中A文", 2) == 42);
+  CHECK(h2_fruit_slice_text_width("中A文", 1) == 33);
+  CHECK(h2_fruit_slice_text_width("中A文", 2) == 46);
+}
+
+static void test_native_coverage_and_clipping(void) {
+  const uint16_t paper = 0xFFFFu, ink = 0;
+  for (int scale = 1; scale <= 4; ++scale) {
+    const h2_fruit_slice_font_strike_t* strike =
+        h2_fruit_slice_font_strike(scale);
+    const lv_font_fmt_txt_glyph_dsc_t* g =
+        h2_fruit_slice_font_glyph(strike, 0x7FE1u);
+    CHECK(g != NULL); /* 翡 */
+    const lv_font_fmt_txt_dsc_t* dsc = strike->font->dsc;
+    CHECK(dsc->bitmap_format == 0u && dsc->bpp == (scale <= 2 ? 4u : 2u));
+    const unsigned per_byte = 8u / dsc->bpp;
+    const unsigned maximum = (1u << dsc->bpp) - 1u;
+    const int left = g->ofs_x < 0 ? 0 : g->ofs_x;
+    const int top =
+        (h2_fruit_slice_text_height("翡", scale) - strike->height) / 2 +
+        strike->baseline - g->box_h - g->ofs_y;
+    h2_fruit_slice_canvas_t c = {
+        .pixels = pixels, .width = 48, .height = 48, .stride_pixels = 256};
+    memset(pixels, 0xFF, sizeof(pixels));
+    /* Crop the top and left of a dense native glyph. The board path must
+     * select exactly those source pixels with neither shadow nor resampling. */
+    const int x = -left - 1, y = -top - 2;
+    h2_fruit_slice_draw_text(&c, "翡", x, y, scale, ink, 256u);
+    unsigned solid = 0, edges = 0;
+    for (int py = 0; py < c.height; ++py) {
+      for (int px = 0; px < c.width; ++px) {
+        uint16_t expected = paper;
+        if (py + 2 < g->box_h && px + 1 < g->box_w) {
+          const unsigned i = (unsigned)((py + 2) * g->box_w + px + 1);
+          const unsigned shift = 8u - dsc->bpp * (1u + i % per_byte);
+          const unsigned a =
+              (dsc->glyph_bitmap[g->bitmap_index + i / per_byte] >> shift) &
+              maximum;
+          solid += a == maximum;
+          edges += a > 0u && a < maximum;
+          expected = h2_fruit_slice_blend(paper, ink,
+                                          (a * 256u + maximum / 2u) / maximum);
+        }
+        CHECK(pixels[py * 256 + px] == expected);
+      }
+    }
+    CHECK(solid != 0u && edges != 0u);
+  }
 }
 
 static void test_language_touch(void) {
@@ -171,6 +224,7 @@ int main(void) {
   test_coverage();
   test_utf8();
   test_measure_and_draw();
+  test_native_coverage_and_clipping();
   test_language_touch();
   puts("fruit slice text tests passed");
   return 0;

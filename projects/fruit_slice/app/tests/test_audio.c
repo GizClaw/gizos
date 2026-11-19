@@ -387,6 +387,116 @@ static void test_economy_sound_transitions(void) {
         game.progress.equipped == 1u);
 }
 
+static const h2_fruit_slice_sound_t k_weapon_hits[] = {
+    H2_FRUIT_SLICE_SOUND_SLICE,       H2_FRUIT_SLICE_SOUND_SLICE_JADE,
+    H2_FRUIT_SLICE_SOUND_SLICE_FLAME, H2_FRUIT_SLICE_SOUND_SLICE_BAMBOO,
+    H2_FRUIT_SLICE_SOUND_SLICE_FROST, H2_FRUIT_SLICE_SOUND_SLICE_STORM,
+};
+
+static void swipe(h2_fruit_slice_game_t* game, float x0, float x1, float y) {
+  h2_fruit_slice_game_pointer(game, H2_FRUIT_SLICE_POINTER_DOWN, x0, y);
+  h2_fruit_slice_game_pointer(game, H2_FRUIT_SLICE_POINTER_MOVE, x1, y);
+  h2_fruit_slice_game_pointer(game, H2_FRUIT_SLICE_POINTER_UP, x1, y);
+}
+
+static void test_weapon_hit_sounds(void) {
+  for (unsigned id = 0; id < H2_FRUIT_SLICE_WEAPONS; ++id) {
+    h2_fruit_slice_game_t game;
+    h2_fruit_slice_game_init(&game, 480, 480, 42u, 0u);
+    game.progress.coins = 120u;
+    tap_control(&game, H2_FRUIT_SLICE_BUTTON_SHOP);
+    const uint32_t button = H2_FRUIT_SLICE_BUTTON_WEAPON + id;
+    h2_fruit_slice_rect_t rect;
+    if (!h2_fruit_slice_game_button_rect(&game, button, &rect))
+      tap_control(&game, H2_FRUIT_SLICE_BUTTON_NEXT);
+    tap_control(&game, button);
+    const h2_fruit_slice_sound_t bought[] = {H2_FRUIT_SLICE_SOUND_PURCHASE,
+                                             H2_FRUIT_SLICE_SOUND_EQUIP};
+    expect_sounds(&game, bought, id == H2_FRUIT_SLICE_WEAPON_CLASSIC ? 0u : 2u);
+    CHECK(game.progress.equipped == id);
+    if (id != H2_FRUIT_SLICE_WEAPON_CLASSIC) {
+      if (!h2_fruit_slice_game_button_rect(&game, H2_FRUIT_SLICE_BUTTON_WEAPON,
+                                           &rect))
+        tap_control(&game, H2_FRUIT_SLICE_BUTTON_PREVIOUS);
+      tap_control(&game, H2_FRUIT_SLICE_BUTTON_WEAPON);
+      expect_sounds(&game, &bought[1], 1u);
+      if (!h2_fruit_slice_game_button_rect(&game, button, &rect))
+        tap_control(&game, H2_FRUIT_SLICE_BUTTON_NEXT);
+      tap_control(&game, button);
+      expect_sounds(&game, &bought[1], 1u);
+      CHECK(game.progress.equipped == id);
+    }
+    tap_control(&game, H2_FRUIT_SLICE_BUTTON_BACK);
+    tap_control(&game, H2_FRUIT_SLICE_BUTTON_START);
+    CHECK(game.phase == H2_FRUIT_SLICE_PHASE_PLAYING);
+    memset(game.fruits, 0, sizeof(game.fruits));
+    const h2_fruit_slice_sound_t swing = H2_FRUIT_SLICE_SOUND_SWING;
+    swipe(&game, 100, 380, 190);
+    expect_sounds(&game, &swing, 1u);
+
+    const h2_fruit_slice_fruit_t apple = {.active = true,
+                                          .kind = H2_FRUIT_SLICE_APPLE,
+                                          .radius = 32,
+                                          .body = {.x = 240, .y = 250}};
+    game.fruits[0] = apple;
+    swipe(&game, 232, 248, 250); /* Above Frost's minimum, below SWING. */
+    CHECK(game.score == 1u && !game.fruits[0].active);
+    expect_sounds(&game, &k_weapon_hits[id], 1u);
+
+    for (unsigned i = 0; i < 3u; ++i) {
+      game.fruits[i] = apple;
+      game.fruits[i].body.x = 150.0f + 90.0f * (float)i;
+    }
+    swipe(&game, 100, 380, 250);
+    CHECK(game.score == 7u && game.sliced_total == 4u);
+    const h2_fruit_slice_sound_t combo[] = {swing, k_weapon_hits[id],
+                                            H2_FRUIT_SLICE_SOUND_COMBO,
+                                            H2_FRUIT_SLICE_SOUND_CHEER};
+    expect_sounds(&game, combo, sizeof(combo) / sizeof(combo[0]));
+
+    game.fruits[0] = apple;
+    game.fruits[0].kind = H2_FRUIT_SLICE_BOMB;
+    swipe(&game, 232, 248, 250);
+    CHECK(game.phase == H2_FRUIT_SLICE_PHASE_GAME_OVER);
+    const h2_fruit_slice_sound_t bomb[] = {H2_FRUIT_SLICE_SOUND_FAIL,
+                                           H2_FRUIT_SLICE_SOUND_BOMB};
+    expect_sounds(&game, bomb, sizeof(bomb) / sizeof(bomb[0]));
+  }
+}
+
+static void test_rapid_weapon_mix(void) {
+  for (unsigned id = 0; id < H2_FRUIT_SLICE_WEAPONS; ++id) {
+    fixture_t f = {0};
+    h2_runtime_t rt = runtime_for(&f);
+    h2_fruit_slice_audio_t audio;
+    CHECK(h2_fruit_slice_audio_init(&audio, &rt) == H2_PAL_OK);
+    h2_fruit_slice_audio_emit(&audio, k_weapon_hits[id], 100u);
+    /* A queued hit from another equip still shares the 35 ms limit. */
+    h2_fruit_slice_audio_emit(
+        &audio, k_weapon_hits[(id + 1u) % H2_FRUIT_SLICE_WEAPONS], 134u);
+    CHECK(active(&audio) == 1u);
+    h2_fruit_slice_audio_emit(&audio, k_weapon_hits[id], 135u);
+    CHECK(active(&audio) == 2u);
+    CHECK(h2_fruit_slice_audio_suspend(&audio) == H2_PAL_OK);
+
+    for (uint64_t now = 0u; now <= 4000u; now += 5u) {
+      if (now % 35u == 0u)
+        h2_fruit_slice_audio_emit(&audio, k_weapon_hits[id], now);
+      if (now % 100u == 0u)
+        h2_fruit_slice_audio_emit(&audio, H2_FRUIT_SLICE_SOUND_SWING, now);
+      if (now % 230u == 200u) {
+        h2_fruit_slice_audio_emit(&audio, H2_FRUIT_SLICE_SOUND_COMBO, now);
+        h2_fruit_slice_audio_emit(&audio, H2_FRUIT_SLICE_SOUND_CHEER, now);
+      }
+      CHECK(h2_fruit_slice_audio_pump(&audio, now) == H2_PAL_OK);
+    }
+    printf("rapid weapon %u: S16 peak=%u, writes=%u\n", id, f.peak, f.writes);
+    CHECK(f.peak > 5000u && f.peak < 32767u);
+    CHECK(f.writes == 202u && f.opens == 1u && audio.rebases == 0u);
+    CHECK(h2_fruit_slice_audio_close(&audio) == H2_PAL_OK);
+  }
+}
+
 /* A consumer advances independently of the producer, unlike an always-ready
  * mock. A regular 30 ms render cadence must feed a 20 ms PCM device without
  * periodic holes; this failed on the original due-only scheduler. */
@@ -445,6 +555,8 @@ int main(void) {
   test_silent_prepare_preserves_gesture_timeline();
   test_pcm_deadline_lookahead();
   test_economy_sound_transitions();
+  test_weapon_hit_sounds();
+  test_rapid_weapon_mix();
   test_bank_mute_and_lifecycle();
   test_bursts_backpressure_and_partial_failure();
   test_resampling_and_music_loop();

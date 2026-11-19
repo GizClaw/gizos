@@ -113,6 +113,7 @@ typedef struct h2_fruit_slice_weapon {
   float minimum_stroke; /**< Pixels at a 480-pixel short side. */
   float vertical_reach; /**< Alternate reach when |dy| >= 2*|dx|. */
   uint8_t trail_style;  /**< 0 classic, 1 bamboo, 2 frost, 3 lightning. */
+  h2_fruit_slice_sound_t hit_sound;
   const char* handling;
 } h2_fruit_slice_weapon_t;
 
