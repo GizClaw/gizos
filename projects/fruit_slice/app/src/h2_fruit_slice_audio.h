@@ -54,8 +54,9 @@ int h2_fruit_slice_audio_prepare(h2_fruit_slice_audio_t* audio);
  * now_ms is monotonic wall time. BOMB clears lower-priority voices. */
 void h2_fruit_slice_audio_emit(h2_fruit_slice_audio_t* audio,
                                h2_fruit_slice_sound_t sound, uint64_t now_ms);
-/* Changes mute flags immediately and persists independently of game/profile.
- * Flushes queued PCM so muting cannot leave old audio playing. */
+/* Stop/flush playback, then apply and persist independent mute flags. Failed
+ * shutdown retains the previous applied value so the App retries the request.
+ * A persistence failure leaves the successfully applied mute in memory. */
 int h2_fruit_slice_audio_set_mute(h2_fruit_slice_audio_t* audio, uint8_t mute);
 /* At most three native frames per call, at most 20 ms of lookahead, write
  * timeout zero, no backlog replay. Service at frame boundaries/during waits. */

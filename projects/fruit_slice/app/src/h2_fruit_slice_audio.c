@@ -118,8 +118,10 @@ int h2_fruit_slice_audio_set_mute(h2_fruit_slice_audio_t* audio, uint8_t mute) {
   if (audio == NULL || mute > 3u) return H2_PAL_ERR_INVALID_ARG;
   if (audio->mute == mute) return H2_PAL_OK;
   int rc = h2_fruit_slice_audio_suspend(audio);
-  audio->mute = mute;
   if (rc != H2_PAL_OK) return rc;
+  /* Keep the previous applied state until shutdown really completes. The
+   * App retries a differing requested mute on its next frame. */
+  audio->mute = mute;
   h2_pal_pref_namespace_t* ns = NULL;
   rc = h2_pal_pref_open(audio->runtime->pref, H2_FRUIT_SLICE_PREF_NAMESPACE,
                         H2_PAL_PREF_OPEN_READ_WRITE, &ns);

@@ -69,7 +69,9 @@ static int write_pcm(h2_pal_audio_track_t* track, const h2_audio_frame_t* frame,
     return H2_PAL_ERR_WOULD_BLOCK;
   }
   const uint64_t t = now();
-  if (s->writes) {
+  /* Reopened tracks start a new consumer epoch; intentional mute/pause time
+   * is not missing PCM from an active stream. */
+  if (s->last != 0u) {
     if (t > s->until) s->missing += t - s->until;
     if (t - s->last > s->max_gap) s->max_gap = t - s->last;
   }
@@ -280,6 +282,34 @@ static void test_pcm_identity(void) {
     }
   }
 }
+static void test_mute_shutdown_retry(void) {
+  for (unsigned failure = 0u; failure < 2u; ++failure) {
+    reset_sink();
+    h2_runtime_t rt = direct_runtime();
+    h2_fruit_slice_audio_t a;
+    assert(h2_fruit_slice_audio_init(&a, &rt) == H2_PAL_OK);
+    a.worker_requested = true;
+    assert(h2_fruit_slice_audio_pump(&a, now()) == H2_PAL_OK);
+    delay(65u);
+    if (failure == 0u)
+      queue_close_failures = 1;
+    else
+      join_failures = 1;
+    assert(h2_fruit_slice_audio_set_mute(&a, 3u) ==
+           (failure == 0u ? H2_PAL_ERR_IO : H2_PAL_ERR_BUSY));
+    assert(a.mute == 0u && a.worker && live_queues == 2u);
+    /* The App still sees requested!=applied and retries next frame. Its
+     * intervening service must not disable audio after a failed join. */
+    assert(h2_fruit_slice_audio_pump(&a, now()) == H2_PAL_OK);
+    assert(h2_fruit_slice_audio_set_mute(&a, 3u) == H2_PAL_ERR_UNSUPPORTED);
+    assert(a.mute == 3u && !a.worker && !a.track && live_queues == 0u);
+    const unsigned written = sink.writes;
+    delay(50u);
+    assert(sink.writes == written && sink.opens == sink.closes);
+    assert(h2_fruit_slice_audio_close(&a) == H2_PAL_OK);
+  }
+}
+
 static void test_provider_failures(void) {
   for (unsigned failure = 0u; failure < 2u; ++failure) {
     reset_sink();
@@ -322,10 +352,12 @@ static void test_backpressure_error_and_burst(void) {
   assert(sink.opens == 1 && sink.closes == 1);
 }
 
-/* Public App test with real Runtime wrappers, quantized waits and synchronous
- * display/Pref pressure. Gameplay still receives its normal touch transitions.
+/* Public App test with real Runtime wrappers, a 30 ms frame period and
+ * synchronous display/Pref pressure. Touch transitions use production routing.
  */
 static unsigned frames, commits, touch_phase, display_pressure_ms;
+static unsigned mute_failure_mode, audio_setting_commits, mute_writes;
+static uint32_t stored_audio_setting, pending_audio_setting;
 static const unsigned event_frames[] = {5u, 35u, 40u, 45u, 65u, 85u, 90u};
 static const unsigned event_buttons[] = {
     H2_FRUIT_SLICE_BUTTON_CARDS, H2_FRUIT_SLICE_BUTTON_BACK,
@@ -373,6 +405,30 @@ static int touch_info(void* u, h2_pal_touch_info_t* i) {
 static int touch_poll(void* u, h2_pal_touch_event_t* e) {
   (void)u;
   const unsigned event = touch_phase / 2u;
+  if (mute_failure_mode != 0u) {
+    const unsigned mute_frames[] = {5u, 20u, 40u, 70u};
+    if (event >= 4u || frames < mute_frames[event])
+      return H2_PAL_ERR_WOULD_BLOCK;
+    h2_fruit_slice_game_t g;
+    h2_fruit_slice_game_init(&g, 480, 320, 42, 0);
+    h2_fruit_slice_rect_t r = {20, 100, 20,
+                               100}; /* Gesture without a control. */
+    if (event != 0u)
+      assert(h2_fruit_slice_game_button_rect(
+          &g,
+          event == 2u ? H2_FRUIT_SLICE_BUTTON_MUSIC : H2_FRUIT_SLICE_BUTTON_SFX,
+          &r));
+    if (event == 2u && touch_phase % 2u != 0u) {
+      if (mute_failure_mode == 1u)
+        queue_close_failures = 1;
+      else
+        join_failures = 1;
+    }
+    *e = (h2_pal_touch_event_t){
+        (touch_phase++ % 2u) ? H2_PAL_TOUCH_EVENT_UP : H2_PAL_TOUCH_EVENT_DOWN,
+        (uint16_t)((r.x0 + r.x1) / 2), (uint16_t)((r.y0 + r.y1) / 2)};
+    return H2_PAL_OK;
+  }
   if (event >= sizeof(event_frames) / sizeof(event_frames[0]) ||
       frames < event_frames[event])
     return H2_PAL_ERR_WOULD_BLOCK;
@@ -394,9 +450,18 @@ static const h2_pal_touch_vtable_t tvt = {.open = touch_open,
 static const h2_pal_touch_api_t touch_api = {.vtable = &tvt};
 static int pref_get(h2_pal_pref_namespace_t* n, const char* k, uint32_t* v) {
   (void)n;
-  (void)k;
-  (void)v;
+  if (strcmp(k, "audio_v1") == 0 && stored_audio_setting != 0u) {
+    *v = stored_audio_setting;
+    return H2_PAL_OK;
+  }
   return H2_PAL_ERR_NOT_FOUND;
+}
+static int pref_set_u32(h2_pal_pref_namespace_t* n, const char* key,
+                        uint32_t value) {
+  (void)n;
+  assert(strcmp(key, "audio_v1") == 0);
+  pending_audio_setting = value;
+  return H2_PAL_OK;
 }
 static int pref_get_blob(h2_pal_pref_namespace_t* n, const h2_pal_mem_api_t* m,
                          const char* k, void** p, size_t* s) {
@@ -420,14 +485,20 @@ static int pref_set_blob(h2_pal_pref_namespace_t* n, const char* k,
 static int pref_commit(h2_pal_pref_namespace_t* n) {
   (void)n;
   ++commits;
+  if (pending_audio_setting != 0u) {
+    stored_audio_setting = pending_audio_setting;
+    ++audio_setting_commits;
+  }
   delay(39u);
   return 0;
 }
 static int pref_close(h2_pal_pref_namespace_t* n) {
   (void)n;
+  pending_audio_setting = 0u;
   return 0;
 }
 static h2_pal_pref_namespace_t ns = {.get_u32 = pref_get,
+                                     .set_u32 = pref_set_u32,
                                      .get_blob = pref_get_blob,
                                      .set_blob = pref_set_blob,
                                      .commit = pref_commit,
@@ -444,12 +515,30 @@ static const h2_pal_pref_vtable_t pvt = {.open = pref_open};
 static const h2_pal_pref_api_t pref_api = {.vtable = &pvt};
 static bool exit_app(void* u) {
   (void)u;
+  if (mute_failure_mode != 0u &&
+      (frames == 60u || frames == 69u || frames == 95u)) {
+    pthread_mutex_lock(&sink.lock);
+    if (frames == 95u) {
+      assert(sink.opens == 3u && sink.writes > mute_writes);
+      assert((stored_audio_setting & 3u) == H2_FRUIT_SLICE_MUTE_MUSIC);
+      assert(audio_setting_commits == 3u);
+    } else {
+      assert(sink.opens == 2u && sink.closes == 2u);
+      assert((stored_audio_setting & 3u) == 3u && audio_setting_commits == 2u);
+      if (frames == 60u)
+        mute_writes = sink.writes;
+      else
+        assert(sink.writes == mute_writes);
+    }
+    pthread_mutex_unlock(&sink.lock);
+  }
   return ++frames > 120u;
 }
 
 static uint64_t run_app(bool worker, unsigned pressure) {
   reset_sink();
   frames = commits = touch_phase = 0;
+  stored_audio_setting = pending_audio_setting = audio_setting_commits = 0u;
   display_pressure_ms = pressure;
   h2_runtime_config_t c = {
       .board = "continuity", .chip = "host", .target = "desktop"};
@@ -491,7 +580,7 @@ static uint64_t run_app(bool worker, unsigned pressure) {
   c.log = h2_desktop_platform_log_api();
   c.time = h2_desktop_platform_time_api();
   c.task = &task_api;
-  c.queue = h2_desktop_platform_queue_api();
+  c.queue = &queue_api;
   c.sync = h2_desktop_platform_sync_api();
   c.display = &display_api;
   c.touch = &touch_api;
@@ -506,7 +595,15 @@ static uint64_t run_app(bool worker, unsigned pressure) {
   assert(h2_fruit_slice_run(rt, &cfg) == 0);
   assert(h2_runtime_destroy(&rt) == 0);
   assert(sink.opens == sink.closes && sink.writes > 0u && commits >= 2u);
-  assert(touch_phase == 2u * sizeof(event_frames) / sizeof(event_frames[0]));
+  assert(live_queues == 0u);
+  if (mute_failure_mode != 0u) {
+    assert(touch_phase == 8u && sink.opens == 3u &&
+           audio_setting_commits == 3u);
+    printf("public-App mute retry mode=%u: stopped, persisted and resumed\n",
+           mute_failure_mode);
+  } else {
+    assert(touch_phase == 2u * sizeof(event_frames) / sizeof(event_frames[0]));
+  }
   printf(
       "public-App worker=%d album_pressure=%u missing_ms=%llu refill_gap=%llu writes=%u pref_commits=%u\n",
       worker, pressure, (unsigned long long)sink.missing,
@@ -517,6 +614,7 @@ int main(void) {
   init_queue_api();
   test_pcm_identity();
   test_owner_lifecycle_and_latency();
+  test_mute_shutdown_retry();
   test_provider_failures();
   test_backpressure_error_and_burst();
   const unsigned pressures[] = {154u, 180u};
@@ -525,5 +623,7 @@ int main(void) {
     const uint64_t independent = run_app(true, pressures[i]);
     assert(cooperative >= 200u && independent < cooperative / 4u);
   }
+  for (mute_failure_mode = 1u; mute_failure_mode <= 2u; ++mute_failure_mode)
+    (void)run_app(true, 8u);
   puts("audio worker continuity tests passed");
 }

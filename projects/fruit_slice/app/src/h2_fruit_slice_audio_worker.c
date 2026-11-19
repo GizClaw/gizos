@@ -145,7 +145,10 @@ void h2_fruit_slice_audio_worker_emit(h2_fruit_slice_audio_t* audio,
 
 int h2_fruit_slice_audio_worker_poll(h2_fruit_slice_audio_t* audio) {
   struct h2_fruit_slice_audio_worker* w = audio->worker;
-  if (w->closing) return H2_PAL_ERR_INVALID_STATE;
+  /* A failed join leaves an intentionally closed producer for the caller to
+   * retire on its next mute/lifecycle retry. Do not restart it or turn this
+   * pending shutdown into the App's permanent audio-disable error path. */
+  if (w->closing) return H2_PAL_OK;
   if (!w->enabled) {
     const audio_command_t command = {.enable = true};
     int rc =
