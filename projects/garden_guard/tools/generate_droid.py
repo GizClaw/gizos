@@ -35,6 +35,14 @@ def main():
         worker = subset.Subsetter(options=options)
         worker.populate(unicodes=sorted(chars))
         worker.subset(font)
+        outlines = font["glyf"]
+        for name in font.getGlyphOrder():
+            glyph = outlines[name]
+            if glyph.numberOfContours > 0:
+                # The Android font predates modern browser validation. Retain
+                # contour semantics and let fonttools re-encode the storage flags.
+                for point, flag in enumerate(glyph.flags):
+                    glyph.flags[point] = flag & 1
         font.flavor = "woff"
         font.save(WEB / "droid-sans-fallback.woff")
     (CANVAS / "h2_garden_guard_zh.inc").write_bytes(bitmap)
