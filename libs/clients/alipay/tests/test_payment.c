@@ -287,7 +287,7 @@ static void query(fixture_t* f) {
     if (i == 4u) assert(length == 7u && memcmp(ext, "limited", 7u) == 0);
   }
   size_t length = 1u;
-  ext[0] = (char)0xa5;
+  memset(ext, 0xa5, 1u);
   f->response = bodies[4];
   assert(h2_alipay_client_query_order_result(&f->config, first_code, &result,
                                              ext,
