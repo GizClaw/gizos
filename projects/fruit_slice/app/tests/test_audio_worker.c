@@ -137,6 +137,8 @@ static void reset_sink(void) {
 static int join_failures, start_failures, queue_create_failures,
     queue_close_failures, queue_partial_close_failures;
 static unsigned live_queues, queue_close_calls, command_sends;
+static h2_pal_queue_t* worker_command_queue;
+static unsigned finite_command_waits, max_command_wait_ms;
 static int queue_create(void* u, const h2_pal_queue_config_t* c,
                         h2_pal_queue_t** q) {
   (void)u;
@@ -144,6 +146,8 @@ static int queue_create(void* u, const h2_pal_queue_config_t* c,
     return H2_PAL_ERR_NO_MEMORY;
   int rc = h2_pal_queue_create(h2_desktop_platform_queue_api(), c, q);
   if (!rc) ++live_queues;
+  if (!rc && c->name && strcmp(c->name, "fruit-audio-commands") == 0)
+    worker_command_queue = *q;
   return rc;
 }
 static void queue_destroy(void* u, h2_pal_queue_t* q) {
@@ -151,6 +155,7 @@ static void queue_destroy(void* u, h2_pal_queue_t* q) {
   if (q) {
     assert(live_queues);
     --live_queues;
+    if (q == worker_command_queue) worker_command_queue = NULL;
   }
   h2_pal_queue_destroy(h2_desktop_platform_queue_api(), q);
 }
@@ -176,6 +181,20 @@ static int queue_send(void* u, h2_pal_queue_t* q, const void* item,
   return h2_pal_queue_send(h2_desktop_platform_queue_api(), q, item,
                            timeout_ms);
 }
+static int queue_recv(void* u, h2_pal_queue_t* q, void* item,
+                      uint32_t timeout_ms) {
+  (void)u;
+  if (q == worker_command_queue && timeout_ms != 0u &&
+      timeout_ms != H2_PAL_QUEUE_WAIT_FOREVER) {
+    /* Nominal service waits must fit inside one 320-sample/16kHz PCM frame.
+     * This budget is independent of any extra delay imposed by the host. */
+    assert(timeout_ms <= 20u);
+    ++finite_command_waits;
+    if (timeout_ms > max_command_wait_ms) max_command_wait_ms = timeout_ms;
+  }
+  return h2_pal_queue_recv(h2_desktop_platform_queue_api(), q, item,
+                           timeout_ms);
+}
 static h2_pal_queue_vtable_t queue_vt;
 static h2_pal_queue_api_t queue_api;
 static void init_queue_api(void) {
@@ -184,6 +203,7 @@ static void init_queue_api(void) {
   queue_vt.destroy = queue_destroy;
   queue_vt.close = queue_close;
   queue_vt.send = queue_send;
+  queue_vt.recv = queue_recv;
   queue_api =
       (h2_pal_queue_api_t){h2_desktop_platform_queue_api()->user, &queue_vt};
 }
@@ -614,6 +634,7 @@ static bool exit_app(void* u) {
   if ((mute_failure_mode != 0u || mute_first_gesture) &&
       (frames == 60u || frames == 69u || frames == 95u)) {
     const unsigned stopped_tracks = mute_first_gesture ? 1u : 2u;
+    if (frames == 95u) wait_for_pcm(mute_writes + 1u);
     pthread_mutex_lock(&sink.lock);
     if (frames == 95u) {
       assert(sink.opens == stopped_tracks + 1u && sink.writes > mute_writes);
@@ -640,6 +661,7 @@ static uint64_t run_app(bool worker, unsigned pressure) {
       worker && mute_failure_mode == 0u && !mute_first_gesture;
   first_album_progress = false;
   display_progress_checks = pref_progress_checks = 0u;
+  finite_command_waits = max_command_wait_ms = 0u;
   max_display_hold_ms = max_pref_hold_ms = 0u;
   pending_audio_setting = audio_setting_commits = 0u;
   stored_audio_setting =
@@ -713,15 +735,15 @@ static uint64_t run_app(bool worker, unsigned pressure) {
   }
   if (monitor_blocked_audio) {
     assert(first_album_progress && display_progress_checks >= 2u &&
-           pref_progress_checks >= 2u);
+           pref_progress_checks >= 2u && finite_command_waits > 0u);
   }
   printf(
-      "public-App worker=%d album_pressure=%u missing_ms=%llu refill_gap=%llu writes=%u pref_commits=%u display_progress=%u pref_progress=%u display_hold_max=%llu pref_hold_max=%llu\n",
+      "public-App worker=%d album_pressure=%u missing_ms=%llu refill_gap=%llu writes=%u pref_commits=%u display_progress=%u pref_progress=%u display_hold_max=%llu pref_hold_max=%llu nominal_wait_max=%u\n",
       worker, pressure, (unsigned long long)sink.missing,
       (unsigned long long)sink.max_gap, sink.writes, commits,
       display_progress_checks, pref_progress_checks,
       (unsigned long long)max_display_hold_ms,
-      (unsigned long long)max_pref_hold_ms);
+      (unsigned long long)max_pref_hold_ms, max_command_wait_ms);
   return sink.missing;
 }
 int main(void) {
