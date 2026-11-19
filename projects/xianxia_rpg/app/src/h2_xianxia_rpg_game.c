@@ -237,7 +237,7 @@ static void compute_layout(h2_xianxia_rpg_game_t* game) {
 
   l->glyph_panel = rect(8, 8, w - 16, h - 16);
   const int32_t glyph_w = (w - 48) / 3;
-  const int32_t glyph_h = h < 300 ? 54 : 72;
+  const int32_t glyph_h = h < 300 ? 42 : 72;
   for (int32_t i = 0; i < 3; ++i)
     l->glyph_choices[i] = rect(16 + i * (glyph_w + 8), h / 2, glyph_w, glyph_h);
   l->glyph_back = rect(w / 2 - 60, h - 48, 120, 36);
