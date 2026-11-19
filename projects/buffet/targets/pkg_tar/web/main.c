@@ -38,6 +38,7 @@ static void poll(void* user, h2_buffet_input_t* input) {
   if (pressed & 32) input->actions |= H2_BUFFET_GOAL;
   if (pressed & 64) input->actions |= H2_BUFFET_LANGUAGE;
   if (pressed & 128) input->actions |= H2_BUFFET_ALBUM;
+  if (pressed & 256) input->actions |= H2_BUFFET_SOUND;
   input->inactive = atomic_load(&hidden);
 }
 
@@ -72,7 +73,7 @@ static h2_runtime_config_t runtime_config(h2_web_platform_t* platform) {
   config.power = h2_pal_unsupported_power_api();
   config.camera = h2_pal_unsupported_camera_api();
   config.display = h2_web_platform_display_api(platform);
-  config.audio = h2_pal_unsupported_audio_api();
+  config.audio = h2_web_platform_audio_api(platform);
   config.audio_decoder = h2_pal_unsupported_audio_decoder_api();
   config.periph = h2_pal_unsupported_periph_api();
   config.button = h2_pal_unsupported_button_api();

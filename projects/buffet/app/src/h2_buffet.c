@@ -1,6 +1,7 @@
 #include "h2_buffet.h"
 #include "buffet_render.h"
 #include "buffet_cards.h"
+#include "buffet_audio.h"
 
 #include <limits.h>
 #include <stdio.h>
@@ -13,6 +14,7 @@ enum {
 };
 typedef struct {
   bf_game_t game;
+  bf_audio_t audio;
   uint16_t* frame;
   uint16_t* ground;
   uint16_t* previous;
@@ -114,6 +116,7 @@ static int run(h2_runtime_t* rt, bf_session_t* s,
   s->previous = h2_pal_mem_alloc(rt->mem, size);
   if (!s->frame || !s->ground || !s->previous) return H2_PAL_ERR_NO_MEMORY;
   bf_init(&s->game, cfg && cfg->keyboard);
+  bf_audio_init(&s->audio, rt, &s->game);
   s->game.album.reduced_motion = cfg && cfg->reduced_motion;
   (void)bf_cards_sync(rt->pref, &s->game.album, &s->pending_cards);
   s->first = true;
@@ -134,6 +137,7 @@ static int run(h2_runtime_t* rt, bf_session_t* s,
     rc = h2_pal_time_get_monotonic_ms(rt->time, &now);
     if (rc != H2_PAL_OK) return rc;
     bf_phase_t phase = s->game.phase;
+    bf_sound_state_t sound = bf_sound_state(&s->game);
     bf_album_t album = s->game.album;
     int cover = s->game.cover;
     bool en = s->game.en, tasting = s->game.tasting;
@@ -154,8 +158,9 @@ static int run(h2_runtime_t* rt, bf_session_t* s,
       (void)bf_cards_sync(rt->pref, &s->game.album, &s->pending_cards);
       s->pref_retry_ms = now + 2400;
     }
-    if (s->first || s->game.phase != phase || cover != s->game.cover ||
-        album.open != s->game.album.open ||
+    bf_audio_update(&s->audio, sound, &s->game, now, input.inactive);
+    if (s->first || sound.muted != s->game.muted || s->game.phase != phase ||
+        cover != s->game.cover || album.open != s->game.album.open ||
         album.this_meal != s->game.album.this_meal ||
         album.selected != s->game.album.selected ||
         album.reveal_ms != s->game.album.reveal_ms ||
@@ -206,6 +211,8 @@ h2_pal_result_t h2_buffet_run(h2_runtime_t* rt, const h2_buffet_config_t* cfg) {
     int closed = h2_pal_display_close(rt->display);
     if (rc == H2_PAL_OK) rc = closed;
   }
+  int audio_closed = bf_audio_close(&s->audio);
+  if (rc == H2_PAL_OK) rc = audio_closed;
   h2_pal_mem_free(rt->mem, s->frame);
   h2_pal_mem_free(rt->mem, s->ground);
   h2_pal_mem_free(rt->mem, s->previous);

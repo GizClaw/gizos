@@ -22,6 +22,7 @@ cc_library(
     deps = [
         "//libs/sync/atomic/providers/c11",
         "//pal:unsupported",
+        "//pal/providers/backends/portaudio",
         "//pal/providers/backends/sdl3",
         "//pal/providers/backends/sqlite",
         "//pal/providers/platforms/desktop/pal_core:core",

@@ -28,7 +28,7 @@
         statusLine.textContent = '';
         Module._bf_web_desktop(window.matchMedia('(pointer: fine)').matches ? 1 : 0,
                               window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 1 : 0);
-        const keys = { ArrowLeft: 1, ArrowRight: 2, ArrowUp: 4, ArrowDown: 8, Space: 16, Enter: 16, KeyG: 32, KeyL: 64, KeyC: 128 };
+        const keys = { ArrowLeft: 1, ArrowRight: 2, ArrowUp: 4, ArrowDown: 8, Space: 16, Enter: 16, KeyG: 32, KeyL: 64, KeyC: 128, KeyM: 256 };
         for (const eventName of ['keydown', 'keyup']) {
           window.addEventListener(eventName, event => {
             const bit = keys[event.code];

@@ -4,6 +4,7 @@
 #include "h2_sdl3.h"
 #include "h2_buffet.h"
 #include "buffet_desktop_pref.h"
+#include "h2_portaudio.h"
 
 #include <stdio.h>
 
@@ -46,6 +47,9 @@ static void poll(void* user, h2_buffet_input_t* input) {
         break;
       case H2_SDL3_KEY_G:
         if (pressed) input->actions |= H2_BUFFET_GOAL;
+        break;
+      case H2_SDL3_KEY_M:
+        if (pressed) input->actions |= H2_BUFFET_SOUND;
         break;
       case H2_SDL3_KEY_C:
         if (pressed) input->actions |= H2_BUFFET_ALBUM;
@@ -127,6 +131,13 @@ int main(void) {
   }
   h2_sqlite_t* storage = NULL;
   h2_runtime_config_t config = runtime_config(window.sdl);
+  h2_portaudio_t* speaker = NULL;
+  const h2_portaudio_config_t speaker_config = {.allocator = config.mem,
+                                                .queue = config.queue,
+                                                .sync = config.sync,
+                                                .require_real_devices = 1};
+  if (h2_portaudio_create(&speaker_config, &speaker) == H2_PAL_OK)
+    config.audio = h2_portaudio_audio(speaker);
   if (buffet_desktop_pref_create(NULL, &storage) == H2_PAL_OK)
     config.pref = h2_sqlite_pref_api(storage);
   h2_runtime_t* runtime = NULL;
@@ -139,6 +150,7 @@ int main(void) {
   const int destroyed = runtime != NULL ? h2_runtime_destroy(&runtime) : 0;
   if (destroyed == H2_PAL_OK) {
     h2_sdl3_destroy(window.sdl);
+    if (speaker) h2_portaudio_destroy(speaker);
     if (storage) h2_sqlite_destroy(storage);
   }
   if (rc != H2_PAL_OK || destroyed != H2_PAL_OK) {

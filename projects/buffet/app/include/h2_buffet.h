@@ -19,6 +19,7 @@ typedef enum h2_buffet_action {
   H2_BUFFET_GOAL = 8,
   H2_BUFFET_LANGUAGE = 16,
   H2_BUFFET_ALBUM = 32,
+  H2_BUFFET_SOUND = 64,
 } h2_buffet_action_t;
 
 /** Optional host controls. Axes are held directions in -1..1. Actions are

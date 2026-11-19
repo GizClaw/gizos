@@ -284,11 +284,12 @@ void bf_init(bf_game_t* g, bool keyboard) {
   g->last_dish = -1;
 }
 static void buy(bf_game_t* g) {
-  bool en = g->en, tasting = g->tasting;
+  bool en = g->en, tasting = g->tasting, muted = g->muted;
   int cover = g->cover;
   bf_album_t album = g->album;
   bf_init(g, g->keyboard);
   g->album.owned = album.owned;
+  g->muted = muted;
   g->album.reduced_motion = album.reduced_motion;
   g->album.unsaved = album.unsaved;
   g->en = en;
@@ -319,6 +320,7 @@ static void eat(bf_game_t* g, int slot) {
   g->player.face = facing(p.x - g->player.pos.x, p.y - g->player.pos.y);
 }
 void bf_action(bf_game_t* g, unsigned actions) {
+  if (actions & H2_BUFFET_SOUND) g->muted = !g->muted;
   if (g->album.open) {
     if (actions & (H2_BUFFET_CONFIRM | H2_BUFFET_ALBUM)) g->album.open = false;
     if (actions & H2_BUFFET_NEXT) select_card(g, 1);
@@ -349,7 +351,15 @@ void bf_action(bf_game_t* g, unsigned actions) {
     }
   }
 }
+bf_rect_t bf_sound_bounds(const bf_game_t* g) {
+  return g->phase == BF_DINING ? (bf_rect_t){594, 0, 43, 42}
+                               : (bf_rect_t){523, 9, 74, 38};
+}
 void bf_tap(bf_game_t* g, float x, float y) {
+  if (bf_in(bf_sound_bounds(g), x, y)) {
+    bf_action(g, H2_BUFFET_SOUND);
+    return;
+  }
   if (g->album.open) {
     if (bf_in(bf_album_back, x, y))
       g->album.open = false;

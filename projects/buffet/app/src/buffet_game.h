@@ -49,7 +49,7 @@ typedef struct {
   bf_phase_t phase;
   bf_album_t album;
   float gauge_milli;
-  bool en, tasting, keyboard;
+  bool en, tasting, keyboard, muted;
   int cover, elapsed_ms, ambient_ms, receipt_ms, red_ms, recovered_ms,
       fullness_milli, value, purse, eaten, returned;
   int bites[BF_DISHES], varieties, last_dish, bite_ms, turn_ms, feedback_ms;
@@ -72,6 +72,7 @@ extern const bf_rect_t bf_album_button, bf_round_cards, bf_album_back,
     bf_album_tab;
 void bf_init(bf_game_t* g, bool keyboard);
 void bf_action(bf_game_t* g, unsigned actions);
+bf_rect_t bf_sound_bounds(const bf_game_t* g);
 void bf_tap(bf_game_t* g, float x, float y);
 void bf_step(bf_game_t* g, int dt_ms, int dx, int dy);
 bf_place_t bf_belt(float lap);

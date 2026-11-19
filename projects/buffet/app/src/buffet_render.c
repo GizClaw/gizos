@@ -435,6 +435,24 @@ static void album(bf_canvas_t c, const bf_game_t* g) {
     bf_center(c, BF_SMALL, 400, 444, light,
               T("卡册暂存于本次游戏", "Cards kept for this session"));
 }
+static void sound_toggle(bf_canvas_t c, const bf_game_t* g) {
+  bf_rect_t b = bf_sound_bounds(g);
+  bool play = g->phase == BF_DINING;
+  int x = b.x + (play ? 16 : 4), y = b.y + (play ? 17 : 18);
+  if (play) bf_ellipse(c, x + 4, y, 11, 10, C(0x3d4b42), 225);
+  bf_box(c, x - 4, y - 2, 4, 5, light);
+  for (int i = 0; i < 5; i++) bf_box(c, x + i, y - 2 - i / 2, 1, 5 + i, light);
+  if (g->muted) {
+    bf_line(c, x - 5, y + 6, x + 10, y - 6, C(0xf2ad8b));
+  } else {
+    bf_line(c, x + 7, y - 3, x + 9, y - 1, light);
+    bf_line(c, x + 9, y - 1, x + 9, y + 1, light);
+    bf_line(c, x + 9, y + 1, x + 7, y + 3, light);
+  }
+  if (!play)
+    bf_text(c, BF_SMALL, x + 15, y + 5, light,
+            g->muted ? T("静音", "Muted") : T("声音", "Sound"));
+}
 void bf_paint_scene(bf_canvas_t c, const bf_game_t* g) {
   c.en = g->en;
   if (g->album.open)
@@ -445,4 +463,5 @@ void bf_paint_scene(bf_canvas_t c, const bf_game_t* g) {
     foyer(c, g);
   else
     receipt(c, g);
+  sound_toggle(c, g);
 }
