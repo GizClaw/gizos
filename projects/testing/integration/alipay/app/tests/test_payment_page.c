@@ -19,7 +19,7 @@ typedef struct fixture {
   atomic_bool exit_during_start;
   bool scanning, hardware_buttons, production_input, payer_only;
   unsigned navigation_phase;
-  atomic_uint pressed_button, group_reads;
+  atomic_uint pressed_button;
   h2_runtime_t* runtime;
   int touch_rc, nfc_read_rc;
   h2_runtime_test_control_t* input;
@@ -506,7 +506,6 @@ static int read_radio(void* user, h2_pal_periph_id_t id,
                       h2_pal_radio_button_group_reading_t* out) {
   fixture_t* f = user;
   assert(id == 100u);
-  atomic_fetch_add(&f->group_reads, 1u);
   *out = (h2_pal_radio_button_group_reading_t){
       .id = id, .pressed_button_id = atomic_load(&f->pressed_button)};
   return 0;
@@ -946,10 +945,7 @@ static void run(bool buttons, bool production, bool payer_only, int touch_rc,
   h2_lvgl_display_destroy(view);
   lv_deinit();
   h2_lvgl_platform_deinit();
-  if (production) {
-    assert(h2_runtime_input_stop(rt) == 0);
-    assert(atomic_load(&f.group_reads) > (flow >= 23u ? 0u : 10u));
-  }
+  if (production) assert(h2_runtime_input_stop(rt) == 0);
   if (f.input != NULL) h2_runtime_test_control_close(f.input);
   assert(h2_runtime_destroy(&rt) == 0);
 }

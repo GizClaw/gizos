@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
@@ -113,9 +114,11 @@ func TestPrivateBytesAndCodeAreExact(t *testing.T) {
 	if err != nil || string(index) != string(raw) {
 		t.Fatal("raw bytes changed")
 	}
-	mode, err := os.Stat(filepath.Join(run, "binding-code.txt"))
-	if err != nil || mode.Mode().Perm() != 0600 {
-		t.Fatal("private file permissions")
+	if runtime.GOOS != "windows" {
+		info, err := os.Stat(filepath.Join(run, "binding-code.txt"))
+		if err != nil || info.Mode().Perm() != 0600 {
+			t.Fatalf("private file permissions: %v %v", info, err)
+		}
 	}
 	data, err := os.ReadFile(filepath.Join(run, "events.jsonl"))
 	if err != nil {
