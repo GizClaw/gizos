@@ -1,5 +1,6 @@
 #include "h2_fruit_slice_game.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -135,7 +136,7 @@ static void test_combo_awards_bonus(void) {
   bool popup = false;
   for (unsigned i = 0; i < H2_FRUIT_SLICE_MAX_POPUPS; ++i)
     popup |=
-        game.popups[i].active && strcmp(game.popups[i].text, "COMBO +3") == 0;
+        game.popups[i].active && strcmp(game.popups[i].text, "连击 +3") == 0;
   CHECK(popup);
 
   /* Two fruits in one stroke stay a plain score. */
@@ -179,6 +180,16 @@ static void test_misses_cost_lives(void) {
   CHECK(!h2_fruit_slice_game_take_best(&game, NULL));
 }
 
+static void dismiss_cards(h2_fruit_slice_game_t* g) {
+  for (unsigned n = 0; n < H2_FRUIT_SLICE_CARD_COUNT && g->cards.reveal_queue;
+       ++n) {
+    h2_fruit_slice_game_step(g, 2000u);
+    h2_fruit_slice_game_pointer(g, H2_FRUIT_SLICE_POINTER_DOWN, 240, 200);
+    h2_fruit_slice_game_pointer(g, H2_FRUIT_SLICE_POINTER_UP, 240, 200);
+  }
+  CHECK(!g->cards.reveal_active && g->cards.reveal_queue == 0u);
+}
+
 static void test_restart_waits_for_menu_fruit(void) {
   start_playing(&game, 6u, 0u);
   clear_scene(&game);
@@ -191,6 +202,9 @@ static void test_restart_waits_for_menu_fruit(void) {
   swipe(&game, 60.0f, 346.0f, 420.0f, 346.0f, 4);
   CHECK(game.phase == H2_FRUIT_SLICE_PHASE_GAME_OVER);
   h2_fruit_slice_game_step(&game, H2_FRUIT_SLICE_RESTART_DELAY_MS);
+  CHECK(game.cards.reveal_active);
+  dismiss_cards(&game);
+  h2_fruit_slice_game_step(&game, H2_FRUIT_SLICE_RESTART_DELAY_MS);
   CHECK(count_fruits(&game, true) == 1u);
   swipe(&game, 60.0f, 346.0f, 420.0f, 346.0f, 12);
   CHECK(game.phase == H2_FRUIT_SLICE_PHASE_PLAYING);
@@ -200,8 +214,9 @@ static void test_restart_waits_for_menu_fruit(void) {
 
 static void test_trail_expires(void) {
   h2_fruit_slice_game_init(&game, 480, 480, 7u, 0u);
-  h2_fruit_slice_game_pointer(&game, H2_FRUIT_SLICE_POINTER_DOWN, 10.0f, 10.0f);
-  h2_fruit_slice_game_pointer(&game, H2_FRUIT_SLICE_POINTER_MOVE, 30.0f, 10.0f);
+  /* Stroke below the title controls. */
+  h2_fruit_slice_game_pointer(&game, H2_FRUIT_SLICE_POINTER_DOWN, 10.0f, 60.0f);
+  h2_fruit_slice_game_pointer(&game, H2_FRUIT_SLICE_POINTER_MOVE, 30.0f, 60.0f);
   CHECK(game.trail_count == 2u);
   h2_fruit_slice_game_step(&game, H2_FRUIT_SLICE_TRAIL_LIFE_MS + 20u);
   CHECK(game.trail_count == 0u);
@@ -262,7 +277,348 @@ static void test_wide_display_scales(void) {
   CHECK(h2_fruit_slice_game_radius(&game, H2_FRUIT_SLICE_WATERMELON) == 23.0f);
 }
 
+static void tap_button(h2_fruit_slice_game_t* g, uint32_t id) {
+  h2_fruit_slice_rect_t r;
+  CHECK(h2_fruit_slice_game_button_rect(g, id, &r));
+  const float x = (r.x0 + r.x1) * 0.5f, y = (r.y0 + r.y1) * 0.5f;
+  h2_fruit_slice_game_pointer(g, H2_FRUIT_SLICE_POINTER_DOWN, x, y);
+  h2_fruit_slice_game_pointer(g, H2_FRUIT_SLICE_POINTER_UP, x, y);
+}
+
+static void test_tasks_and_shop(void) {
+  start_playing(&game, 12u, 0u);
+  /* Three real combos plus a single fruit satisfy both repeatable tasks. */
+  for (unsigned i = 0; i < 3u; ++i) {
+    clear_scene(&game);
+    for (unsigned k = 0; k < 3u; ++k)
+      place(&game, k, H2_FRUIT_SLICE_APPLE, 100.0f + (float)k * 140.0f, 240.0f);
+    swipe(&game, 40.0f, 240.0f, 440.0f, 240.0f, 8);
+  }
+  clear_scene(&game);
+  place(&game, 0, H2_FRUIT_SLICE_APPLE, 240.0f, 240.0f);
+  swipe(&game, 40.0f, 240.0f, 440.0f, 240.0f, 8);
+  CHECK(game.progress.coins == 0u);
+  CHECK(game.progress.fruit_credit == 10u && game.progress.combo_credit == 3u);
+  CHECK(game.score == 19u);
+  /* Cross the one-shot score target via gameplay, then finish on a bomb. */
+  clear_scene(&game);
+  place(&game, 0, H2_FRUIT_SLICE_APPLE, 240.0f, 240.0f);
+  swipe(&game, 40.0f, 240.0f, 440.0f, 240.0f, 8);
+  CHECK(game.progress.score_task == 1u);
+  clear_scene(&game);
+  place(&game, 0, H2_FRUIT_SLICE_BOMB, 240.0f, 240.0f);
+  swipe(&game, 40.0f, 240.0f, 440.0f, 240.0f, 8);
+  dismiss_cards(&game);
+  tap_button(&game, H2_FRUIT_SLICE_BUTTON_TASKS);
+  const uint64_t paused = game.time_ms;
+  h2_fruit_slice_game_step(&game, 2000u);
+  CHECK(game.time_ms == paused);
+  for (unsigned i = 0; i < 3u; ++i) {
+    tap_button(&game, H2_FRUIT_SLICE_BUTTON_CLAIM + i);
+    const uint32_t coins = game.progress.coins;
+    tap_button(&game, H2_FRUIT_SLICE_BUTTON_CLAIM + i);
+    CHECK(game.progress.coins == coins);
+  }
+  CHECK(game.progress.coins == 80u);
+  CHECK(game.progress.fruit_credit == 1u && game.progress.combo_credit == 0u);
+  CHECK(game.progress.score_task == 2u && game.progress_dirty);
+  tap_button(&game, H2_FRUIT_SLICE_BUTTON_BACK);
+  CHECK(game.phase == H2_FRUIT_SLICE_PHASE_GAME_OVER);
+  tap_button(&game, H2_FRUIT_SLICE_BUTTON_SHOP);
+  tap_button(&game, H2_FRUIT_SLICE_BUTTON_WEAPON + 2u);
+  CHECK(game.progress.coins == 80u && game.progress.owned == 1u);
+  CHECK(game.progress.equipped == 0u); /* Insufficient funds cannot equip. */
+  tap_button(&game, H2_FRUIT_SLICE_BUTTON_WEAPON + 1u);
+  CHECK(game.progress.coins == 40u && game.progress.owned == 3u);
+  CHECK(game.progress.equipped == 1u);
+  tap_button(&game, H2_FRUIT_SLICE_BUTTON_WEAPON + 1u);
+  CHECK(game.progress.coins == 40u); /* Already-owned gear never charges. */
+  tap_button(&game, H2_FRUIT_SLICE_BUTTON_WEAPON);
+  tap_button(&game, H2_FRUIT_SLICE_BUTTON_WEAPON + 1u);
+  CHECK(game.progress.equipped == 1u && game.progress.coins == 40u);
+  tap_button(&game, H2_FRUIT_SLICE_BUTTON_BACK);
+  h2_fruit_slice_game_step(&game, H2_FRUIT_SLICE_RESTART_DELAY_MS);
+  swipe(&game, 60.0f, 346.0f, 420.0f, 346.0f, 12);
+  CHECK(game.phase == H2_FRUIT_SLICE_PHASE_PLAYING && game.score == 0u);
+  CHECK(game.progress.coins == 40u && game.progress.equipped == 1u);
+}
+
+static void test_progress_format_and_input(void) {
+  h2_fruit_slice_game_init(&game, 480, 480, 14u, 30u);
+  CHECK(game.progress.owned == 1u && game.progress.coins == 0u);
+  CHECK(game.progress.score_task == 1u); /* Existing best survives upgrade. */
+  game.progress.coins = 90u;
+  tap_button(&game, H2_FRUIT_SLICE_BUTTON_SHOP);
+  h2_fruit_slice_rect_t r;
+  CHECK(h2_fruit_slice_game_button_rect(&game,
+                                        H2_FRUIT_SLICE_BUTTON_WEAPON + 2u, &r));
+  h2_fruit_slice_game_pointer(&game, H2_FRUIT_SLICE_POINTER_DOWN, r.x0 + 1.0f,
+                              r.y0 + 1.0f);
+  h2_fruit_slice_game_pointer(&game, H2_FRUIT_SLICE_POINTER_CANCEL, r.x0 + 1.0f,
+                              r.y0 + 1.0f);
+  CHECK(game.progress.coins == 90u && game.progress.owned == 1u);
+  h2_fruit_slice_game_pointer(&game, H2_FRUIT_SLICE_POINTER_DOWN, r.x0 + 1.0f,
+                              r.y0 + 1.0f);
+  h2_fruit_slice_game_pointer(&game, H2_FRUIT_SLICE_POINTER_UP, 0.0f, 0.0f);
+  CHECK(game.progress.coins == 90u);
+  tap_button(&game, H2_FRUIT_SLICE_BUTTON_WEAPON + 2u);
+  CHECK(game.progress.coins == 0u && game.progress.equipped == 2u);
+  uint8_t bytes[H2_FRUIT_SLICE_PROGRESS_BYTES];
+  h2_fruit_slice_progress_encode(&game.progress, bytes);
+  h2_fruit_slice_game_init(&other, 480, 480, 15u, 30u);
+  CHECK(h2_fruit_slice_progress_decode(&other.progress, bytes, sizeof(bytes)));
+  CHECK(other.progress.owned == 5u && other.progress.equipped == 2u);
+  CHECK(other.progress.score_task == 1u);
+  CHECK(!h2_fruit_slice_progress_decode(&other.progress, bytes,
+                                        sizeof(bytes) - 1u));
+  bytes[4] = 3u; /* Future save version. */
+  CHECK(!h2_fruit_slice_progress_decode(&other.progress, bytes, sizeof(bytes)));
+  bytes[4] = 2u;
+  bytes[24] = 1u; /* Equipped axe is not owned. */
+  CHECK(!h2_fruit_slice_progress_decode(&other.progress, bytes, sizeof(bytes)));
+  CHECK(other.progress.owned == 5u && other.progress.equipped == 2u);
+  h2_fruit_slice_progress_encode(&game.progress, bytes);
+  memset(bytes + 8, 255, 4u); /* Overflowed currency is rejected. */
+  CHECK(!h2_fruit_slice_progress_decode(&other.progress, bytes, sizeof(bytes)));
+}
+
+static void test_weapon_reach(void) {
+  for (unsigned id = 0; id < 3u; ++id) {
+    start_playing(&game, 16u, 0u);
+    clear_scene(&game);
+    game.progress.owned = 7u;
+    game.progress.equipped = id;
+    place(&game, 0, H2_FRUIT_SLICE_APPLE, 240.0f, 240.0f);
+    swipe(&game, 40.0f, 279.0f, 440.0f, 279.0f, 1);
+    CHECK(game.score == (id == 0u ? 0u : 1u));
+    clear_scene(&game);
+    place(&game, 0, H2_FRUIT_SLICE_BOMB, 240.0f, 240.0f);
+    swipe(&game, 40.0f, 286.0f, 440.0f, 286.0f, 1);
+    CHECK((game.phase == H2_FRUIT_SLICE_PHASE_GAME_OVER) == (id == 2u));
+  }
+}
+
+static void test_progress_limits(void) {
+  h2_fruit_slice_game_init(&game, 480, 480, 24u, 0u);
+  game.progress.coins = H2_FRUIT_SLICE_PROGRESS_LIMIT;
+  game.progress.fruit_credit = 30u;
+  tap_button(&game, H2_FRUIT_SLICE_BUTTON_TASKS);
+  tap_button(&game, H2_FRUIT_SLICE_BUTTON_CLAIM);
+  CHECK(game.progress.coins == H2_FRUIT_SLICE_PROGRESS_LIMIT);
+  CHECK(game.progress.fruit_credit == 30u && !game.progress_dirty);
+  game.progress.coins = H2_FRUIT_SLICE_PROGRESS_LIMIT - 15u;
+  tap_button(&game, H2_FRUIT_SLICE_BUTTON_CLAIM);
+  CHECK(game.progress.coins == H2_FRUIT_SLICE_PROGRESS_LIMIT);
+  CHECK(game.progress.fruit_credit == 20u);
+  game.progress.coins = 0u;
+  tap_button(&game, H2_FRUIT_SLICE_BUTTON_CLAIM);
+  tap_button(&game, H2_FRUIT_SLICE_BUTTON_CLAIM);
+  tap_button(&game, H2_FRUIT_SLICE_BUTTON_CLAIM);
+  CHECK(game.progress.coins == 30u && game.progress.fruit_credit == 0u);
+}
+
+static void test_variety_ids_and_hits(void) {
+  CHECK(H2_FRUIT_SLICE_BOMB == 5 && H2_FRUIT_SLICE_STRAWBERRY == 6);
+  CHECK(H2_FRUIT_SLICE_CARD_FRUIT_SALAD == 5 && H2_FRUIT_SLICE_CARD_BOMB == 9);
+  CHECK(H2_FRUIT_SLICE_FRUIT_KINDS == 9u);
+  for (unsigned i = 0; i < H2_FRUIT_SLICE_FRUIT_KINDS; ++i)
+    CHECK(h2_fruit_slice_is_fruit(h2_fruit_slice_kind_at(i)));
+  CHECK(h2_fruit_slice_kind_at(9u) == H2_FRUIT_SLICE_KIND_COUNT);
+  CHECK(!h2_fruit_slice_is_fruit(H2_FRUIT_SLICE_BOMB));
+  CHECK(!h2_fruit_slice_is_fruit(255u));
+  const unsigned sizes[][2] = {{480u, 320u}, {160u, 160u}};
+  for (unsigned size = 0; size < 2u; ++size) {
+    const float w = (float)sizes[size][0], h = (float)sizes[size][1];
+    for (unsigned k = 6u; k < H2_FRUIT_SLICE_KIND_COUNT; ++k) {
+      for (unsigned turn = 0u; turn < 8u; ++turn) {
+        h2_fruit_slice_game_init(&game, (int32_t)w, (int32_t)h, 42u, 0u);
+        game.phase = H2_FRUIT_SLICE_PHASE_PLAYING;
+        h2_fruit_slice_cards_run_start(&game.cards);
+        clear_scene(&game);
+        h2_fruit_slice_fruit_t* f =
+            place(&game, 0u, (h2_fruit_slice_kind_t)k, w * 0.5f, h * 0.5f);
+        const float a = (float)turn * H2_FRUIT_SLICE_PI / 4.0f;
+        f->body.angle = a;
+        const float radius = f->radius;
+        /* A short stroke through edible flesh, rotated with the body. */
+        const float ly = k == H2_FRUIT_SLICE_BANANA ? 0.20f : 0.0f;
+        const float cx = f->body.x - sinf(a) * ly * radius;
+        const float cy = f->body.y + cosf(a) * ly * radius;
+        h2_fruit_slice_game_pointer(&game, H2_FRUIT_SLICE_POINTER_DOWN,
+                                    cx - cosf(a) * radius * 0.2f,
+                                    cy - sinf(a) * radius * 0.2f);
+        h2_fruit_slice_game_pointer(&game, H2_FRUIT_SLICE_POINTER_UP,
+                                    cx + cosf(a) * radius * 0.2f,
+                                    cy + sinf(a) * radius * 0.2f);
+        CHECK(game.sliced_total == 1u && game.score == 1u);
+        CHECK(game.progress.fruit_credit == 1u && game.cards.run_slices == 1u);
+        CHECK(count_halves(&game) == 2u && !f->active);
+        CHECK(fabsf(game.halves[0].shape_angle + game.halves[0].body.angle -
+                    a) < 0.001f);
+      }
+    }
+    /* The banana tips are edible; the obvious notch must remain empty. */
+    const float samples[][3] = {{-0.87f, -0.23f, 1.0f},
+                                {0.87f, -0.23f, 1.0f},
+                                {0.0f, -0.42f, 0.0f},
+                                {0.0f, 0.70f, 0.0f}};
+    for (unsigned s = 0; s < 4u; ++s) {
+      h2_fruit_slice_game_init(&game, (int32_t)w, (int32_t)h, 42u, 0u);
+      game.phase = H2_FRUIT_SLICE_PHASE_PLAYING;
+      clear_scene(&game);
+      h2_fruit_slice_fruit_t* f =
+          place(&game, 0u, H2_FRUIT_SLICE_BANANA, w / 2, h / 2);
+      const float x = f->body.x + f->radius * samples[s][0];
+      const float y = f->body.y + f->radius * samples[s][1];
+      h2_fruit_slice_game_pointer(&game, H2_FRUIT_SLICE_POINTER_DOWN, x,
+                                  y - game.unit * 2);
+      h2_fruit_slice_game_pointer(&game, H2_FRUIT_SLICE_POINTER_UP, x,
+                                  y + game.unit * 2);
+      CHECK(game.sliced_total == (unsigned)samples[s][2]);
+    }
+    h2_fruit_slice_game_init(&game, (int32_t)w, (int32_t)h, 42u, 0u);
+    game.phase = H2_FRUIT_SLICE_PHASE_PLAYING;
+    clear_scene(&game);
+    h2_fruit_slice_fruit_t* p =
+        place(&game, 0u, H2_FRUIT_SLICE_PINEAPPLE, w / 2, h / 2);
+    const float y = p->body.y - p->radius * 0.85f;
+    h2_fruit_slice_game_pointer(&game, H2_FRUIT_SLICE_POINTER_DOWN,
+                                w / 2 - 3 * game.unit, y);
+    h2_fruit_slice_game_pointer(&game, H2_FRUIT_SLICE_POINTER_UP,
+                                w / 2 + 3 * game.unit, y);
+    CHECK(p->active && game.sliced_total == 0u);
+  }
+  /* Two bunches in one stroke still produce two events, never ten berries. */
+  start_playing(&game, 42u, 0u);
+  clear_scene(&game);
+  place(&game, 0u, H2_FRUIT_SLICE_GRAPES, 180, 220);
+  place(&game, 1u, H2_FRUIT_SLICE_GRAPES, 300, 220);
+  swipe(&game, 100, 220, 380, 220, 1u);
+  CHECK(game.sliced_total == 2u && game.score == 2u &&
+        count_halves(&game) == 4u);
+}
+
+static void test_natural_variety(void) {
+  unsigned seen = 0u, sliced = 0u, opening_strawberries = 0u;
+  unsigned counts[H2_FRUIT_SLICE_KIND_COUNT] = {0};
+  for (unsigned seed = 1u; seed <= 16u; ++seed) {
+    start_playing(&game, seed, 0u);
+    /* Keep normal spawn/flight/score paths. Slice visible fruit at its body;
+     * discard bombs only after counting them, so the deterministic run lasts.
+     */
+    for (unsigned frame = 0u; frame < 3000u; ++frame) {
+      h2_fruit_slice_game_step(&game, 16u);
+      for (unsigned i = 0; i < H2_FRUIT_SLICE_MAX_FRUITS; ++i) {
+        if (game.fruits[i].active &&
+            game.fruits[i].kind == H2_FRUIT_SLICE_BOMB) {
+          ++counts[H2_FRUIT_SLICE_BOMB];
+          game.fruits[i].active = false;
+        }
+      }
+      for (unsigned i = 0; i < H2_FRUIT_SLICE_MAX_FRUITS; ++i) {
+        h2_fruit_slice_fruit_t* f = &game.fruits[i];
+        if (!f->active || f->menu || f->body.y > 360.0f) continue;
+        ++counts[f->kind];
+        seen |= 1u << f->kind;
+        if (game.waves <= 2u && f->kind == H2_FRUIT_SLICE_STRAWBERRY)
+          ++opening_strawberries;
+        if (f->kind == H2_FRUIT_SLICE_PINEAPPLE)
+          CHECK(fabsf(f->body.spin) <= 0.66f);
+        const float offset =
+            f->kind == H2_FRUIT_SLICE_BANANA ? f->radius * 0.2f : 0.0f;
+        const float y = f->body.y + cosf(f->body.angle) * offset;
+        const float x = f->body.x - sinf(f->body.angle) * offset;
+        h2_fruit_slice_game_pointer(&game, H2_FRUIT_SLICE_POINTER_DOWN, x - 2,
+                                    y);
+        h2_fruit_slice_game_pointer(&game, H2_FRUIT_SLICE_POINTER_UP, x + 2, y);
+        CHECK(!f->active);
+        sliced |= 1u << f->kind;
+      }
+    }
+  }
+  CHECK(opening_strawberries > 0u && counts[H2_FRUIT_SLICE_BOMB] > 0u);
+  for (unsigned i = 0; i < H2_FRUIT_SLICE_FRUIT_KINDS; ++i) {
+    const unsigned kind = h2_fruit_slice_kind_at(i);
+    CHECK((seen & sliced & (1u << kind)) != 0u && counts[kind] >= 20u);
+    printf("natural fruit kind=%u count=%u\n", kind, counts[kind]);
+  }
+}
+
+static bool rects_overlap(h2_fruit_slice_rect_t a, h2_fruit_slice_rect_t b) {
+  return a.x0 < b.x1 && a.x1 > b.x0 && a.y0 < b.y1 && a.y1 > b.y0;
+}
+
+static void test_menu_layout_and_tap_routes(void) {
+  const int32_t sizes[][2] = {{160, 160}, {240, 240}, {480, 320}, {368, 448},
+                              {480, 480}, {480, 800}, {800, 480}};
+  const uint32_t buttons[] = {
+      H2_FRUIT_SLICE_BUTTON_START, H2_FRUIT_SLICE_BUTTON_TASKS,
+      H2_FRUIT_SLICE_BUTTON_CARDS, H2_FRUIT_SLICE_BUTTON_SHOP,
+      H2_FRUIT_SLICE_BUTTON_SFX,   H2_FRUIT_SLICE_BUTTON_MUSIC};
+  for (unsigned size = 0; size < sizeof(sizes) / sizeof(sizes[0]); ++size) {
+    h2_fruit_slice_game_init(&game, sizes[size][0], sizes[size][1], 51u,
+                             UINT32_MAX);
+    h2_fruit_slice_rect_t rects[6];
+    for (unsigned i = 0; i < 6u; ++i) {
+      CHECK(h2_fruit_slice_game_button_rect(&game, buttons[i], &rects[i]));
+      CHECK(rects[i].x0 >= 8.0f && rects[i].y0 >= 8.0f);
+      CHECK(rects[i].x1 <= (float)game.width - 8.0f);
+      CHECK(rects[i].y1 <= (float)game.height - 8.0f);
+      CHECK(rects[i].y1 - rects[i].y0 >= (i < 4u ? 32.0f : 28.0f));
+      for (unsigned j = 0; j < i; ++j)
+        CHECK(!rects_overlap(rects[i], rects[j]));
+    }
+    /* The visible fruit never sits behind a menu button. */
+    const h2_fruit_slice_fruit_t* fruit = &game.fruits[0];
+    const h2_fruit_slice_rect_t fruit_rect = {
+        fruit->body.x - fruit->radius, fruit->body.y - fruit->radius,
+        fruit->body.x + fruit->radius, fruit->body.y + fruit->radius};
+    for (unsigned i = 0; i < 6u; ++i)
+      CHECK(!rects_overlap(fruit_rect, rects[i]));
+    for (unsigned i = 1; i <= 3u; ++i) {
+      tap_button(&game, buttons[i]);
+      CHECK(game.phase == (i == 1u   ? H2_FRUIT_SLICE_PHASE_TASKS
+                           : i == 2u ? H2_FRUIT_SLICE_PHASE_CARDS
+                                     : H2_FRUIT_SLICE_PHASE_SHOP));
+      tap_button(&game, H2_FRUIT_SLICE_BUTTON_BACK);
+      CHECK(game.phase == H2_FRUIT_SLICE_PHASE_TITLE);
+    }
+    const float x = (rects[0].x0 + rects[0].x1) * 0.5f;
+    const float y = (rects[0].y0 + rects[0].y1) * 0.5f;
+    h2_fruit_slice_game_pointer(&game, H2_FRUIT_SLICE_POINTER_DOWN, x, y);
+    h2_fruit_slice_game_pointer(&game, H2_FRUIT_SLICE_POINTER_CANCEL, x, y);
+    CHECK(game.phase == H2_FRUIT_SLICE_PHASE_TITLE);
+    h2_fruit_slice_game_pointer(&game, H2_FRUIT_SLICE_POINTER_DOWN, x, y);
+    h2_fruit_slice_game_pointer(&game, H2_FRUIT_SLICE_POINTER_UP, 0, 0);
+    CHECK(game.phase == H2_FRUIT_SLICE_PHASE_TITLE);
+    tap_button(&game, H2_FRUIT_SLICE_BUTTON_SFX);
+    CHECK(game.audio_mute == H2_FRUIT_SLICE_MUTE_SFX);
+    tap_button(&game, H2_FRUIT_SLICE_BUTTON_START);
+    CHECK(game.phase == H2_FRUIT_SLICE_PHASE_PLAYING && game.score == 0u);
+    /* Restart remains delayed; a pending reveal consumes the play tap. */
+    game.phase = H2_FRUIT_SLICE_PHASE_GAME_OVER;
+    game.phase_started_ms = game.time_ms;
+    tap_button(&game, H2_FRUIT_SLICE_BUTTON_START);
+    CHECK(game.phase == H2_FRUIT_SLICE_PHASE_GAME_OVER);
+    game.cards.reveal_queue = 1u;
+    h2_fruit_slice_game_step(&game, 2000u);
+    tap_button(&game, H2_FRUIT_SLICE_BUTTON_START);
+    CHECK(game.phase == H2_FRUIT_SLICE_PHASE_GAME_OVER);
+    dismiss_cards(&game);
+    h2_fruit_slice_game_step(&game, 2000u);
+    tap_button(&game, H2_FRUIT_SLICE_BUTTON_START);
+    CHECK(game.phase == H2_FRUIT_SLICE_PHASE_PLAYING);
+  }
+}
+
 int main(void) {
+  test_variety_ids_and_hits();
+  test_natural_variety();
+  test_menu_layout_and_tap_routes();
+  test_progress_limits();
+  test_tasks_and_shop();
+  test_progress_format_and_input();
+  test_weapon_reach();
   test_title_starts_on_menu_slice();
   test_slice_scores_and_splits();
   test_combo_awards_bonus();

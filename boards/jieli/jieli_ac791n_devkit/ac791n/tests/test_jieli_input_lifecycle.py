@@ -30,6 +30,8 @@ class InputLifecycleTest(unittest.TestCase):
                 '-I', str(ROOT / 'native_component_src/jieli/wl82/h2_pal_core/include'),
                 str(unit), '-I', str(ROOT / 'libs/sync/atomic/include'), str(ROOT / 'libs/sync/atomic/providers/c11/src/h2_atomic_c11.c'), '-o', str(binary)], check=True)
             for case in ['invalid_input', 'flush_failure', 'display_close_error', 'touch_close_error', 'rs_order', 'flush_lost_irq', 'flush_stale', 'open_pending', 'open_flush_error',
+                         'draw_rs_pending', 'draw_rs_immediate', 'draw_rs_stale', 'draw_rs_flush_error', 'draw_rs_lost_irq',
+                         'partial_pixels_pending', 'partial_pixels_immediate',
                          'iic_read_start', 'iic_read_stop', 'iic_write_start', 'iic_write_stop',
                          'adc_full', 'adc_gpio', 'draw_close', 'touch_close', 'adc_first_use']:
                 with self.subTest(case=case):

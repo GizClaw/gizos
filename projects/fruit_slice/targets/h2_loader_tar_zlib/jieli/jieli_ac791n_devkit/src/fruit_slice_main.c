@@ -55,10 +55,20 @@ static h2_pal_result_t confirm(void* user) {
   return rc;
 }
 
+static void report_audio(void* user) {
+  (void)user;
+  char text[256];
+  if (h2_jieli_ac791n_devkit_audio_diagnostics(text, sizeof(text)) == H2_PAL_OK)
+    (void)h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "fruit-slice", text);
+}
+
 static void game(void* user) {
   (void)user;
   const h2_fruit_slice_config_t config = {.brightness_percent = 100u,
-                                          .ready = confirm};
+                                          .ready = confirm,
+                                          .report_diagnostics = report_audio,
+                                          .prewarm_audio = true,
+                                          .audio_worker = true};
   const int rc = h2_fruit_slice_run(runtime, &config);
   /* The run only ends on failure; keep App commands up for recovery. An
    * unconfirmed run still returns to Loader through the boot timeout. */

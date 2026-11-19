@@ -1,0 +1,30 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//tools/bazel/firmware:firmware.bzl", "firmware_version")
+load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//projects/testing:__subpackages__"])
+
+exports_files([
+    "display_bench.c",
+    "display_bench.h",
+])
+
+cc_library(
+    name = "display_bench",
+    srcs = ["display_bench.c"],
+    hdrs = ["display_bench.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    strip_include_prefix = ".",
+    deps = ["//pal"],
+)
+
+firmware_version(
+    name = "version",
+    value = "0.1.1-display-bench",
+)
+
+firmware_version(
+    name = "version_jieli_preview",
+    value = "0.1.2-display-bench",
+)

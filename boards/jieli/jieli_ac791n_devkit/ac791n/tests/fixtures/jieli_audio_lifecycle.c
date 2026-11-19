@@ -61,10 +61,14 @@ static h2_pal_result_t fake_lock(void* u, h2_pal_mutex_t* m) {
   assert(pthread_mutex_lock(&m->native) == 0);
   return H2_PAL_OK;
 }
+static int try_lock_error;
 static h2_pal_result_t fake_try_lock(void* u, h2_pal_mutex_t* m) {
   (void)u;
+  if (try_lock_error != 0) return try_lock_error;
+  /* Match WL82 sync_try_lock_mutex(), which reports ordinary SDK mutex
+   * contention as WOULD_BLOCK rather than TIMEOUT. */
   return pthread_mutex_trylock(&m->native) == 0 ? H2_PAL_OK
-                                                : H2_PAL_ERR_TIMEOUT;
+                                                : H2_PAL_ERR_WOULD_BLOCK;
 }
 static h2_pal_result_t fake_unlock(void* u, h2_pal_mutex_t* m) {
   (void)u;
@@ -520,6 +524,69 @@ static void test_cycle_stale_callback(void) {
   consume();
   normal_stop(track, NULL);
 }
+static h2_atomic_uint_t gate_entered, gate_release;
+
+static void* hold_audio_gate(void* unused) {
+  (void)unused;
+  assert(pthread_mutex_lock(&audio_state.mutex->native) == 0);
+  h2_atomic_store(&gate_entered, 1u);
+  while (!h2_atomic_load(&gate_release)) h2_jieli_sdk_sleep_ms(1u);
+  assert(pthread_mutex_unlock(&audio_state.mutex->native) == 0);
+  return NULL;
+}
+
+static void test_lock_contention(void) {
+  h2_pal_audio_track_t* track = make_track(2u); /* Fruit Slice's queue size. */
+  int16_t data[320], output[640];
+  for (unsigned i = 0u; i < 320u; ++i) data[i] = (int16_t)(i * 31u - 4000u);
+  h2_audio_frame_t frame = frame_for(data);
+  assert(h2_atomic_init(&gate_entered, 0u) == H2_ATOMIC_OK);
+  assert(h2_atomic_init(&gate_release, 0u) == H2_ATOMIC_OK);
+  pthread_t holder;
+  assert(pthread_create(&holder, NULL, hold_audio_gate, NULL) == 0);
+  while (!h2_atomic_load(&gate_entered)) h2_jieli_sdk_sleep_ms(1u);
+  for (unsigned i = 0u; i < 32u; ++i)
+    assert(h2_pal_audio_track_write(track, &frame, 0u) ==
+           H2_AUDIO_ERR_WOULD_BLOCK);
+  char diagnostics[256];
+  assert(h2_jieli_ac791n_devkit_audio_diagnostics(
+             diagnostics, sizeof(diagnostics)) == H2_AUDIO_ERR_WOULD_BLOCK);
+  uint32_t start = timer_get_ms();
+  assert(h2_pal_audio_track_write(track, &frame, 40u) ==
+         H2_AUDIO_ERR_WOULD_BLOCK);
+  assert(timer_get_ms() - start >= 35u && timer_get_ms() - start < 250u);
+  assert(h2_pal_audio_track_drain(track, 0u) == H2_AUDIO_ERR_WOULD_BLOCK);
+  assert(audio_mic_read(NULL, &frame, 0u) == H2_AUDIO_ERR_WOULD_BLOCK);
+  h2_atomic_store(&gate_release, 1u);
+  assert(pthread_join(holder, NULL) == 0);
+  frame = frame_for(data);
+  /* A transient decoder lock must not require stop/start or replace the track.
+   * After contention, the next PCM frame still reaches the stereo DAC reader.
+   */
+  assert(h2_pal_audio_track_write(track, &frame, 0u) == H2_AUDIO_OK);
+  assert(decoder->request.vfs_ops->fread(decoder->request.file, output,
+                                         sizeof(output)) ==
+         (int)sizeof(output));
+  for (unsigned i = 0u; i < 320u; ++i) {
+    assert(output[i * 2u] == data[i]);
+    assert(output[i * 2u + 1u] == data[i]);
+  }
+  assert(h2_pal_audio_track_drain(track, 0u) == H2_AUDIO_OK);
+  assert(h2_jieli_ac791n_devkit_audio_diagnostics(NULL, 256u) ==
+         H2_AUDIO_ERR_INVALID_ARG);
+  assert(h2_jieli_ac791n_devkit_audio_diagnostics(
+             diagnostics, sizeof(diagnostics)) == H2_AUDIO_OK);
+  assert(strstr(diagnostics, "tracks=1 queued_bytes=0") != NULL);
+  try_lock_error = H2_PAL_ERR_IO;
+  assert(h2_pal_audio_track_write(track, &frame, 0u) == H2_AUDIO_ERR_IO);
+  try_lock_error = 0;
+  assert(h2_pal_audio_track_write(track, &frame, 0u) == H2_AUDIO_OK);
+  consume();
+  normal_stop(track, NULL);
+  h2_atomic_destroy(&gate_entered);
+  h2_atomic_destroy(&gate_release);
+}
+
 static void h2_fixture_atomic_cleanup(void) {
   h2_atomic_destroy(&wait_entries);
   h2_atomic_destroy(&release_callback);
@@ -538,6 +605,10 @@ int main(int argc, char** argv) {
   assert(h2_atomic_init(&live_blocks, 0) == H2_ATOMIC_OK);
 
   assert(argc == 2);
+  if (strcmp(argv[1], "lock_contention") == 0) {
+    test_lock_contention();
+    return 0;
+  }
   if (strcmp(argv[1], "cycles") == 0) {
     test_cycles();
     return 0;

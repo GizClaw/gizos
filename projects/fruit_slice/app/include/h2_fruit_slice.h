@@ -21,6 +21,11 @@ extern "C" {
 #define H2_FRUIT_SLICE_PREF_NAMESPACE "fruit_slice"
 #define H2_FRUIT_SLICE_PREF_BEST_KEY "best"
 
+typedef enum h2_fruit_slice_language {
+  H2_FRUIT_SLICE_LANGUAGE_ZH_CN = 0, /**< Default, including zeroed configs. */
+  H2_FRUIT_SLICE_LANGUAGE_EN = 1,
+} h2_fruit_slice_language_t;
+
 typedef struct h2_fruit_slice_config {
   /** Nonzero fixes the random seed; zero derives one from the clock. */
   uint32_t seed;
@@ -36,8 +41,25 @@ typedef struct h2_fruit_slice_config {
   /** Optional, polled on the run thread before every frame. Returning true
    * ends the run with H2_PAL_OK after cleanup. */
   bool (*should_exit)(void* user);
-  /** Borrowed user value passed to ready and should_exit. */
+  /** Borrowed user value passed to all callbacks. */
   void* user;
+  /** Optional nonblocking lifecycle query, called on the run thread. True
+   * closes the audio track/speaker and pauses simulation until false. */
+  bool (*is_paused)(void* user);
+  /** Initial UI language; zero/unknown selects Simplified Chinese. The title
+   * control switches it for this session without changing stored progress. */
+  h2_fruit_slice_language_t language;
+  /** Optional low-rate diagnostic hook on the run thread after each stats
+   * window (10 seconds). Must be bounded/nonblocking; borrows user. */
+  void (*report_diagnostics)(void* user);
+  /** Native hosts may open the silent audio path during loading. No PCM is
+   * submitted before the first user gesture; fully muted audio stays closed.
+   * Default false keeps browser/mobile gesture-based hardware startup. */
+  bool prewarm_audio;
+  /** Opt into an independent PCM producer using Runtime task/queue APIs.
+   * The worker owns audio state; pause/mute/exit join it before teardown.
+   * Hosts must declare fruit-slice/audio scheduling policy. Default false. */
+  bool audio_worker;
 } h2_fruit_slice_config_t;
 
 /**
@@ -48,9 +70,16 @@ typedef struct h2_fruit_slice_config {
  * supported extent and whose Touch provider is available; Touch coordinates
  * are scaled to the Display extent. The run opens and closes Display and
  * Touch, drains Runtime events, and paces frames with h2_runtime_wait_notify().
- * Pref is optional: when unavailable the best score is kept in memory only.
- * Game state, three RGB565 frame-sized buffers and the fruit texture cache
- * come from Runtime mem before the first frame; frames never allocate.
+ * Pref is optional: when unavailable the best score, coins, task progress,
+ * owned/equipped weapons and audio settings stay in memory for this call.
+ * Successful claims, purchases and equipment changes request one versioned
+ * profile save; failed saves are retried and pending progress is flushed
+ * before cleanup. Audio is optional; an unsupported/failed provider is logged
+ * and play continues. Title controls toggle SFX/BGM independently; audio starts
+ * on a user gesture. is_paused must be nonblocking so audio can stop before
+ * the host waits. Game state, three RGB565 frame-sized buffers and the fruit
+ * texture cache come from Runtime mem before the first frame; frames never
+ * allocate.
  * Diagnostics use Runtime log. Every allocation, provider session and
  * callback ends before return. The config is borrowed for the call; NULL
  * selects defaults.

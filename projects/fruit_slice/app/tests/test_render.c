@@ -1,6 +1,8 @@
 #include "h2_fruit_slice_game.h"
 #include "h2_fruit_slice_render.h"
+#include "h2_fruit_slice_cards_render.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -21,13 +23,16 @@
 static uint16_t background[MAX_W * MAX_H];
 static uint16_t pixels[MAX_W * MAX_H];
 static h2_fruit_slice_game_t game;
+static h2_fruit_slice_language_t render_language;
 
 /* Optional review artifact: Bazel collects files in this directory. */
 static void write_ppm(const char* name, int32_t width, int32_t height) {
   const char* directory = getenv("TEST_UNDECLARED_OUTPUTS_DIR");
   if (directory == NULL || directory[0] == '\0') return;
   char path[512];
-  (void)snprintf(path, sizeof(path), "%s/%s.ppm", directory, name);
+  (void)snprintf(path, sizeof(path), "%s/%s%s.ppm", directory,
+                 game.language == H2_FRUIT_SLICE_LANGUAGE_EN ? "en-" : "",
+                 name);
   FILE* file = fopen(path, "wb");
   CHECK(file != NULL);
   fprintf(file, "P6\n%d %d\n255\n", (int)width, (int)height);
@@ -41,8 +46,12 @@ static void write_ppm(const char* name, int32_t width, int32_t height) {
   CHECK(fclose(file) == 0);
 }
 
+static size_t allocation_calls, allocated_bytes;
+
 static void* test_alloc(void* user, size_t length) {
   (void)user;
+  ++allocation_calls;
+  allocated_bytes += length;
   return malloc(length);
 }
 static void* test_realloc(void* user, void* pointer, size_t length) {
@@ -164,7 +173,7 @@ static void test_sprite_cache(void) {
   for (unsigned i = 0; i < H2_FRUIT_SLICE_MAX_FRUITS; ++i) {
     h2_fruit_slice_half_t* h = &game.halves[i];
     h->active = true;
-    h->kind = (uint8_t)(i % H2_FRUIT_SLICE_FRUIT_KINDS);
+    h->kind = (uint8_t)h2_fruit_slice_kind_at(i % H2_FRUIT_SLICE_FRUIT_KINDS);
     h->radius = 11.0f + 2.5f * (float)i;
     h->body.x = 20.0f + 20.0f * (float)i;
     h->body.y = 320.0f;
@@ -187,19 +196,20 @@ static void scene_playing(void) {
     f->active = true;
     f->kind = (uint8_t)k;
     f->radius = h2_fruit_slice_game_radius(&game, (h2_fruit_slice_kind_t)k);
-    f->body.x = w * (0.12f + 0.155f * (float)k);
-    f->body.y = h * (k % 2u ? 0.36f : 0.52f);
+    f->body.x = w * (0.10f + 0.20f * (float)(k % 5u));
+    f->body.y = h * (0.23f + 0.24f * (float)(k / 5u));
     f->body.angle = 0.4f * (float)k;
   }
   for (unsigned k = 0; k < H2_FRUIT_SLICE_FRUIT_KINDS; ++k) {
     for (unsigned side = 0; side < 2u; ++side) {
       h2_fruit_slice_half_t* half = &game.halves[k * 2u + side];
       half->active = true;
-      half->kind = (uint8_t)k;
+      half->kind = (uint8_t)h2_fruit_slice_kind_at(k);
       half->radius =
-          h2_fruit_slice_game_radius(&game, (h2_fruit_slice_kind_t)k);
-      half->body.x = w * (0.12f + 0.19f * (float)k) + (side ? 14.0f : -14.0f);
-      half->body.y = h * 0.80f;
+          h2_fruit_slice_game_radius(&game, h2_fruit_slice_kind_at(k));
+      half->body.x = w * (0.10f + 0.20f * (float)(k % 5u)) +
+                     (side ? 5.0f : -5.0f) * game.unit;
+      half->body.y = h * (0.71f + 0.20f * (float)(k / 5u));
       half->body.angle = (side ? 0.0f : H2_FRUIT_SLICE_PI) + 0.3f;
     }
   }
@@ -240,6 +250,10 @@ static void scene_playing(void) {
 }
 
 static void render_size(int32_t width, int32_t height) {
+  /* Each App session owns a cache for one fixed display geometry. */
+  h2_fruit_slice_sprites_destroy(sprites);
+  sprites = h2_fruit_slice_sprites_create(&test_memory);
+  CHECK(sprites != NULL);
   h2_fruit_slice_canvas_t canvas = {.pixels = background,
                                     .width = width,
                                     .height = height,
@@ -250,13 +264,25 @@ static void render_size(int32_t width, int32_t height) {
 
   char name[64];
   h2_fruit_slice_game_init(&game, width, height, 11u, 12u);
+  game.language = render_language;
   CHECK(h2_fruit_slice_sprites_prepare(sprites, &game));
   h2_fruit_slice_game_step(&game, 100u);
   (void)snprintf(name, sizeof(name), "title_%dx%d", (int)width, (int)height);
   check_scene(name, width, height);
 
+  game.best = UINT32_MAX;
+  game.progress.coins = H2_FRUIT_SLICE_PROGRESS_LIMIT;
+  (void)snprintf(name, sizeof(name), "title_limits_%dx%d", width, height);
+  check_scene(name, width, height);
+
   scene_playing();
   (void)snprintf(name, sizeof(name), "playing_%dx%d", (int)width, (int)height);
+  check_scene(name, width, height);
+
+  game.score = game.best = UINT32_MAX;
+  game.cards.run_earned = 0xFFFFu;
+  game.cards.run_new = 0xFFFFu;
+  (void)snprintf(name, sizeof(name), "playing_limits_%dx%d", width, height);
   check_scene(name, width, height);
 
   memset(game.fruits, 0, sizeof(game.fruits));
@@ -264,6 +290,7 @@ static void render_size(int32_t width, int32_t height) {
   game.phase_started_ms = game.time_ms;
   game.new_best = true;
   game.best = game.score;
+  game.cards.run_earned = game.cards.run_new = 0xFFFFu;
   h2_fruit_slice_game_step(&game, H2_FRUIT_SLICE_RESTART_DELAY_MS);
   (void)snprintf(name, sizeof(name), "game_over_%dx%d", (int)width,
                  (int)height);
@@ -346,12 +373,364 @@ static void test_clipping(void) {
   check_scene("clipping", 480, 480);
 }
 
+static void test_progress_pages(int32_t width, int32_t height) {
+  h2_fruit_slice_game_init(&game, width, height, 25u, 31u);
+  game.language = render_language;
+  game.progress.coins = H2_FRUIT_SLICE_PROGRESS_LIMIT;
+  game.progress.fruit_credit = 10u;
+  for (unsigned phase = 0; phase < 2u; ++phase) {
+    game.phase =
+        phase == 0u ? H2_FRUIT_SLICE_PHASE_TASKS : H2_FRUIT_SLICE_PHASE_SHOP;
+    game.progress_page = 0u;
+    h2_fruit_slice_progress_layout_t layout;
+    h2_fruit_slice_game_progress_layout(&game, &layout);
+    for (unsigned page = 0u; page < layout.pages; ++page) {
+      game.progress_page = page;
+      h2_fruit_slice_game_progress_layout(&game, &layout);
+      h2_fruit_slice_rect_t back;
+      CHECK(h2_fruit_slice_game_button_rect(&game, H2_FRUIT_SLICE_BUTTON_BACK,
+                                            &back));
+      for (unsigned row = 0u; row < layout.count; ++row) {
+        CHECK(layout.rows[row].y0 > layout.pager.y1);
+        CHECK(layout.rows[row].y1 < layout.hint.y0);
+        CHECK(layout.actions[row].y1 < back.y0);
+      }
+      for (unsigned status = 0; status < 4u; ++status) {
+        game.save_status = status;
+        CHECK(check_layer(h2_fruit_slice_render_static, NULL, width, height) >
+              0u);
+        CHECK(check_layer(h2_fruit_slice_render_scene, NULL, width, height) ==
+              0u);
+      }
+      game.save_status = 0u;
+      h2_fruit_slice_canvas_t canvas = {.pixels = pixels,
+                                        .width = width,
+                                        .height = height,
+                                        .stride_pixels = (size_t)width};
+      h2_fruit_slice_render_background(&canvas);
+      h2_fruit_slice_render_static(&canvas, &game);
+      char name[64];
+      (void)snprintf(name, sizeof(name), "%s_%u_%dx%d",
+                     phase == 0u ? "tasks" : "shop", page, (int)width,
+                     (int)height);
+      write_ppm(name, width, height);
+    }
+  }
+  /* Cached text is invalidated on a purchase/claim and on storage status. */
+  h2_fruit_slice_static_key_t before, after;
+  h2_fruit_slice_static_key(&game, &before);
+  ++game.progress_revision;
+  h2_fruit_slice_static_key(&game, &after);
+  CHECK(memcmp(&before, &after, sizeof(before)) != 0);
+  before = after;
+  game.save_status = 2u;
+  h2_fruit_slice_static_key(&game, &after);
+  CHECK(memcmp(&before, &after, sizeof(before)) != 0);
+}
+
+static void test_card_scenes(int32_t width, int32_t height) {
+  h2_fruit_slice_sprites_destroy(sprites);
+  allocation_calls = allocated_bytes = 0u;
+  sprites = h2_fruit_slice_sprites_create(&test_memory);
+  CHECK(sprites != NULL);
+  h2_fruit_slice_game_init(&game, width, height, 42u, 0u);
+  game.language = render_language;
+  CHECK(h2_fruit_slice_sprites_prepare(sprites, &game));
+  const size_t prepared = allocation_calls;
+  if (width == 480 && height == 320)
+    printf(
+        "AC791N geometry: sprite bytes=%zu, game bytes=%zu, three frames=%zu\n",
+        allocated_bytes, sizeof(game), (size_t)width * (size_t)height * 6u);
+  h2_fruit_slice_canvas_t canvas = {.pixels = background,
+                                    .width = width,
+                                    .height = height,
+                                    .stride_pixels = (size_t)width};
+  h2_fruit_slice_render_background(&canvas);
+  for (unsigned id = 0; id < H2_FRUIT_SLICE_CARD_COUNT; ++id)
+    if (id % 2u) game.cards.counts[id] = 99u;
+  game.phase = H2_FRUIT_SLICE_PHASE_CARDS;
+  h2_fruit_slice_cards_open_album(&game.cards);
+  char name[64];
+  for (unsigned tab = 0; tab < H2_FRUIT_SLICE_CARD_TABS; ++tab) {
+    game.cards.tab = (uint8_t)tab;
+    game.cards.selected = 0u;
+    game.cards.tab_ms = 0u;
+    h2_fruit_slice_cards_step(&game.cards, 120u, false);
+    (void)snprintf(name, sizeof(name), "preview-album-slide-%u-%dx%d", tab,
+                   width, height);
+    check_scene(name, width, height);
+    h2_fruit_slice_cards_step(&game.cards, 400u, false);
+    (void)snprintf(name, sizeof(name), "preview-album-%u-%dx%d", tab, width,
+                   height);
+    check_scene(name, width, height);
+  }
+  /* Full names/hints with maximum duplicate counts, in both languages. */
+  for (unsigned id = 0; id < H2_FRUIT_SLICE_CARD_COUNT; ++id) {
+    game.cards.counts[id] = 99u;
+    game.cards.tab = h2_fruit_slice_card(id)->category;
+    uint8_t ids[H2_FRUIT_SLICE_CARD_TAB_SLOTS];
+    const unsigned count = h2_fruit_slice_card_tab_cards(game.cards.tab, ids);
+    for (unsigned slot = 0; slot < count; ++slot)
+      if (ids[slot] == id) game.cards.selected = (uint8_t)slot;
+    (void)snprintf(name, sizeof(name), "preview-detail-%u-%dx%d", id, width,
+                   height);
+    check_scene(name, width, height);
+  }
+  h2_fruit_slice_cards_close_album(&game.cards);
+  game.phase = H2_FRUIT_SLICE_PHASE_GAME_OVER;
+  const unsigned ids[] = {0u, 3u, 5u, 15u};
+  const unsigned ages[] = {80u, 380u, 650u, 800u, 960u, 1200u};
+  for (unsigned rarity = 0; rarity < 4u; ++rarity) {
+    game.cards.reveal_active = false;
+    game.cards.reveal_queue = 1u << ids[rarity];
+    h2_fruit_slice_cards_step(&game.cards, 16u, true);
+    for (unsigned stage = 0; stage < 6u; ++stage) {
+      h2_fruit_slice_cards_step(&game.cards, ages[stage] - game.cards.reveal_ms,
+                                true);
+      (void)snprintf(name, sizeof(name), "preview-reveal-%u-%u-%dx%d", rarity,
+                     ages[stage], width, height);
+      check_scene(name, width, height);
+    }
+  }
+  CHECK(allocation_calls == prepared); /* No frame-time texture allocation. */
+}
+
+static void test_weapon_trails(void) {
+  uint64_t hashes[H2_FRUIT_SLICE_WEAPONS];
+  for (unsigned id = 0u; id < H2_FRUIT_SLICE_WEAPONS; ++id) {
+    h2_fruit_slice_game_init(&game, 240, 240, 33u, 0u);
+    game.phase = H2_FRUIT_SLICE_PHASE_PLAYING;
+    game.progress.equipped = id;
+    memset(game.fruits, 0, sizeof(game.fruits));
+    game.trail_count = 3u;
+    game.trail[0] = (h2_fruit_slice_trail_point_t){30, 130, 0};
+    game.trail[1] = (h2_fruit_slice_trail_point_t){120, 90, 0};
+    game.trail[2] = (h2_fruit_slice_trail_point_t){210, 140, 0};
+    CHECK(check_layer(h2_fruit_slice_render_scene, NULL, 240, 240) > 0u);
+    uint64_t hash = UINT64_C(1469598103934665603);
+    for (unsigned i = 0; i < 240u * 240u; ++i) {
+      hash ^= pixels[i];
+      hash *= UINT64_C(1099511628211);
+    }
+    hashes[id] = hash;
+    for (unsigned prior = 0; prior < id; ++prior) CHECK(hash != hashes[prior]);
+    h2_fruit_slice_canvas_t canvas = {
+        .pixels = pixels, .width = 240, .height = 240, .stride_pixels = 240};
+    h2_fruit_slice_render_background(&canvas);
+    h2_fruit_slice_render_scene(&canvas, &game);
+    char name[32];
+    (void)snprintf(name, sizeof(name), "weapon-trail-%u", id);
+    write_ppm(name, 240, 240);
+  }
+}
+
+static void test_variety_scenes(int32_t width, int32_t height) {
+  h2_fruit_slice_sprites_destroy(sprites);
+  allocation_calls = allocated_bytes = 0u;
+  sprites = h2_fruit_slice_sprites_create(&test_memory);
+  CHECK(sprites != NULL);
+  h2_fruit_slice_game_init(&game, width, height, 42u, 0u);
+  game.language = render_language;
+  CHECK(h2_fruit_slice_sprites_prepare(sprites, &game));
+  const size_t prepared = allocation_calls;
+  printf(
+      "variety resources %dx%d: allocations=%zu bytes=%zu game=%zu frames=%zu\n",
+      width, height, allocation_calls, allocated_bytes, sizeof(game),
+      (size_t)width * (size_t)height * 6u);
+  game.phase = H2_FRUIT_SLICE_PHASE_PLAYING;
+  memset(game.fruits, 0, sizeof(game.fruits));
+  h2_fruit_slice_canvas_t canvas = {.pixels = background,
+                                    .width = width,
+                                    .height = height,
+                                    .stride_pixels = (size_t)width};
+  h2_fruit_slice_render_background(&canvas);
+  for (unsigned k = 0u; k < 4u; ++k) {
+    const unsigned kind = H2_FRUIT_SLICE_STRAWBERRY + k;
+    const float radius =
+        h2_fruit_slice_game_radius(&game, (h2_fruit_slice_kind_t)kind);
+    const float x = (float)width * (0.125f + 0.25f * (float)k);
+    for (unsigned row = 0u; row < 2u; ++row) {
+      h2_fruit_slice_fruit_t* f = &game.fruits[k + row * 4u];
+      *f = (h2_fruit_slice_fruit_t){
+          .active = true,
+          .kind = (uint8_t)kind,
+          .radius = radius,
+          .body = {.x = x,
+                   .y = (float)height * (0.32f + 0.25f * (float)row),
+                   .angle = row ? 1.1f : 0.0f}};
+    }
+    for (unsigned side = 0u; side < 2u; ++side) {
+      h2_fruit_slice_half_t* half = &game.halves[k * 2u + side];
+      const float angle = side ? 0.0f : H2_FRUIT_SLICE_PI;
+      *half = (h2_fruit_slice_half_t){
+          .active = true,
+          .kind = (uint8_t)kind,
+          .radius = radius,
+          .shape_angle = -angle,
+          .body = {.x = x + (side ? 5.0f : -5.0f) * game.unit,
+                   .y = (float)height * 0.84f,
+                   .angle = angle}};
+    }
+  }
+  char name[64];
+  (void)snprintf(name, sizeof(name), "variety-specimens-%dx%d", width, height);
+  check_scene(name, width, height);
+  CHECK(allocation_calls == prepared);
+  /* Texture masks preserve negative space even without an allocator. */
+  for (unsigned i = 0u; i < 8u; ++i) {
+    game.fruits[i].body.angle += 0.37f;
+    (void)check_layer(h2_fruit_slice_render_scene, sprites, width, height);
+  }
+  CHECK(allocation_calls == prepared);
+}
+
+static void test_combo_feedback_priority(void) {
+  h2_fruit_slice_game_init(&game, 480, 320, 57u, 0u);
+  game.phase = H2_FRUIT_SLICE_PHASE_PLAYING;
+  memset(game.fruits, 0, sizeof(game.fruits));
+  game.popups[0] = (h2_fruit_slice_popup_t){.active = true,
+                                            .age_ms = 100u,
+                                            .life_ms = 900u,
+                                            .color = 0xFFFFu,
+                                            .text = "COMBO +3"};
+  game.popups[1] = (h2_fruit_slice_popup_t){.active = true,
+                                            .age_ms = 200u,
+                                            .life_ms = 900u,
+                                            .color = 0xFFFFu,
+                                            .text = "COMBO +5"};
+  CHECK(check_layer(h2_fruit_slice_render_scene, NULL, 480, 320) > 0u);
+  memcpy(background, pixels, 480u * 320u * sizeof(*pixels));
+  game.popups[1].active = false;
+  CHECK(check_layer(h2_fruit_slice_render_scene, NULL, 480, 320) > 0u);
+  CHECK(memcmp(background, pixels, 480u * 320u * sizeof(*pixels)) == 0);
+  game.popups[1].active = true;
+  game.popups[0].active = false;
+  CHECK(check_layer(h2_fruit_slice_render_scene, NULL, 480, 320) > 0u);
+  CHECK(memcmp(background, pixels, 480u * 320u * sizeof(*pixels)) != 0);
+  game.phase = H2_FRUIT_SLICE_PHASE_GAME_OVER;
+  CHECK(check_layer(h2_fruit_slice_render_scene, NULL, 480, 320) == 0u);
+}
+
+static void test_result_reward_does_not_overwrite_record(void) {
+  const int sizes[][2] = {{160, 160}, {240, 240}, {480, 320}};
+  for (unsigned size = 0; size < 3u; ++size) {
+    const int w = sizes[size][0], h = sizes[size][1];
+    for (unsigned language = 0; language < 2u; ++language) {
+      for (unsigned record = 0; record < 2u; ++record) {
+        h2_fruit_slice_game_init(&game, w, h, 42u, 21u);
+        game.language = (h2_fruit_slice_language_t)language;
+        game.phase = H2_FRUIT_SLICE_PHASE_GAME_OVER;
+        game.score = 12u;
+        game.new_best = record != 0u;
+        if (record) game.best = 12u;
+        memset(game.fruits, 0, sizeof(game.fruits));
+        h2_fruit_slice_canvas_t c = {.pixels = pixels,
+                                     .width = w,
+                                     .height = h,
+                                     .stride_pixels = (size_t)w};
+        h2_fruit_slice_render_background(&c);
+        h2_fruit_slice_render_static(&c, &game);
+        memcpy(background, pixels, (size_t)w * (size_t)h * sizeof(uint16_t));
+        /* Detect the painted record ink instead of duplicating the old
+         * panel's coordinates; the combined layout uses a different stack. */
+        int protected_bottom = 0;
+        for (int y = 0; y < h / 2; ++y)
+          for (int x = 0; x < w; ++x)
+            if (background[y * w + x] == H2_FRUIT_SLICE_RGB(245, 238, 222))
+              protected_bottom = y + 2; /* Include the one-pixel shadow. */
+        CHECK(protected_bottom > 0);
+        game.cards.run_earned = game.cards.run_new = 3u;
+        h2_fruit_slice_render_background(&c);
+        h2_fruit_slice_render_static(&c, &game);
+        /* Adding two ordinary earned cards must not overwrite any pixel of
+         * the unchanged title/score/record block, or the tap navigation. */
+        CHECK(memcmp(background, pixels,
+                     (size_t)w * (size_t)protected_bottom * sizeof(uint16_t)) ==
+              0);
+        h2_fruit_slice_rect_t nav;
+        CHECK(h2_fruit_slice_game_button_rect(
+            &game, H2_FRUIT_SLICE_BUTTON_START, &nav));
+        const int nav_y = (int)nav.y0;
+        CHECK(memcmp(background + nav_y * w, pixels + nav_y * w,
+                     (size_t)w * (size_t)(h - nav_y) * sizeof(uint16_t)) == 0);
+        CHECK(h2_fruit_slice_cards_result_height(&game) > 0);
+        CHECK(memcmp(background, pixels,
+                     (size_t)w * (size_t)h * sizeof(*pixels)) != 0);
+      }
+    }
+  }
+}
+
+/* Scalar coverage oracle retained independently of the span fast path. */
+static void test_rounded_rect_spans(void) {
+  const float offsets[] = {-8.75f, -0.25f, 0.0f, 0.49f, 12.75f};
+  const float radii[] = {0.0f, 0.25f, 1.0f, 7.5f, 20.0f, 80.0f};
+  const uint32_t alphas[] = {0u, 1u, 190u, 256u};
+  for (unsigned o = 0; o < sizeof(offsets) / sizeof(offsets[0]); ++o)
+    for (unsigned r = 0; r < sizeof(radii) / sizeof(radii[0]); ++r)
+      for (unsigned a = 0; a < sizeof(alphas) / sizeof(alphas[0]); ++a) {
+        const float x0 = offsets[o], y0 = offsets[o] + 2.25f;
+        const float x1 = x0 + 63.25f, y1 = y0 + 42.75f;
+        const float radius = radii[r];
+        for (unsigned i = 0; i < 80u * 64u; ++i)
+          pixels[i] = background[i] = (uint16_t)(i * 7919u);
+        h2_fruit_slice_canvas_t canvas = {
+            .pixels = pixels, .width = 80, .height = 64, .stride_pixels = 80};
+        h2_fruit_slice_draw_rounded_rect(&canvas, x0, y0, x1, y1, radius,
+                                         0xfb84u, alphas[a]);
+        for (int y = (int)floorf(fmaxf(0.0f, y0));
+             y < (int)ceilf(fminf(64.0f, y1)); ++y)
+          for (int x = (int)floorf(fmaxf(0.0f, x0));
+               x < (int)ceilf(fminf(80.0f, x1)); ++x) {
+            const float dx = fmaxf(fmaxf(x0 + radius - ((float)x + 0.5f),
+                                         (float)x + 0.5f - (x1 - radius)),
+                                   0.0f);
+            const float dy = fmaxf(fmaxf(y0 + radius - ((float)y + 0.5f),
+                                         (float)y + 0.5f - (y1 - radius)),
+                                   0.0f);
+            float cover = 1.0f;
+            if (dx > 0.0f && dy > 0.0f)
+              cover = fminf(
+                  1.0f, fmaxf(0.0f, radius + 0.5f - sqrtf(dx * dx + dy * dy)));
+            else if (dx > radius || dy > radius)
+              cover = 0.0f;
+            if (cover > 0.0f)
+              background[y * 80 + x] =
+                  h2_fruit_slice_blend(background[y * 80 + x], 0xfb84u,
+                                       (uint32_t)(cover * (float)alphas[a]));
+          }
+        CHECK(memcmp(pixels, background, 80u * 64u * sizeof(*pixels)) == 0);
+      }
+}
+
 int main(void) {
+  test_rounded_rect_spans();
+  test_weapon_trails();
+  test_variety_scenes(480, 320);
+  test_variety_scenes(160, 160);
+  test_variety_scenes(240, 240);
+  test_result_reward_does_not_overwrite_record();
+  test_combo_feedback_priority();
+  test_card_scenes(160, 160);
+  test_card_scenes(240, 240);
+  test_card_scenes(480, 320);
+  test_card_scenes(480, 800);
+  h2_fruit_slice_sprites_destroy(sprites);
+  sprites = NULL;
+  test_progress_pages(160, 160);
+  test_progress_pages(240, 240);
+  test_progress_pages(480, 320);
+  test_progress_pages(368, 448);
+  test_progress_pages(480, 800);
   sprites = h2_fruit_slice_sprites_create(&test_memory);
   CHECK(sprites != NULL);
   test_bands();
   test_static_key();
   test_sprite_cache();
+  render_size(160, 160);
+  render_size(240, 240);
+  render_size(480, 320);
+  render_size(480, 800);
   render_size(480, 480);
   render_size(800, 480);
   render_size(368, 448);
@@ -359,6 +738,16 @@ int main(void) {
   test_blast_bounds(800, 480);
   test_blast_bounds(368, 448);
   test_clipping();
+  render_language = H2_FRUIT_SLICE_LANGUAGE_EN;
+  test_variety_scenes(160, 160);
+  test_variety_scenes(480, 320);
+  test_progress_pages(160, 160);
+  test_progress_pages(240, 240);
+  test_progress_pages(480, 320);
+  test_card_scenes(160, 160);
+  test_card_scenes(480, 320);
+  render_size(160, 160);
+  render_size(480, 320);
   h2_fruit_slice_sprites_destroy(sprites);
   puts("fruit slice render tests passed");
   return 0;

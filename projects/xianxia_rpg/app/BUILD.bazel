@@ -1,0 +1,268 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
+load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/lvgl/font_conv:font_conv.bzl", "lvgl_font")
+
+package(default_visibility = ["//visibility:public"])
+
+_PRIVATE_HEADERS = [
+    "src/h2_xianxia_rpg_game.h",
+    "src/h2_xianxia_rpg_render.h",
+    "src/h2_xianxia_rpg_story.h",
+]
+
+_LIBM = select({
+    "@platforms//os:linux": ["-lm"],
+    "//conditions:default": [],
+})
+
+# Every Chinese string drawn on screen lives in the story tables, so they are
+# the glyph sources of the body font.
+lvgl_font(
+    name = "body_font",
+    size = 18,
+    out = "h2_xianxia_rpg_font_body.c",
+    bpp = 4,
+    font = "//libs/ui/fonts/noto_sans_sc:NotoSansSC-Bold.ttf",
+    font_name = "h2_xianxia_rpg_font_body",
+    lv_include = "h2_xianxia_rpg_font_format.h",
+    ranges = ["0x20-0x7E"],
+    symbol_sources = [
+        "src/h2_xianxia_rpg_chapter10.c",
+        "src/h2_xianxia_rpg_chapter2.c",
+        "src/h2_xianxia_rpg_chapter3.c",
+        "src/h2_xianxia_rpg_chapter4.c",
+        "src/h2_xianxia_rpg_chapter5.c",
+        "src/h2_xianxia_rpg_chapter6.c",
+        "src/h2_xianxia_rpg_chapter7.c",
+        "src/h2_xianxia_rpg_chapter8.c",
+        "src/h2_xianxia_rpg_chapter9.c",
+        "src/h2_xianxia_rpg_story.c",
+    ],
+)
+
+lvgl_font(
+    name = "title_font",
+    size = 40,
+    out = "h2_xianxia_rpg_font_title.c",
+    bpp = 4,
+    font = "//libs/ui/fonts/noto_sans_sc:NotoSansSC-Bold.ttf",
+    font_name = "h2_xianxia_rpg_font_title",
+    lv_include = "h2_xianxia_rpg_font_format.h",
+    ranges = [
+        "0x2B",
+        "0x30-0x39",
+    ],
+    symbol_sources = ["fonts/title_glyphs.txt"],
+)
+
+cc_library(
+    name = "fonts",
+    srcs = [
+        ":body_font",
+        ":title_font",
+    ],
+    hdrs = ["src/h2_xianxia_rpg_font_format.h"],
+    conlyopts = H2_C11_OPTS,
+    strip_include_prefix = "src",
+    visibility = ["//visibility:private"],
+)
+
+cc_library(
+    name = "xianxia_rpg",
+    srcs = _PRIVATE_HEADERS + [
+        "src/h2_xianxia_rpg.c",
+        "src/h2_xianxia_rpg_chapter10.c",
+        "src/h2_xianxia_rpg_chapter2.c",
+        "src/h2_xianxia_rpg_chapter3.c",
+        "src/h2_xianxia_rpg_chapter4.c",
+        "src/h2_xianxia_rpg_chapter5.c",
+        "src/h2_xianxia_rpg_chapter6.c",
+        "src/h2_xianxia_rpg_chapter7.c",
+        "src/h2_xianxia_rpg_chapter8.c",
+        "src/h2_xianxia_rpg_chapter9.c",
+        "src/h2_xianxia_rpg_game.c",
+        "src/h2_xianxia_rpg_render.c",
+        "src/h2_xianxia_rpg_story.c",
+    ],
+    hdrs = ["include/h2_xianxia_rpg.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    linkopts = _LIBM,
+    deps = [
+        ":fonts",
+        "//libs/runtime",
+    ],
+)
+
+cc_test(
+    name = "game_test",
+    srcs = _PRIVATE_HEADERS + ["tests/test_game.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [":xianxia_rpg"],
+)
+
+cc_test(
+    name = "chapter4_test",
+    srcs = _PRIVATE_HEADERS + ["tests/test_chapter4.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [":xianxia_rpg"],
+)
+
+cc_test(
+    name = "chapter5_test",
+    srcs = _PRIVATE_HEADERS + ["tests/test_chapter5.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [":xianxia_rpg"],
+)
+
+cc_test(
+    name = "chapter6_test",
+    srcs = _PRIVATE_HEADERS + ["tests/test_chapter6.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [":xianxia_rpg"],
+)
+
+cc_test(
+    name = "chapter7_test",
+    srcs = _PRIVATE_HEADERS + ["tests/test_chapter7.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [":xianxia_rpg"],
+)
+
+cc_test(
+    name = "chapter8_test",
+    srcs = _PRIVATE_HEADERS + ["tests/test_chapter8.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [":xianxia_rpg"],
+)
+
+cc_test(
+    name = "chapter9_test",
+    srcs = _PRIVATE_HEADERS + ["tests/test_chapter9.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [":xianxia_rpg"],
+)
+
+cc_test(
+    name = "chapter10_test",
+    srcs = _PRIVATE_HEADERS + ["tests/test_chapter10.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [":xianxia_rpg"],
+)
+
+cc_test(
+    name = "render_test",
+    srcs = _PRIVATE_HEADERS + ["tests/test_render.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [":xianxia_rpg"],
+)
+
+# The longer chapter-8 persistence group shares the same PAL fixture and
+# production input driver, with its own default cc_test time budget.
+cc_test(
+    name = "chapter8_app_test",
+    srcs = _PRIVATE_HEADERS + ["tests/test_app.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    local_defines = ["H2_XIANXIA_RPG_TEST_EIGHTH_RECORD_OWNERSHIP=1"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":xianxia_rpg",
+        "//libs/sync/atomic/providers/c11",
+        "//pal:unsupported",
+        "//pal/providers/platforms/desktop/pal_core:core",
+    ],
+)
+
+cc_test(
+    name = "chapter9_app_test",
+    srcs = _PRIVATE_HEADERS + ["tests/test_app.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    local_defines = ["H2_XIANXIA_RPG_TEST_NINTH_RECORD_OWNERSHIP=1"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":xianxia_rpg",
+        "//libs/sync/atomic/providers/c11",
+        "//pal:unsupported",
+        "//pal/providers/platforms/desktop/pal_core:core",
+    ],
+)
+
+cc_test(
+    name = "chapter10_app_test",
+    srcs = _PRIVATE_HEADERS + ["tests/test_app.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    local_defines = ["H2_XIANXIA_RPG_TEST_TENTH_RECORD_OWNERSHIP=1"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":xianxia_rpg",
+        "//libs/sync/atomic/providers/c11",
+        "//pal:unsupported",
+        "//pal/providers/platforms/desktop/pal_core:core",
+    ],
+)
+
+cc_test(
+    name = "app_test",
+    srcs = _PRIVATE_HEADERS + ["tests/test_app.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":xianxia_rpg",
+        "//libs/sync/atomic/providers/c11",
+        "//pal:unsupported",
+        "//pal/providers/platforms/desktop/pal_core:core",
+    ],
+)

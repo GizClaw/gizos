@@ -1,0 +1,41 @@
+#ifndef H2_FRUIT_SLICE_SOUND_H
+#define H2_FRUIT_SLICE_SOUND_H
+
+#include <stdbool.h>
+
+/* Pure game events. Append new values: indices also select bank resources. */
+typedef enum h2_fruit_slice_sound {
+  H2_FRUIT_SLICE_SOUND_SWING = 0,
+  H2_FRUIT_SLICE_SOUND_SLICE,
+  H2_FRUIT_SLICE_SOUND_COMBO,
+  H2_FRUIT_SLICE_SOUND_BOMB,
+  H2_FRUIT_SLICE_SOUND_MISS,
+  H2_FRUIT_SLICE_SOUND_FAIL,
+  H2_FRUIT_SLICE_SOUND_RESULT,
+  H2_FRUIT_SLICE_SOUND_COIN,
+  H2_FRUIT_SLICE_SOUND_TASK,
+  H2_FRUIT_SLICE_SOUND_PURCHASE,
+  H2_FRUIT_SLICE_SOUND_EQUIP,
+  H2_FRUIT_SLICE_SOUND_CARD,
+  H2_FRUIT_SLICE_SOUND_RARE,
+  H2_FRUIT_SLICE_SOUND_CHEER,
+  H2_FRUIT_SLICE_SOUND_SLICE_JADE,
+  H2_FRUIT_SLICE_SOUND_SLICE_FLAME,
+  H2_FRUIT_SLICE_SOUND_SLICE_BAMBOO,
+  H2_FRUIT_SLICE_SOUND_SLICE_FROST,
+  H2_FRUIT_SLICE_SOUND_SLICE_STORM,
+  H2_FRUIT_SLICE_SOUND_COUNT,
+} h2_fruit_slice_sound_t;
+
+/* All weapon hits share one admission priority and rate limit. */
+static inline bool h2_fruit_slice_sound_is_hit(h2_fruit_slice_sound_t sound) {
+  return sound == H2_FRUIT_SLICE_SOUND_SLICE ||
+         (sound >= H2_FRUIT_SLICE_SOUND_SLICE_JADE &&
+          sound <= H2_FRUIT_SLICE_SOUND_SLICE_STORM);
+}
+
+#define H2_FRUIT_SLICE_SOUND_QUEUE 16u
+#define H2_FRUIT_SLICE_MUTE_SFX 1u
+#define H2_FRUIT_SLICE_MUTE_MUSIC 2u
+
+#endif

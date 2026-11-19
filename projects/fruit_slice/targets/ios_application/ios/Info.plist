@@ -3,9 +3,9 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleShortVersionString</key>
-    <string>0.1.2</string>
+    <string>0.3.0</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>4</string>
     <key>CFBundleDisplayName</key>
     <string>Fruit Slice</string>
     <key>UILaunchScreen</key>

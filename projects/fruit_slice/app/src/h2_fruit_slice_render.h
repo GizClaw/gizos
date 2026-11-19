@@ -25,11 +25,12 @@ extern "C" {
 /** One bit per band: supports heights up to 64 * 16 = 1024 rows. */
 #define H2_FRUIT_SLICE_MAX_BANDS 64
 /** Cached fruit textures; more distinct sizes fall back to flat drawing. */
-#define H2_FRUIT_SLICE_SPRITE_CAPACITY 32
+#define H2_FRUIT_SLICE_SPRITE_CAPACITY 40
 
 /** Cache of per-kind, per-radius fruit textures in a fruit-local frame.
  * Whole-fruit textures hold unlit color, lit per pixel in screen space; half
- * textures hold the cut face. Textures are built on first use. */
+ * textures hold the cut face. New silhouettes use full fruit-local cut masks
+ * with transparent texels. Textures are built on first use. */
 typedef struct h2_fruit_slice_sprites h2_fruit_slice_sprites_t;
 
 typedef struct h2_fruit_slice_canvas {
@@ -49,7 +50,8 @@ typedef struct h2_fruit_slice_canvas {
 /** Fields of the game the static layer depends on. All-integer, so two keys
  * compare equal with memcmp after zero initialization. */
 typedef struct h2_fruit_slice_static_key {
-  uint32_t phase, score, best, lives, new_best;
+  uint32_t phase, score, best, lives, new_best, audio_mute, language;
+  uint32_t progress_revision, save_status, cards_revision;
   /** Menu fruit center row, or -1 without a menu fruit. */
   int32_t menu_y;
 } h2_fruit_slice_static_key_t;
@@ -87,6 +89,8 @@ void h2_fruit_slice_render_scene(h2_fruit_slice_canvas_t* canvas,
 
 /** Pixel width of text drawn at an integer scale. */
 int32_t h2_fruit_slice_text_width(const char* text, int32_t scale);
+/** Line height used by the same UTF-8 glyph walk as drawing/measurement. */
+int32_t h2_fruit_slice_text_height(const char* text, int32_t scale);
 
 #ifdef __cplusplus
 }

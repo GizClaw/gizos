@@ -1,11 +1,22 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel/firmware:tasks.bzl", "h2_tasks")
 load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
 load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/lvgl/font_conv:font_conv.bzl", "lvgl_font")
 
 package(default_visibility = ["//visibility:public"])
 
 _PRIVATE_HEADERS = [
+    "src/h2_fruit_slice_audio.h",
+    "src/h2_fruit_slice_audio_worker.h",
+    "src/h2_fruit_slice_audio_bank.h",
+    "src/h2_fruit_slice_sound.h",
+    "src/h2_fruit_slice_text.h",
+    "src/h2_fruit_slice_font.h",
+    "src/h2_fruit_slice_cards.h",
+    "src/h2_fruit_slice_cards_render.h",
     "src/h2_fruit_slice_game.h",
+    "src/h2_fruit_slice_shape.h",
     "src/h2_fruit_slice_render.h",
 ]
 
@@ -14,24 +25,128 @@ _LIBM = select({
     "//conditions:default": [],
 })
 
+lvgl_font(
+    name = "zh_compact_font",
+    size = 12,
+    out = "h2_fruit_slice_font_zh_compact.c",
+    bpp = 4,
+    font = "//libs/ui/fonts/noto_sans_sc:NotoSansSC-Bold.ttf",
+    font_name = "h2_fruit_slice_font_zh_compact",
+    lv_include = "h2_fruit_slice_font_format.h",
+    symbol_sources = ["src/h2_fruit_slice_text.c"],
+)
+
+lvgl_font(
+    name = "zh_body_font",
+    size = 15,
+    out = "h2_fruit_slice_font_zh_body.c",
+    bpp = 4,
+    font = "//libs/ui/fonts/noto_sans_sc:NotoSansSC-Bold.ttf",
+    font_name = "h2_fruit_slice_font_zh_body",
+    lv_include = "h2_fruit_slice_font_format.h",
+    symbol_sources = ["src/h2_fruit_slice_text.c"],
+)
+
+lvgl_font(
+    name = "zh_heading_font",
+    size = 20,
+    out = "h2_fruit_slice_font_zh_heading.c",
+    bpp = 2,
+    font = "//libs/ui/fonts/noto_sans_sc:NotoSansSC-Bold.ttf",
+    font_name = "h2_fruit_slice_font_zh_heading",
+    lv_include = "h2_fruit_slice_font_format.h",
+    symbol_sources = ["src/h2_fruit_slice_text.c"],
+)
+
+lvgl_font(
+    name = "zh_display_font",
+    size = 26,
+    out = "h2_fruit_slice_font_zh_display.c",
+    bpp = 2,
+    font = "//libs/ui/fonts/noto_sans_sc:NotoSansSC-Bold.ttf",
+    font_name = "h2_fruit_slice_font_zh_display",
+    lv_include = "h2_fruit_slice_font_format.h",
+    symbol_sources = ["src/h2_fruit_slice_text.c"],
+)
+
+cc_library(
+    name = "fonts",
+    srcs = [
+        ":zh_body_font",
+        ":zh_compact_font",
+        ":zh_display_font",
+        ":zh_heading_font",
+    ],
+    hdrs = ["src/h2_fruit_slice_font_format.h"],
+    conlyopts = H2_C11_OPTS,
+    strip_include_prefix = "src",
+    visibility = ["//visibility:private"],
+)
+
+h2_tasks(
+    name = "audio_tasks",
+    tasks = ["fruit-slice/audio"],
+)
+
 cc_library(
     name = "fruit_slice",
     srcs = _PRIVATE_HEADERS + [
         "src/h2_fruit_slice.c",
+        "src/h2_fruit_slice_audio.c",
+        "src/h2_fruit_slice_audio_bank.c",
+        "src/h2_fruit_slice_audio_worker.c",
+        "src/h2_fruit_slice_cards.c",
+        "src/h2_fruit_slice_cards_render.c",
+        "src/h2_fruit_slice_font.c",
         "src/h2_fruit_slice_game.c",
         "src/h2_fruit_slice_render.c",
+        "src/h2_fruit_slice_text.c",
     ],
     hdrs = ["include/h2_fruit_slice.h"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     includes = ["include"],
     linkopts = _LIBM,
-    deps = ["//libs/runtime"],
+    deps = [
+        ":audio_tasks",
+        ":fonts",
+        "//libs/runtime",
+    ],
+)
+
+cc_test(
+    name = "text_test",
+    srcs = _PRIVATE_HEADERS + ["tests/test_text.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [":fruit_slice"],
 )
 
 cc_test(
     name = "game_test",
     srcs = _PRIVATE_HEADERS + ["tests/test_game.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [":fruit_slice"],
+)
+
+cc_test(
+    name = "progression_test",
+    srcs = _PRIVATE_HEADERS + ["tests/test_progression.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [":fruit_slice"],
+)
+
+cc_test(
+    name = "cards_test",
+    srcs = _PRIVATE_HEADERS + ["tests/test_cards.c"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     includes = ["src"],
@@ -50,10 +165,11 @@ cc_test(
 )
 
 cc_test(
-    name = "app_test",
-    srcs = ["tests/test_app.c"],
+    name = "audio_test",
+    srcs = _PRIVATE_HEADERS + ["tests/test_audio.c"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
+    includes = ["src"],
     target_compatible_with = select({
         "//tools/bazel/platforms:host_linux_target_linux": [],
         "//tools/bazel/platforms:host_macos_target_macos": [],
@@ -63,6 +179,47 @@ cc_test(
         ":fruit_slice",
         "//libs/sync/atomic/providers/c11",
         "//pal:unsupported",
+        "//pal/providers/backends/sqlite",
+        "//pal/providers/platforms/desktop/pal_core:core",
+    ],
+)
+
+cc_test(
+    name = "audio_worker_test",
+    srcs = _PRIVATE_HEADERS + ["tests/test_audio_worker.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    linkopts = ["-pthread"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":fruit_slice",
+        "//libs/sync/atomic/providers/c11",
+        "//pal:unsupported",
+        "//pal/providers/platforms/desktop/pal_core:core",
+    ],
+)
+
+cc_test(
+    name = "app_test",
+    srcs = _PRIVATE_HEADERS + ["tests/test_app.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":fruit_slice",
+        "//libs/sync/atomic/providers/c11",
+        "//pal:unsupported",
+        "//pal/providers/backends/sqlite",
         "//pal/providers/platforms/desktop/pal_core:core",
     ],
 )

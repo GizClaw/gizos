@@ -1,0 +1,44 @@
+load("//tools/bazel/web:web_app.bzl", "h2_web_app")
+load("//tools/bazel/web:web_board.bzl", "h2_web_board")
+
+h2_web_board(
+    name = "canvas",
+    display_height = 320,
+    display_width = 480,
+)
+
+h2_web_app(
+    name = "display-bench-preview",
+    srcs = ["main.c"],
+    app_name = "display_bench_preview",
+    board = ":canvas",
+    evals = [[
+        "H2_WEB_APP name=display_bench_preview preview=RGB565",
+        """
+        (() => {
+          const canvas = document.getElementById('canvas');
+          const context = canvas.getContext('2d');
+          const pixel = (x, y) => context.getImageData(x, y, 1, 1).data.join(',');
+          const patterns = new Set();
+          function sample() {
+            const pixels = [pixel(0, 0), pixel(32, 0), pixel(0, 32), pixel(479, 319)].join('|');
+            patterns.add(pixels);
+            if (canvas.width === 480 && canvas.height === 320 &&
+                patterns.has('0,125,0,255|123,0,0,255|123,0,0,255|123,0,0,255') &&
+                patterns.has('123,125,123,255|0,0,255,255|0,0,255,255|0,0,255,255')) {
+              console.log('H2_DISPLAY_PREVIEW_BOTH_PATTERNS');
+              document.getElementById('stop').click();
+            } else {
+              requestAnimationFrame(sample);
+            }
+          }
+          requestAnimationFrame(sample);
+        })();
+    """,
+    ]],
+    passes = [
+        "H2_DISPLAY_PREVIEW_BOTH_PATTERNS",
+        "H2_WEB_APP name=display_bench_preview result=PASS rc=0 destroy=0",
+    ],
+    deps = ["//projects/testing/benchmark/display:display_bench"],
+)

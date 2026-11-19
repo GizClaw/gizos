@@ -287,6 +287,9 @@ static int display_draw_bitmap_impl(void* user, const h2_display_rect_t* rect,
     return H2_DISPLAY_ERR_IO;
   }
   if (set_window(rect) != 0) return H2_DISPLAY_ERR_IO;
+  /* RAMWR (0x2c) is a non-blocking EMI packet too. Finish the command before
+   * selecting pixel data; display_write's later flush cannot protect RS. */
+  if (display_flush(state) != H2_DISPLAY_OK) return H2_DISPLAY_ERR_IO;
   gpio_direction_output(H2_LCD_RS_PIN, 1);
   const uint8_t* row = pixels;
   uint8_t* destination = state->frame;

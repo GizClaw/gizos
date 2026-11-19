@@ -14,11 +14,12 @@ typedef struct fruit_slice_lifecycle {
  * queue: Display teardown itself needs the main queue to detach its view. */
 static bool fruit_slice_should_exit(void *user) {
   fruit_slice_lifecycle_t *lifecycle = user;
-  while (!atomic_load(&lifecycle->stopped)) {
-    if (!atomic_load(&lifecycle->paused)) return false;
-    [NSThread sleepForTimeInterval:0.05];
-  }
-  return true;
+  return atomic_load(&lifecycle->stopped);
+}
+
+static bool fruit_slice_is_paused(void *user) {
+  fruit_slice_lifecycle_t *lifecycle = user;
+  return atomic_load(&lifecycle->paused);
 }
 
 @interface FruitSliceViewController : UIViewController {
@@ -110,6 +111,9 @@ static bool fruit_slice_should_exit(void *user) {
     return;
   }
 
+  h2_ios_audio_t *audio = NULL;
+  h2_pal_result_t audio_rc = h2_ios_audio_create(&audio);
+  if (audio_rc != H2_PAL_OK) NSLog(@"Fruit Slice: optional audio unavailable (%d)", audio_rc);
   h2_fruit_slice_pointer_t pointer;
   rc = h2_fruit_slice_pointer_init(&pointer, 480, 800, h2_ios_platform_read_pointer, platform);
   h2_runtime_t *runtime = NULL;
@@ -129,6 +133,7 @@ static bool fruit_slice_should_exit(void *user) {
     cfg.system_event = h2_ios_system_event_api();
     cfg.display = h2_ios_platform_display_api(platform);
     cfg.touch = h2_fruit_slice_pointer_touch(&pointer);
+    if (audio) cfg.audio = h2_ios_audio_api(audio);
     cfg.fs = h2_ios_storage_fs_api(storage);
     cfg.pref = h2_ios_storage_pref_api(storage);
     rc = h2_runtime_init(&cfg, &runtime);
@@ -136,6 +141,7 @@ static bool fruit_slice_should_exit(void *user) {
   if (rc == H2_PAL_OK) {
     const h2_fruit_slice_config_t config = {
         .should_exit = fruit_slice_should_exit,
+        .is_paused = fruit_slice_is_paused,
         .user = &_lifecycle,
     };
     rc = h2_fruit_slice_run(runtime, &config);
@@ -149,6 +155,7 @@ static bool fruit_slice_should_exit(void *user) {
     if (cleanup != H2_PAL_OK) NSLog(@"Fruit Slice: Runtime cleanup (%d)", cleanup);
     if (runtime) [NSThread sleepForTimeInterval:0.05];
   }
+  h2_ios_audio_destroy(audio);
   h2_ios_storage_destroy(storage);
   /* Core is process-wide; another scene may already be connecting. Its
    * lifetime must not be ended by this scene's asynchronous cleanup. */
