@@ -912,7 +912,7 @@ static void test_write_ack_error_irq(void) {
       for (size_t index = 0u; index < sizeof(irqs); ++index) {
         fixture_t fixture;
         h2_fm175xx_t reader;
-        h2_fm175xx_write_diagnostics_t diagnostics;
+        h2_fm175xx_write_diagnostics_t diagnostics = {0};
         prepare_ndef_reader(&fixture, &reader);
         fixture.write_reply_crc = crc != 0u;
         fixture.write_reply_irq = irqs[index];
