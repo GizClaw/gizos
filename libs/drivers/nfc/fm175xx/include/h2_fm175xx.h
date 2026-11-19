@@ -219,6 +219,31 @@ typedef struct h2_fm175xx_ndef_update {
   uint8_t raw[1024];
 } h2_fm175xx_ndef_update_t;
 
+/** Selected-card operations. Caller serializes and keeps the same selection.
+ * read_snapshot uses the caller's already acquired first 16 bytes in
+ * update.raw. Fast reads use 32-byte chunks and a 20 ms per-frame response
+ * budget; ordinary reads retain their original 16-byte/5 ms behavior. Failure
+ * invalidates size. prepare_snapshot performs no tag I/O, except existing
+ * dynamic-lock reads when validating a standard NDEF write layout. */
+int h2_fm175xx_ntag_read_header(h2_fm175xx_t* reader, uint8_t header[16]);
+int h2_fm175xx_ntag_read_snapshot(h2_fm175xx_t* reader,
+                                  h2_fm175xx_ndef_update_t* update,
+                                  int fast_read,
+                                  h2_fm175xx_write_diagnostics_t* diagnostics);
+int h2_fm175xx_ntag_prepare_snapshot(
+    h2_fm175xx_t* reader, h2_fm175xx_ndef_update_t* update, int prepare_write,
+    h2_fm175xx_write_diagnostics_t* diagnostics);
+/** Disable RF for recovery. The next activation restores the Type A field. */
+int h2_fm175xx_field_off(h2_fm175xx_t* reader);
+/** One byte-framed Type A exchange, without retry or reselection. Hardware
+ * handles TX CRC-A/parity and RX parity; RX CRC-A is retained and reported.
+ * bits excludes parity. Errors may represent uncertain submission. */
+int h2_fm175xx_type_a_exchange_bytes(h2_fm175xx_t* reader,
+                                     const uint8_t* command, size_t length,
+                                     uint32_t timeout_ms, uint8_t* reply,
+                                     size_t capacity, size_t* bits,
+                                     int* crc_valid);
+
 /** Capture a selected Type 2 tag's NDEF and write layout before building a
  * reply. On success the input NDEF is
  * raw[value_offset..value_offset+value_length). The caller owns the snapshot

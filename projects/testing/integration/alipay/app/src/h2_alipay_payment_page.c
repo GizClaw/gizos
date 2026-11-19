@@ -1,5 +1,6 @@
 #include "h2_alipay_payment_page.h"
 #include "h2_alipay_payment_model.h"
+#include "h2_alipay_tap.h"
 #include "h2_atomic.h"
 #include "h2_qrcode.h"
 #include "h2_sha256.h"
@@ -64,6 +65,7 @@ typedef struct payment_page {
   h2_pal_task_t* worker;
   h2_atomic_bool_t done;
   uint8_t uid[H2_PAL_NFC_UID_MAX_LEN], uid_length;
+  bool nfc_private_write, nfc_reply_started;
   const h2_pal_nfc_data_read_t* nfc_prepared;
   uint8_t generated[H2_ALIPAY_PAYMENT_CODE_CAPACITY];
   uint32_t generated_length, generation, job_generation;
@@ -308,9 +310,73 @@ static int show_qr(payment_page_t* p) {
   return 0;
 }
 
+static int select_nfc_profile(void* user, const uint8_t* uid,
+                              uint8_t uid_length, const uint8_t header[16],
+                              h2_pal_nfc_reader_options_t* options) {
+  payment_page_t* page = user;
+  h2_alipay_nfc_capabilities_t capabilities;
+  int rc =
+      h2_alipay_nfc_capabilities(uid, uid_length, header, 16u, &capabilities);
+  if (rc != H2_PAL_OK) return rc;
+  page->nfc_private_write =
+      page->config->payment_nfc_fast_write && capabilities.private_write;
+  options->fast_read =
+      page->config->payment_nfc_fast_read && capabilities.fast_read;
+  options->prepare_ndef_write = !page->nfc_private_write;
+  log_payment(
+      page,
+      "H2_ALIPAY_NFC_CAPABILITIES manufacturer=0x%02x internal_id=0x%02x fast_read=%u fast_write=%u",
+      header[0], header[9], (unsigned)options->fast_read,
+      (unsigned)page->nfc_private_write);
+  return H2_PAL_OK;
+}
+static int write_private_reply(payment_page_t* page, const uint8_t* data,
+                               size_t length) {
+  const h2_pal_nfc_reader_session_api_t* api =
+      page->config->payment_nfc_session;
+  if (api == NULL || api->exchange == NULL || length == 0u ||
+      length > H2_ALIPAY_NFC_REPLY_MAX)
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_pal_periph_id_t id;
+  int rc = h2_runtime_periph_id(page->rt,
+                                page->config->payment_nfc_component_id, &id);
+  uint8_t command[H2_ALIPAY_NFC_FRAME_MAX], reply[3];
+  size_t frames = (length + H2_ALIPAY_NFC_FRAME_DATA_MAX - 1u) /
+                  H2_ALIPAY_NFC_FRAME_DATA_MAX;
+  for (size_t frame = 1u; rc == H2_PAL_OK && frame <= frames; ++frame) {
+    size_t command_length = 0u;
+    rc = h2_alipay_nfc_private_frame(data, length, frame, command,
+                                     sizeof(command), &command_length);
+    h2_pal_nfc_reader_reply_t result = {0};
+    unsigned waits = 0u;
+    while (rc == H2_PAL_OK) {
+      memset(reply, 0, sizeof(reply));
+      rc = api->exchange(api->user, id, page->nfc_prepared, command,
+                         command_length, 25u, reply, sizeof(reply), &result);
+      if (rc != H2_PAL_ERR_BUSY || waits++ >= 25u) break;
+      rc = h2_pal_time_sleep_ms(page->rt->time, 5u);
+    }
+    if (rc == H2_PAL_OK)
+      rc = h2_alipay_nfc_private_ack(reply, result.bits, result.crc_valid);
+    log_payment(
+        page,
+        "H2_ALIPAY_NFC_PRIVATE_WRITE frame=%zu frames=%zu sdk_bytes=%zu bytes=%zu bits=%zu crc_valid=%u ack=0x%02x pal_rc=%d",
+        frame, frames, length, command_length, result.bits,
+        (unsigned)result.crc_valid, result.bits >= 8u ? reply[0] : 0u, rc);
+    /* A timeout or invalid ACK can follow actual receipt. Never resend or
+     * switch to ordinary NDEF after any attempted private frame. */
+  }
+  wipe(command, sizeof(command));
+  wipe(reply, sizeof(reply));
+  return rc;
+}
+
 static int write_reply(void* user, const uint8_t* data, size_t length) {
   payment_page_t* page = user;
-  if (page->nfc_prepared == NULL) return H2_PAL_ERR_INVALID_STATE;
+  if (page->nfc_prepared == NULL || page->nfc_reply_started)
+    return H2_PAL_ERR_INVALID_STATE;
+  page->nfc_reply_started = true;
+  if (page->nfc_private_write) return write_private_reply(page, data, length);
   if (page->config->payment_nfc_encode_reply == NULL)
     return H2_PAL_ERR_UNSUPPORTED;
   uint8_t message[512];
@@ -351,8 +417,15 @@ static int read_ndef_frame(payment_page_t* page, h2_pal_periph_id_t id,
   unsigned attempt = 1u, busy_waits = 0u;
   int last_read_rc = H2_PAL_ERR_BUSY;
   while (attempt <= 3u) {
-    int rc = h2_pal_nfc_prepare_ndef_write(
-        page->rt->nfc, id, page->uid, page->uid_length, page->rt->mem, data);
+    const h2_pal_nfc_reader_session_api_t* session =
+        page->config->payment_nfc_session;
+    int rc =
+        session != NULL
+            ? session->prepare(session->user, id, page->uid, page->uid_length,
+                               select_nfc_profile, page, page->rt->mem, data)
+            : h2_pal_nfc_prepare_ndef_write(page->rt->nfc, id, page->uid,
+                                            page->uid_length, page->rt->mem,
+                                            data);
     if (rc != H2_PAL_ERR_BUSY)
       log_payment(page,
                   "H2_ALIPAY_NFC_READ attempt=%u limit=3 pal_rc=%d bytes=%zu "
@@ -418,6 +491,8 @@ static void work(void* user) {
     }
     case J_FRAME: {
       h2_pal_periph_id_t id = 0u;
+      p->nfc_private_write = false;
+      p->nfc_reply_started = false;
       h2_pal_nfc_data_read_t data = {0};
       p->call_rc =
           h2_runtime_periph_id(p->rt, p->config->payment_nfc_component_id, &id);

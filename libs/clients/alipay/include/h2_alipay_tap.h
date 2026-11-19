@@ -7,6 +7,39 @@
 extern "C" {
 #endif
 
+enum {
+  H2_ALIPAY_NFC_FRAME_DATA_MAX = 128u,
+  H2_ALIPAY_NFC_FRAME_HEADER_SIZE = 4u,
+  H2_ALIPAY_NFC_FRAME_MAX =
+      H2_ALIPAY_NFC_FRAME_HEADER_SIZE + H2_ALIPAY_NFC_FRAME_DATA_MAX,
+  H2_ALIPAY_NFC_REPLY_MAX = H2_ALIPAY_NFC_FRAME_DATA_MAX * 255u
+};
+
+typedef struct h2_alipay_nfc_capabilities {
+  bool fast_read;
+  bool private_write;
+} h2_alipay_nfc_capabilities_t;
+/** Decode the delivered tag header profile without I/O. Accept a flattened UID
+ * or complete 5-byte ISO14443-A cascade blocks including CT/BCC. Unknown
+ * manufacturers or invalid capability checksums yield no optional capabilities.
+ */
+h2_pal_result_t h2_alipay_nfc_capabilities(const uint8_t* uid,
+                                           size_t uid_length,
+                                           const uint8_t* header,
+                                           size_t header_length,
+                                           h2_alipay_nfc_capabilities_t* out);
+/** Encode one 1-based private-write frame, carrying at most 128 unchanged
+ * bytes. Input is borrowed; output is caller-owned. No NDEF or text encoding is
+ * added. */
+h2_pal_result_t h2_alipay_nfc_private_frame(const uint8_t* reply, size_t length,
+                                            size_t frame_index, uint8_t* out,
+                                            size_t capacity,
+                                            size_t* out_length);
+/** Full-byte ACK only. bits excludes parity; crc_valid describes retained
+ * CRC-A. */
+h2_pal_result_t h2_alipay_nfc_private_ack(const uint8_t* reply, size_t bits,
+                                          bool crc_valid);
+
 typedef struct h2_alipay_tap h2_alipay_tap_t;
 
 enum { H2_ALIPAY_TAP_ERR_TOKEN = -2001 };

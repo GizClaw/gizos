@@ -138,7 +138,7 @@ h2loader_esp_idf_firmware(
     graph = [":launcher"],
     layout_files = {
         "partition": "//boards/haivivi/h106_tiga_esp_v4_2/esp32s3/layouts/h2loader:partition.csv",
-        "project_support_files": ["//boards/haivivi/h106_tiga_esp_v4_2/esp32s3/layouts/e2e:sdkconfig.h2loader.defaults"],
+        "project_support_files": ["sdkconfig.h2loader.defaults"],
     },
     project = "CMakeLists.txt",
     project_name = "h2_alipay_e2e",

@@ -194,3 +194,51 @@ const h2_pal_nfc_api_t* h2_esp_board_nfc_api(void) {
   };
   return &api;
 }
+
+static h2_pal_result_t session_prepare(void* user, h2_pal_periph_id_t id,
+                                       const uint8_t* uid, uint8_t uid_length,
+                                       h2_pal_nfc_reader_select_fn select,
+                                       void* select_user,
+                                       const h2_pal_mem_api_t* allocator,
+                                       h2_pal_nfc_data_read_t* out_data) {
+  (void)user;
+  if (id != H2_TIGA_ESP_NFC_READER_ID) return H2_PAL_ERR_NOT_FOUND;
+  if (!h2_esp_board_nfc_enabled()) return H2_PAL_ERR_UNSUPPORTED;
+  if (h2_atomic_flag_test_and_set(&s_nfc_busy, H2_ATOMIC_SEQ_CST))
+    return H2_PAL_ERR_BUSY;
+  int rc = ensure_nfc_adapter();
+  if (rc == H2_PAL_OK) {
+    const h2_pal_nfc_reader_session_api_t* api =
+        h2_esp_nfc_fm175xx_session_api(&s_nfc);
+    rc = api->prepare(api->user, id, uid, uid_length, select, select_user,
+                      allocator, out_data);
+  }
+  h2_atomic_flag_clear(&s_nfc_busy, H2_ATOMIC_SEQ_CST);
+  return rc;
+}
+static h2_pal_result_t session_exchange(void* user, h2_pal_periph_id_t id,
+                                        const h2_pal_nfc_data_read_t* prepared,
+                                        const uint8_t* command, size_t length,
+                                        uint32_t timeout_ms, uint8_t* reply,
+                                        size_t capacity,
+                                        h2_pal_nfc_reader_reply_t* result) {
+  (void)user;
+  if (id != H2_TIGA_ESP_NFC_READER_ID) return H2_PAL_ERR_NOT_FOUND;
+  if (!h2_esp_board_nfc_enabled()) return H2_PAL_ERR_UNSUPPORTED;
+  if (h2_atomic_flag_test_and_set(&s_nfc_busy, H2_ATOMIC_SEQ_CST))
+    return H2_PAL_ERR_BUSY;
+  int rc = H2_PAL_ERR_INVALID_STATE;
+  if (s_nfc_initialized) {
+    const h2_pal_nfc_reader_session_api_t* api =
+        h2_esp_nfc_fm175xx_session_api(&s_nfc);
+    rc = api->exchange(api->user, id, prepared, command, length, timeout_ms,
+                       reply, capacity, result);
+  }
+  h2_atomic_flag_clear(&s_nfc_busy, H2_ATOMIC_SEQ_CST);
+  return rc;
+}
+const h2_pal_nfc_reader_session_api_t* h2_esp_board_nfc_session_api(void) {
+  static const h2_pal_nfc_reader_session_api_t api = {
+      .prepare = session_prepare, .exchange = session_exchange};
+  return &api;
+}

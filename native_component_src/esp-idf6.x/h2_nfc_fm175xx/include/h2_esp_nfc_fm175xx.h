@@ -57,6 +57,8 @@ typedef struct h2_esp_nfc_fm175xx {
   int owns_spi_bus;
   h2_fm175xx_t reader;
   h2_pal_nfc_api_t api;
+  h2_pal_nfc_reader_session_api_t session_api;
+  int prepared_read_only;
   int opened;
   unsigned scan_count;
   int last_scan_error;
@@ -83,6 +85,11 @@ void h2_esp_nfc_fm175xx_deinit(h2_esp_nfc_fm175xx_t* adapter);
  * Prepared NDEF updates reserve the selection for 500 ms after acquisition;
  * scan and unrelated I/O return BUSY until finish or expiration. */
 const h2_pal_nfc_api_t* h2_esp_nfc_fm175xx_api(h2_esp_nfc_fm175xx_t* adapter);
+
+/** Borrow the optional selected-tag session extension; same serialization and
+ * 500 ms preparation lifetime as the legacy NFC capability. */
+const h2_pal_nfc_reader_session_api_t* h2_esp_nfc_fm175xx_session_api(
+    h2_esp_nfc_fm175xx_t* adapter);
 
 #ifdef __cplusplus
 }

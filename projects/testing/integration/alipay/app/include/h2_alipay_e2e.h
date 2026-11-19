@@ -88,6 +88,11 @@ typedef struct h2_alipay_e2e_config {
   /** Optional payment menu after verified binding. NULL retains the binding
    * qualification fixture. Hardware acquisition remains Runtime-owned. */
   const h2_alipay_payment_api_t* payment;
+  /** Optional generic NFC session extension. Borrow for the App lifetime.
+   * Flags enable negotiated optimizations only on supporting tags. */
+  const h2_pal_nfc_reader_session_api_t* payment_nfc_session;
+  bool payment_nfc_fast_read;
+  bool payment_nfc_fast_write;
   h2_runtime_component_id_t payment_nfc_component_id;
   /** The integration App owns an NFC wallet session. SDK BLE compatibility
    * remains in the client library; this App acquires no payment BLE radio. */

@@ -6,6 +6,67 @@
 #include "yyjson.h"
 #include <string.h>
 
+h2_pal_result_t h2_alipay_nfc_capabilities(const uint8_t* uid,
+                                           size_t uid_length,
+                                           const uint8_t* header,
+                                           size_t header_length,
+                                           h2_alipay_nfc_capabilities_t* out) {
+  if (out == NULL) return H2_PAL_ERR_INVALID_ARG;
+  *out = (h2_alipay_nfc_capabilities_t){0};
+  if (uid == NULL || uid_length == 0u || header == NULL || header_length < 16u)
+    return H2_PAL_ERR_INVALID_ARG;
+  /* ISO14443-A raw cascade blocks include CT (0x88) and BCC. Existing
+   * readers may retain those blocks instead of returning a flattened UID. */
+  size_t manufacturer_offset =
+      ((uid_length == 10u || uid_length == 15u) && uid[0] == 0x88u) ? 1u : 0u;
+  if (uid[manufacturer_offset] != 0x1du || header[0] != 0x1du) return H2_PAL_OK;
+  uint8_t id = header[9];
+  if (id == 0xa3u || id == 0xa6u) {
+    out->fast_read = true;
+  } else {
+    unsigned ones = 0u;
+    for (unsigned bit = 3u; bit < 8u; ++bit) ones += (id >> bit) & 1u;
+    if ((id & 7u) == ones) {
+      out->fast_read = (id & 0x20u) != 0u;
+      out->private_write = (id & 0x40u) != 0u;
+    }
+  }
+  return H2_PAL_OK;
+}
+h2_pal_result_t h2_alipay_nfc_private_frame(const uint8_t* reply, size_t length,
+                                            size_t frame_index, uint8_t* out,
+                                            size_t capacity,
+                                            size_t* out_length) {
+  if (out_length == NULL) return H2_PAL_ERR_INVALID_ARG;
+  *out_length = 0u;
+  if (reply == NULL || out == NULL || length == 0u ||
+      length > H2_ALIPAY_NFC_REPLY_MAX)
+    return H2_PAL_ERR_INVALID_ARG;
+  size_t frames = (length + H2_ALIPAY_NFC_FRAME_DATA_MAX - 1u) /
+                  H2_ALIPAY_NFC_FRAME_DATA_MAX;
+  if (frame_index == 0u || frame_index > frames) return H2_PAL_ERR_INVALID_ARG;
+  size_t offset = (frame_index - 1u) * H2_ALIPAY_NFC_FRAME_DATA_MAX;
+  size_t bytes = length - offset;
+  if (bytes > H2_ALIPAY_NFC_FRAME_DATA_MAX)
+    bytes = H2_ALIPAY_NFC_FRAME_DATA_MAX;
+  if (capacity < H2_ALIPAY_NFC_FRAME_HEADER_SIZE + bytes)
+    return H2_PAL_ERR_NO_SPACE;
+  memmove(out + H2_ALIPAY_NFC_FRAME_HEADER_SIZE, reply + offset, bytes);
+  out[0] = 0xa3u;
+  out[1] = (uint8_t)frames;
+  out[2] = (uint8_t)frame_index;
+  out[3] = (uint8_t)bytes;
+  *out_length = H2_ALIPAY_NFC_FRAME_HEADER_SIZE + bytes;
+  return H2_PAL_OK;
+}
+h2_pal_result_t h2_alipay_nfc_private_ack(const uint8_t* reply, size_t bits,
+                                          bool crc_valid) {
+  if (reply == NULL) return H2_PAL_ERR_INVALID_ARG;
+  return ((bits == 8u || (bits == 24u && crc_valid)) && reply[0] == 0x0au)
+             ? H2_PAL_OK
+             : H2_PAL_ERR_IO;
+}
+
 typedef struct tag_workspace {
   char url[4096], scheme[1024], parameters[512], value[512];
 } tag_workspace_t;

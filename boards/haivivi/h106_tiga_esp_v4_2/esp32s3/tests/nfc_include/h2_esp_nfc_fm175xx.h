@@ -20,4 +20,6 @@ h2_pal_result_t h2_esp_nfc_fm175xx_init(
     h2_esp_nfc_fm175xx_t* adapter, const h2_esp_nfc_fm175xx_config_t* config);
 void h2_esp_nfc_fm175xx_deinit(h2_esp_nfc_fm175xx_t* adapter);
 const h2_pal_nfc_api_t* h2_esp_nfc_fm175xx_api(h2_esp_nfc_fm175xx_t* adapter);
+const h2_pal_nfc_reader_session_api_t* h2_esp_nfc_fm175xx_session_api(
+    h2_esp_nfc_fm175xx_t* adapter);
 #endif

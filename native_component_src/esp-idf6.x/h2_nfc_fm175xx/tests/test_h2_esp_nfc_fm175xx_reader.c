@@ -12,7 +12,8 @@ static struct {
   int activate_result, read_result, write_result, log_result;
   int activation_results[3];
   unsigned activation_result_count, activations, sleeps;
-  unsigned reads, writes;
+  unsigned reads, writes, fast_reads, exchanges, fields_off;
+  bool fail_fast, replace_uid;
   h2_app_test_time_t clock;
   bool preread_failure;
   char diagnostics[4096];
@@ -55,6 +56,7 @@ int h2_fm175xx_type_a_activate(h2_fm175xx_t* reader,
                                h2_fm175xx_type_a_card_t* card) {
   (void)reader;
   *card = fixture.card;
+  if (fixture.fields_off && fixture.replace_uid) card->uid[0] ^= 1u;
   unsigned attempt = fixture.activations++;
   if (attempt < fixture.activation_result_count)
     return fixture.activation_results[attempt];
@@ -135,6 +137,50 @@ int h2_fm175xx_ntag_prepare_ndef_update(
       reader, update->raw + update->value_offset,
       sizeof(update->raw) - update->value_offset, &update->value_length,
       &diagnostics->preread);
+}
+
+int h2_fm175xx_ntag_read_header(h2_fm175xx_t* reader, uint8_t header[16]) {
+  (void)reader;
+  memset(header, 0, 16u);
+  header[0] = uid[0];
+  header[9] = 0x62u;
+  return H2_FM175XX_OK;
+}
+int h2_fm175xx_ntag_read_snapshot(h2_fm175xx_t* reader,
+                                  h2_fm175xx_ndef_update_t* update, int fast,
+                                  h2_fm175xx_write_diagnostics_t* diagnostics) {
+  if (fast) ++fixture.fast_reads;
+  *diagnostics = (h2_fm175xx_write_diagnostics_t){0};
+  if (fast && fixture.fail_fast) return H2_FM175XX_ERR_TIMEOUT;
+  return h2_fm175xx_ntag_prepare_ndef_update(reader, update, diagnostics);
+}
+int h2_fm175xx_ntag_prepare_snapshot(
+    h2_fm175xx_t* reader, h2_fm175xx_ndef_update_t* update, int prepare_write,
+    h2_fm175xx_write_diagnostics_t* diagnostics) {
+  (void)reader;
+  (void)update;
+  (void)prepare_write;
+  (void)diagnostics;
+  return H2_FM175XX_OK;
+}
+int h2_fm175xx_field_off(h2_fm175xx_t* reader) {
+  (void)reader;
+  ++fixture.fields_off;
+  return H2_FM175XX_OK;
+}
+int h2_fm175xx_type_a_exchange_bytes(h2_fm175xx_t* reader,
+                                     const uint8_t* command, size_t length,
+                                     uint32_t timeout_ms, uint8_t* reply,
+                                     size_t capacity, size_t* bits,
+                                     int* crc_valid) {
+  (void)reader;
+  assert(length == 43u && command[0] == 0xa3u && timeout_ms == 25u);
+  assert(capacity >= 1u);
+  ++fixture.exchanges;
+  reply[0] = 0x0au;
+  *bits = 8u;
+  *crc_valid = 0;
+  return fixture.write_result;
 }
 
 int h2_fm175xx_ntag_commit_ndef_update(
@@ -466,6 +512,91 @@ static void test_prepared_ndef_write(void) {
   assert(memory.live_blocks == 0u);
 }
 
+static int select_private(void* user, const uint8_t* tag_uid, uint8_t length,
+                          const uint8_t header[16],
+                          h2_pal_nfc_reader_options_t* options) {
+  (void)user;
+  assert(length == sizeof(uid) && memcmp(tag_uid, uid, length) == 0);
+  assert(header[9] == 0x62u);
+  *options = (h2_pal_nfc_reader_options_t){.fast_read = true};
+  return 0;
+}
+static int reject_reader_policy(void* user, const uint8_t* tag_uid,
+                                uint8_t length, const uint8_t header[16],
+                                h2_pal_nfc_reader_options_t* options) {
+  (void)tag_uid;
+  (void)length;
+  (void)header;
+  (void)options;
+  return *(const h2_pal_result_t*)user;
+}
+static void test_reader_policy_errors(void) {
+  const h2_pal_result_t errors[] = {H2_PAL_ERR_NO_MEMORY,
+                                    H2_PAL_ERR_INVALID_ARG, H2_PAL_ERR_TIMEOUT,
+                                    H2_PAL_ERR_IO};
+  h2_app_test_mem_t memory;
+  h2_app_test_mem_init(&memory, NULL);
+  for (size_t i = 0u; i < sizeof(errors) / sizeof(errors[0]); ++i) {
+    h2_esp_nfc_fm175xx_t adapter;
+    setup(&adapter);
+    const h2_pal_nfc_reader_session_api_t* session =
+        h2_esp_nfc_fm175xx_session_api(&adapter);
+    h2_pal_result_t error = errors[i];
+    h2_pal_nfc_data_read_t data = {0};
+    assert(session->prepare(session->user, 201u, uid, sizeof(uid),
+                            reject_reader_policy, &error, &memory.api,
+                            &data) == error);
+    assert(data.bytes == NULL && memory.live_blocks == 0u &&
+           fixture.reads == 0u && fixture.fast_reads == 0u &&
+           fixture.exchanges == 0u);
+    h2_pal_nfc_scan_t scan;
+    assert(h2_pal_nfc_scan_nfc_reader(h2_esp_nfc_fm175xx_api(&adapter), 201u,
+                                      &scan) == 0);
+  }
+}
+static void test_reader_sessions(void) {
+  h2_app_test_mem_t memory;
+  h2_app_test_mem_init(&memory, NULL);
+  for (unsigned scenario = 0u; scenario < 5u; ++scenario) {
+    h2_esp_nfc_fm175xx_t adapter;
+    setup(&adapter);
+    fixture.fail_fast = scenario == 1u || scenario == 2u;
+    fixture.replace_uid = scenario == 2u;
+    h2_pal_nfc_data_read_t data = {0};
+    const h2_pal_nfc_reader_session_api_t* session =
+        h2_esp_nfc_fm175xx_session_api(&adapter);
+    int rc = session->prepare(session->user, 201u, uid, sizeof(uid),
+                              select_private, NULL, &memory.api, &data);
+    if (scenario == 2u) {
+      assert(rc == H2_PAL_ERR_UNAVAILABLE && data.bytes == NULL &&
+             fixture.exchanges == 0u);
+      continue;
+    }
+    assert(rc == 0 && data.len == sizeof(message));
+    assert(fixture.fast_reads == 1u && fixture.fields_off == (scenario == 1u));
+    h2_pal_nfc_scan_t scan;
+    assert(h2_pal_nfc_scan_nfc_reader(h2_esp_nfc_fm175xx_api(&adapter), 201u,
+                                      &scan) == H2_PAL_ERR_BUSY);
+    uint8_t command[43] = {0xa3u, 1u, 1u, 39u}, reply[3];
+    h2_pal_nfc_reader_reply_t result;
+    if (scenario == 3u) fixture.write_result = H2_FM175XX_ERR_TIMEOUT;
+    if (scenario == 4u)
+      assert(h2_app_test_time_advance(&fixture.clock, 500u) == 0);
+    rc = session->exchange(session->user, 201u, &data, command, sizeof(command),
+                           25u, reply, sizeof(reply), &result);
+    assert(rc == (scenario == 3u   ? H2_PAL_ERR_TIMEOUT
+                  : scenario == 4u ? H2_PAL_ERR_INVALID_STATE
+                                   : 0));
+    assert(fixture.exchanges == (scenario == 4u ? 0u : 1u) &&
+           fixture.writes == 0u);
+    rc = h2_pal_nfc_finish_ndef_write(h2_esp_nfc_fm175xx_api(&adapter), 201u,
+                                      &data, NULL, 0u);
+    assert(rc == (scenario == 4u ? H2_PAL_ERR_INVALID_STATE : 0));
+    h2_pal_mem_free(&memory.api, data.bytes);
+  }
+  assert(memory.live_blocks == 0u);
+}
+
 static void test_optional_log(void) {
   h2_app_test_mem_t memory;
   h2_app_test_mem_init(&memory, NULL);
@@ -493,6 +624,8 @@ static void test_optional_log(void) {
 int main(void) {
   test_optional_log();
   test_prepared_ndef_write();
+  test_reader_sessions();
+  test_reader_policy_errors();
   test_write_read_selection();
   test_write_selection_recovery();
   h2_app_test_mem_t memory;

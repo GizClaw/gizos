@@ -17,8 +17,11 @@ typedef enum card_state {
 
 typedef struct fixture {
   uint8_t registers[64];
-  uint8_t tx[32];
-  uint8_t rx[32];
+  uint8_t tx[160];
+  uint8_t rx[160];
+  bool private_pending;
+  unsigned fast_reads, private_writes;
+  bool reject_fast;
   size_t tx_len;
   size_t rx_len;
   card_state_t card;
@@ -51,7 +54,7 @@ typedef struct fixture {
   int idle_requires_reqa;
   int empty_before_reply;
   int truncate_fifo_write;
-  uint8_t pending_rx[32];
+  uint8_t pending_rx[160];
   size_t pending_rx_len;
   unsigned delayed_replies;
   uint32_t reply_delay_us;
@@ -177,6 +180,41 @@ static void exchange(fixture_t* f) {
       f->rx_len = 18u;
       if (inject_error && f->corrupt_read_crc) f->rx[17] ^= 1u;
     }
+  } else if (f->tx_len == 3u && f->tx[0] == 0x3au && f->card == ACTIVE) {
+    ++f->fast_reads;
+    if (f->reject_fast) return;
+    assert(f->tx[2] >= f->tx[1]);
+    size_t bytes = ((size_t)f->tx[2] - f->tx[1] + 1u) * 4u;
+    assert(bytes <= 32u && (size_t)f->tx[1] * 4u + bytes <= sizeof(f->memory));
+    memcpy(f->rx, f->memory + (size_t)f->tx[1] * 4u, bytes);
+    f->rx_len = bytes;
+    if (f->read_crc_bytes) {
+      uint16_t crc = reply_crc(f->rx, bytes);
+      f->rx[bytes] = (uint8_t)crc;
+      f->rx[bytes + 1u] = (uint8_t)(crc >> 8u);
+      f->rx_len += 2u;
+      if (f->corrupt_read_crc) f->rx[bytes + 1u] ^= 1u;
+    }
+  } else if (f->tx_len >= 4u && f->tx[0] == 0xa3u && f->card == ACTIVE) {
+    if (f->tx_len < 4u + f->tx[3]) {
+      f->private_pending = true;
+      f->registers[H2_FM175XX_REG_COMIRQ] = 4u;
+      return;
+    }
+    f->private_pending = false;
+    ++f->private_writes;
+    if (f->write_timeout) return;
+    f->rx[0] = 0x0au;
+    f->rx_len = 1u;
+    if (f->write_reply_bits == 4u) f->rx_last_bits = 4u;
+    if (f->write_error) f->registers[H2_FM175XX_REG_ERROR] = f->write_error;
+    if (f->write_reply_crc) {
+      uint16_t crc = reply_crc(f->rx, 1u);
+      f->rx[1] = (uint8_t)crc;
+      f->rx[2] = (uint8_t)(crc >> 8u);
+      f->rx_len = 3u;
+      if (f->corrupt_write_reply_crc) f->rx[2] ^= 1u;
+    }
   } else if (f->tx_len == 6u && f->tx[0] == 0xa2u && f->card == ACTIVE) {
     const size_t offset = (size_t)f->tx[1] * 4u;
     assert(offset >= 16u && offset + 4u <= sizeof(f->memory));
@@ -272,7 +310,7 @@ static int write_register(void* user, uint8_t reg, uint8_t value) {
   if (reg == H2_FM175XX_REG_BIT_FRAMING && (value & 0x80u) &&
       f->registers[H2_FM175XX_REG_COMMAND] == H2_FM175XX_CMD_TRANSCEIVE) {
     exchange(f);
-    f->tx_len = 0u;
+    if (!f->private_pending) f->tx_len = 0u;
   }
   return H2_FM175XX_OK;
 }
@@ -281,8 +319,16 @@ static int write_registers(void* user, uint8_t reg, const uint8_t* data,
                            size_t len) {
   fixture_t* f = user;
   assert(reg == H2_FM175XX_REG_FIFO_DATA && len <= sizeof(f->tx));
-  memcpy(f->tx, data, len);
-  f->tx_len = f->truncate_fifo_write && len > 1u ? 1u : len;
+  if (f->private_pending) {
+    assert(f->tx_len + len <= sizeof(f->tx));
+    memcpy(f->tx + f->tx_len, data, len);
+    f->tx_len += len;
+    exchange(f);
+    if (!f->private_pending) f->tx_len = 0u;
+  } else {
+    memcpy(f->tx, data, len);
+    f->tx_len = f->truncate_fifo_write && len > 1u ? 1u : len;
+  }
   return H2_FM175XX_OK;
 }
 
@@ -302,6 +348,7 @@ static int read_register(void* user, uint8_t reg, uint8_t* out) {
   if (f->fail_register) return H2_FM175XX_ERR_IO;
   *out = reg == H2_FM175XX_REG_FIFO_LEVEL ? (uint8_t)(f->rx_len + f->tx_len)
                                           : f->registers[reg];
+  if (reg == H2_FM175XX_REG_COMIRQ && f->private_pending) *out |= 4u;
   if (reg == H2_FM175XX_REG_CONTROL)
     *out =
         (uint8_t)((*out & 0xf8u) | (f->rx_len == 0u && f->pending_rx_len != 0u
@@ -319,9 +366,10 @@ static int read_register(void* user, uint8_t reg, uint8_t* out) {
 
 static int read_registers(void* user, uint8_t reg, uint8_t* out, size_t len) {
   fixture_t* f = user;
-  assert(reg == H2_FM175XX_REG_FIFO_DATA && len == f->rx_len);
+  assert(reg == H2_FM175XX_REG_FIFO_DATA && len <= f->rx_len && len <= 32u);
   memcpy(out, f->rx, len);
-  f->rx_len = 0u;
+  memmove(f->rx, f->rx + len, f->rx_len - len);
+  f->rx_len -= len;
   return H2_FM175XX_OK;
 }
 
@@ -331,15 +379,22 @@ static void sleep_ms(void* user, uint32_t ms) {
       (f->registers[H2_FM175XX_REG_COMIRQ] & 0x20u) != 0u)
     return;
   f->frame_elapsed_us += ms * 1000u;
+  const uint32_t prescaler =
+      ((uint32_t)(f->registers[H2_FM175XX_REG_TMODE] & 0x0fu) << 8u) |
+      f->registers[H2_FM175XX_REG_TPRESCALER];
+  const uint32_t reload =
+      ((uint32_t)f->registers[H2_FM175XX_REG_TRELOAD_HI] << 8u) |
+      f->registers[H2_FM175XX_REG_TRELOAD_LO];
+  const uint32_t budget_us =
+      (uint32_t)((uint64_t)reload * (2u * prescaler + 1u) * 1000u / 13560u);
+  if (f->private_pending) {
+    /* FIFO-low can require multiple refills before RX. The timer must not
+     * expire immediately between two chunks of an unfinished TX frame. */
+    if (f->frame_elapsed_us >= budget_us)
+      f->registers[H2_FM175XX_REG_COMIRQ] |= 0x01u;
+    return;
+  }
   if (f->pending_rx_len != 0u) {
-    const uint32_t prescaler =
-        ((uint32_t)(f->registers[H2_FM175XX_REG_TMODE] & 0x0fu) << 8u) |
-        f->registers[H2_FM175XX_REG_TPRESCALER];
-    const uint32_t reload =
-        ((uint32_t)f->registers[H2_FM175XX_REG_TRELOAD_HI] << 8u) |
-        f->registers[H2_FM175XX_REG_TRELOAD_LO];
-    const uint32_t budget_us =
-        (uint32_t)((uint64_t)reload * (2u * prescaler + 1u) * 1000u / 13560u);
     const uint32_t delay_us = f->reply_delay_us ? f->reply_delay_us : 200u;
     if (delay_us > budget_us) {
       if (f->frame_elapsed_us >= budget_us)
@@ -1234,7 +1289,77 @@ static void test_write_preread_diagnostics(void) {
          diagnostics.write_calls == 0u && fixture.writes == 0u);
 }
 
+static void test_fast_session_io(void) {
+  fixture_t fixture;
+  h2_fm175xx_t reader;
+  h2_fm175xx_ndef_update_t normal, fast;
+  h2_fm175xx_write_diagnostics_t diagnostics;
+  prepare_ndef_reader(&fixture, &reader);
+  fixture.read_crc_bytes = 1;
+  assert(h2_fm175xx_ntag_read_header(&reader, normal.raw) == 0);
+  assert(h2_fm175xx_ntag_read_snapshot(&reader, &normal, 0, &diagnostics) == 0);
+  assert(diagnostics.preread.read_count == 10u);
+  assert(h2_fm175xx_ntag_read_header(&reader, fast.raw) == 0);
+  assert(h2_fm175xx_ntag_read_snapshot(&reader, &fast, 1, &diagnostics) == 0);
+  assert(diagnostics.preread.read_count == 6u && fixture.fast_reads == 5u);
+  assert(normal.size == fast.size &&
+         memcmp(normal.raw, fast.raw, fast.size) == 0);
+  fast.raw[10] = 0xffu;
+  fast.raw[15] = 0x0fu;
+  assert(h2_fm175xx_ntag_prepare_snapshot(&reader, &fast, 0, &diagnostics) ==
+         0);
+  assert(fast.value_length == 6u && fast.value_offset == 18u);
+  assert(h2_fm175xx_ntag_prepare_snapshot(&reader, &fast, 1, &diagnostics) !=
+         0);
+  fixture.reject_fast = true;
+  assert(h2_fm175xx_ntag_read_snapshot(&reader, &fast, 1, &diagnostics) ==
+         H2_FM175XX_ERR_TIMEOUT);
+  assert(fast.size == 0u);
+  fixture.reject_fast = false;
+  fixture.corrupt_read_crc = true;
+  assert(h2_fm175xx_ntag_read_snapshot(&reader, &fast, 1, &diagnostics) ==
+         H2_FM175XX_ERR_PROTOCOL);
+  prepare_ndef_reader(&fixture, &reader);
+  uint8_t command[132] = {0xa3u, 1u, 1u, 128u}, reply[3];
+  size_t bits;
+  int crc;
+  assert(h2_fm175xx_type_a_exchange_bytes(&reader, command, 43u, 25u, reply,
+                                          sizeof(reply), &bits,
+                                          &crc) == H2_FM175XX_ERR_TIMEOUT);
+  /* An incomplete declared frame must not look like a successful submission. */
+  prepare_ndef_reader(&fixture, &reader);
+  command[3] = 39u;
+  assert(h2_fm175xx_type_a_exchange_bytes(&reader, command, 43u, 25u, reply,
+                                          sizeof(reply), &bits, &crc) == 0);
+  assert(bits == 8u && reply[0] == 0x0au && !crc &&
+         fixture.private_writes == 1u);
+  fixture.write_reply_crc = true;
+  assert(h2_fm175xx_type_a_exchange_bytes(&reader, command, 43u, 25u, reply,
+                                          sizeof(reply), &bits, &crc) == 0);
+  assert(bits == 24u && crc);
+  fixture.corrupt_write_reply_crc = true;
+  assert(h2_fm175xx_type_a_exchange_bytes(&reader, command, 43u, 25u, reply,
+                                          sizeof(reply), &bits, &crc) == 0 &&
+         !crc);
+  /* The reader transports byte frames; the Alipay client owns its 128-byte
+   * application payload limit. Exercise transport beyond that client's cap. */
+  uint8_t generic_command[133] = {0xa3u, 1u, 1u, 129u};
+  fixture.write_reply_crc = false;
+  fixture.corrupt_write_reply_crc = false;
+  assert(h2_fm175xx_type_a_exchange_bytes(&reader, generic_command,
+                                          sizeof(generic_command), 25u, reply,
+                                          sizeof(reply), &bits, &crc) == 0);
+  assert(bits == 8u && reply[0] == 0x0au);
+  fixture.write_timeout = true;
+  unsigned prior = fixture.private_writes;
+  assert(h2_fm175xx_type_a_exchange_bytes(&reader, command, 43u, 25u, reply,
+                                          sizeof(reply), &bits,
+                                          &crc) == H2_FM175XX_ERR_TIMEOUT);
+  assert(fixture.private_writes == prior + 1u && fixture.writes == 0u);
+}
+
 int main(void) {
+  test_fast_session_io();
   test_write_preread_diagnostics();
   test_write_control_prefix();
   test_write_control_rejections();

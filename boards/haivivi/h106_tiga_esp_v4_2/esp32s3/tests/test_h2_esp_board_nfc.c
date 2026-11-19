@@ -4,6 +4,12 @@
 #include "h2_esp_tiga_board_internal.h"
 #include "h2_esp_nfc_fm175xx.h"
 #include <assert.h>
+const h2_pal_nfc_reader_session_api_t* h2_esp_nfc_fm175xx_session_api(
+    h2_esp_nfc_fm175xx_t* adapter) {
+  (void)adapter;
+  static const h2_pal_nfc_reader_session_api_t api = {0};
+  return &api;
+}
 static unsigned bus_calls, init_calls, deinit_calls, scans, reads, writes;
 static unsigned nfc_writes;
 static h2_pal_result_t init_result = H2_PAL_OK;

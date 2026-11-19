@@ -19,6 +19,9 @@ typedef void (*h2_esp_board_entry_task_fn)(void* user);
 /** Nonblocking atomic scan policy, default off; enumeration is unconditional.
  * The next scan initializes or powers down the reader. MFG enables explicitly.
  */
+/** Optional NFC reader-session capability. Borrow for the board lifetime;
+ * operations share scan/read/write arbitration and require NFC enabled. */
+const h2_pal_nfc_reader_session_api_t* h2_esp_board_nfc_session_api(void);
 void h2_esp_board_set_nfc_enabled(bool enabled);
 
 /** Borrow the image-lifetime arena, or NULL if early reservation failed.

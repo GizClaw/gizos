@@ -30,6 +30,10 @@ h2_pal_result_t h2_alipay_e2e_validate_payment(
   if (payment->stop_tap == NULL || payment->receive_ndef == NULL ||
       payment->query_tap == NULL || config->payment_nfc_encode_reply == NULL)
     return H2_PAL_ERR_INVALID_ARG;
+  if (config->payment_nfc_session != NULL &&
+      (config->payment_nfc_session->prepare == NULL ||
+       config->payment_nfc_session->exchange == NULL))
+    return H2_PAL_ERR_UNSUPPORTED;
   const h2_pal_nfc_api_t* nfc = runtime->nfc;
   if (nfc == NULL || nfc->vtable == NULL ||
       nfc->vtable->scan_nfc_reader == NULL ||

@@ -5,6 +5,7 @@
 #include "os/h2_pal_mem.h"
 #include "hal/h2_pal_periph.h"
 
+#include <stdbool.h>
 #include <string.h>
 
 #ifdef __cplusplus
@@ -174,6 +175,55 @@ static inline h2_pal_result_t h2_pal_nfc_finish_ndef_write(
     return H2_PAL_ERR_UNSUPPORTED;
   return api->vtable->finish_ndef_write(api->user, id, prepared, bytes, length);
 }
+
+/** Per-session Type 2 acquisition policy, selected after a normal header READ.
+ * Defaults use ordinary READ and validate a standard NDEF write layout. */
+typedef struct h2_pal_nfc_reader_options {
+  bool fast_read;
+  bool prepare_ndef_write;
+} h2_pal_nfc_reader_options_t;
+/** Blocking acquisition callback. Header contains physical pages 0..3; UID and
+ * header are borrowed only for this call. Errors propagate without acquiring
+ * the user area or reserving a preparation. No NFC I/O or reentry is permitted.
+ */
+typedef h2_pal_result_t (*h2_pal_nfc_reader_select_fn)(
+    void* user, const uint8_t* uid, uint8_t uid_length,
+    const uint8_t header[16], h2_pal_nfc_reader_options_t* options);
+typedef struct h2_pal_nfc_reader_reply {
+  size_t bits;    /** Data bits after hardware parity removal. */
+  bool crc_valid; /** A retained CRC-A was checked successfully. */
+} h2_pal_nfc_reader_reply_t;
+/** Optional reader-session extension, independent of the legacy NFC vtable.
+ * Externally serialize with the same reader's scan/read/write operations.
+ * prepare returns allocator-owned NDEF bytes and reserves the selection using
+ * the exact out_data address, just like prepare_ndef_write. The provider
+ * invokes select before acquiring the full snapshot. Fast-read failure may
+ * restart acquisition using ordinary READ, but must recheck the original UID,
+ * discard partial bytes and invoke select again with the new header. exchange
+ * sends exactly one command with hardware TX CRC-A and parity, checks RX
+ * errors, and returns data bits/retained CRC status. It never retries, reads
+ * back, or reselects. BUSY means nothing was sent; all other errors may
+ * represent uncertain submission. It retains the preparation for subsequent
+ * frames. Finish/cancel through the same reader's finish_ndef_write before
+ * freeing out_data bytes. Nonempty NDEF finish is valid only if the selected
+ * options requested prepare_ndef_write. Dependencies remain borrowed for each
+ * call. */
+typedef struct h2_pal_nfc_reader_session_api {
+  void* user;
+  h2_pal_result_t (*prepare)(void* user, h2_pal_periph_id_t id,
+                             const uint8_t* expected_uid,
+                             uint8_t expected_uid_length,
+                             h2_pal_nfc_reader_select_fn select,
+                             void* select_user,
+                             const h2_pal_mem_api_t* allocator,
+                             h2_pal_nfc_data_read_t* out_data);
+  h2_pal_result_t (*exchange)(void* user, h2_pal_periph_id_t id,
+                              const h2_pal_nfc_data_read_t* prepared,
+                              const uint8_t* command, size_t command_length,
+                              uint32_t timeout_ms, uint8_t* reply,
+                              size_t reply_capacity,
+                              h2_pal_nfc_reader_reply_t* out_reply);
+} h2_pal_nfc_reader_session_api_t;
 
 /** RF technologies supported by the independent card-emulation capability. */
 typedef enum h2_pal_nfc_card_emulation_technology {

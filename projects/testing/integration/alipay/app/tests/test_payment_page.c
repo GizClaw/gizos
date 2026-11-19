@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+static unsigned transport_profile;
 typedef struct fixture {
   pthread_t ui;
   unsigned phase, cycles, touch_opens, touch_closes, host_starts;
@@ -178,7 +179,8 @@ static int read_nfc(void* user, h2_pal_periph_id_t id, const uint8_t* uid,
                     h2_pal_nfc_data_read_t* out) {
   fixture_t* fixture = user;
   worker(fixture);
-  assert(id == 101u && uid_length == 4u && uid[0] == 0x42u &&
+  assert(id == 101u && uid_length == 4u &&
+         uid[0] == (transport_profile ? 0x1du : 0x42u) &&
          type == H2_PAL_NFC_DATA_NDEF);
   assert(atomic_load(&fixture->starts) == 1u && fixture->writes == 0u);
   ++fixture->reads;
@@ -226,7 +228,8 @@ static int write_nfc(void* user, h2_pal_periph_id_t id, const uint8_t* uid,
                      const uint8_t* data, size_t length) {
   fixture_t* fixture = user;
   worker(fixture);
-  assert(id == 101u && uid_length == 4u && uid[0] == 0x42u &&
+  assert(id == 101u && uid_length == 4u &&
+         uid[0] == (transport_profile ? 0x1du : 0x42u) &&
          type == H2_PAL_NFC_DATA_NDEF);
   const uint8_t record[] = {0xd1u, 1u, 4u, 'T', 0u, 'O', 'K', '!'};
   assert(length == sizeof(record) && memcmp(data, record, length) == 0);
@@ -253,6 +256,39 @@ static int prepare_ndef_write(void* user, h2_pal_periph_id_t id,
   return rc;
 }
 
+static int prepare_reader_session(void* user, h2_pal_periph_id_t id,
+                                  const uint8_t* uid, uint8_t uid_length,
+                                  h2_pal_nfc_reader_select_fn select,
+                                  void* select_user,
+                                  const h2_pal_mem_api_t* memory,
+                                  h2_pal_nfc_data_read_t* out) {
+  uint8_t header[16] = {0x1du};
+  header[9] = transport_profile == 3u ? 0x21u : 0x62u;
+  h2_pal_nfc_reader_options_t options = {0};
+  assert(select(select_user, uid, uid_length, header, &options) == 0 &&
+         options.fast_read);
+  assert(options.prepare_ndef_write == (transport_profile == 3u));
+  return prepare_ndef_write(user, id, uid, uid_length, memory, out);
+}
+static int exchange_reader_session(void* user, h2_pal_periph_id_t id,
+                                   const h2_pal_nfc_data_read_t* prepared,
+                                   const uint8_t* command, size_t length,
+                                   uint32_t timeout_ms, uint8_t* reply,
+                                   size_t capacity,
+                                   h2_pal_nfc_reader_reply_t* result) {
+  fixture_t* fixture = user;
+  worker(fixture);
+  assert(id == 101u && prepared->len == sizeof(nfc_input));
+  const uint8_t expected[] = {0xa3u, 1u, 1u, 4u, 'T', 'E', 'S', 'T'};
+  assert(length == sizeof(expected) && memcmp(command, expected, length) == 0);
+  assert(timeout_ms == 25u && capacity >= 1u && fixture->writes == 0u);
+  ++fixture->writes;
+  ++fixture->accepted_writes;
+  reply[0] = 0x0au;
+  *result = (h2_pal_nfc_reader_reply_t){.bits = 8u};
+  return transport_profile == 2u ? H2_PAL_ERR_TIMEOUT : 0;
+}
+
 static int scan_nfc(void* user, h2_pal_periph_id_t id,
                     h2_pal_nfc_scan_t* scan) {
   (void)user;
@@ -268,7 +304,9 @@ static int finish_ndef_write(void* user, h2_pal_periph_id_t id,
   if (data == NULL) {
     fixture_t* fixture = user;
     worker(fixture);
-    assert(length == 0u && fixture->accepted_writes == 0u);
+    assert(length == 0u &&
+           (fixture->accepted_writes == 0u ||
+            (transport_profile != 0u && transport_profile != 3u)));
     ++fixture->cancel_calls;
     if (fixture->flow == 19u && fixture->cancel_calls == 1u)
       return H2_PAL_ERR_BUSY;
@@ -289,6 +327,12 @@ static int receive_ndef(void* user, const uint8_t* data, size_t length,
   static const uint8_t reply[] = "TEST";
   int rc = fixture->transport.write_reply(fixture->transport.user, reply,
                                           sizeof(reply) - 1u);
+  if (transport_profile != 0u && transport_profile != 3u) {
+    assert(fixture->transport.write_reply(fixture->transport.user, reply,
+                                          sizeof(reply) - 1u) ==
+           H2_PAL_ERR_INVALID_STATE);
+    assert(fixture->writes == 1u);
+  }
   *out = (h2_alipay_payment_result_t){
       .state = rc == 0 ? H2_ALIPAY_PAYMENT_PENDING : H2_ALIPAY_PAYMENT_UNKNOWN,
       .processing_notified = true,
@@ -621,7 +665,7 @@ static bool flow_exit(fixture_t* fixture) {
         .status = H2_RUNTIME_NFC_STATE_DISCOVERED,
         .stage = H2_PAL_NFC_STAGE_DISCOVERED,
         .uid_len = 4u,
-        .uid = {0x42u, 1u, 2u, 3u}};
+        .uid = {transport_profile ? 0x1du : 0x42u, 1u, 2u, 3u}};
     assert(h2_runtime_test_set_component_state(fixture->input, 1u, &state,
                                                sizeof(state)) == 0);
     fixture->flow_phase = 2u;
@@ -629,9 +673,10 @@ static bool flow_exit(fixture_t* fixture) {
              (fixture->flow == 7u || fixture->flow == 19u ||
               fixture->flow == 20u || fixture->flow == 21u)) {
     char failure[80];
-    int result = fixture->flow == 19u   ? H2_PAL_ERR_BUSY
-                 : fixture->flow == 21u ? H2_PAL_ERR_TIMEOUT
-                                        : H2_PAL_ERR_IO;
+    int result = transport_profile == 2u ? H2_PAL_ERR_TIMEOUT
+                 : fixture->flow == 19u  ? H2_PAL_ERR_BUSY
+                 : fixture->flow == 21u  ? H2_PAL_ERR_TIMEOUT
+                                         : H2_PAL_ERR_IO;
     (void)snprintf(failure, sizeof(failure), "NFC write failed\nrc: %d",
                    result);
     if (find_label(lv_screen_active(), failure) != NULL) {
@@ -859,8 +904,15 @@ static void run(bool buttons, bool production, bool payer_only, int touch_rc,
       .stop_tap = stop,
       .unbind = flow >= 23u && flow <= 26u ? unbind : NULL};
   const h2_alipay_payment_api_t payment = {&f, &pvt};
+  const h2_pal_nfc_reader_session_api_t session = {
+      .user = &f,
+      .prepare = prepare_reader_session,
+      .exchange = exchange_reader_session};
   const h2_alipay_e2e_config_t app = {
       .payment = &payment,
+      .payment_nfc_session = transport_profile ? &session : NULL,
+      .payment_nfc_fast_read = true,
+      .payment_nfc_fast_write = true,
       .payment_nfc_component_id = 1u,
       .payment_nfc_encode_reply = encode_reply,
       .user = &f,
@@ -919,9 +971,15 @@ static void run(bool buttons, bool production, bool payer_only, int touch_rc,
     assert(f.flow_phase == 6u && f.reads == expected_reads &&
            f.writes == expected_writes &&
            f.accepted_writes == (read_failed || flow == 19u ? 0u : 1u) &&
-           f.cancel_calls == (flow == 19u ? 2u : 0u) &&
+           f.cancel_calls == (transport_profile != 0u && transport_profile != 3u
+                                  ? 1u
+                              : flow == 19u ? 2u
+                                            : 0u) &&
            f.received_frames == (read_failed ? 0u : 1u) &&
-           f.reply_encodes == (read_failed ? 0u : 1u) &&
+           f.reply_encodes == (read_failed || (transport_profile != 0u &&
+                                               transport_profile != 3u)
+                                   ? 0u
+                                   : 1u) &&
            f.results == (flow == 22u ? 3u
                          : flow == 6u || flow == 8u || flow == 11u ||
                                  flow == 12u || flow == 16u || flow == 17u ||
@@ -978,5 +1036,11 @@ int main(void) {
   run(true, true, false, 0, 0, 25u);
   run(true, true, false, 0, 0, 26u);
   run(true, false, false, 0, 0, 27u);
+  transport_profile = 1u;
+  run(true, false, false, 0, 0, 6u);
+  transport_profile = 2u;
+  run(true, false, false, 0, 0, 7u);
+  transport_profile = 3u;
+  run(true, false, false, 0, 0, 6u);
   return 0;
 }

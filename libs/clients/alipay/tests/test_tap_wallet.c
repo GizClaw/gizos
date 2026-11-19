@@ -1,3 +1,4 @@
+#include "h2_alipay_tap.h"
 #include "h2_alipay_api.h"
 #include "h2_alipay_context.h"
 #include "h2_alipay_client_internal.h"
@@ -201,7 +202,63 @@ static void rejected_tags(void) {
   assert(observation.sends == 0u && observation.statuses == 1u);
 }
 
+static void test_tag_transport_profile(void) {
+  uint8_t header[16] = {0x1du}, tag_uid[] = {0x1du, 0u};
+  const uint8_t ids[] = {0xa3u, 0xa6u, 0x21u, 0x41u, 0x62u, 0x63u};
+  const bool reads[] = {true, true, true, false, true, false};
+  const bool writes[] = {false, false, false, true, true, false};
+  for (size_t i = 0; i < sizeof(ids); ++i) {
+    h2_alipay_nfc_capabilities_t caps;
+    header[9] = ids[i];
+    assert(h2_alipay_nfc_capabilities(tag_uid, sizeof(tag_uid), header, 16u,
+                                      &caps) == 0);
+    assert(caps.fast_read == reads[i] && caps.private_write == writes[i]);
+  }
+  h2_alipay_nfc_capabilities_t caps;
+  header[9] = 0x62u;
+  tag_uid[0] = 4u;
+  assert(h2_alipay_nfc_capabilities(tag_uid, sizeof(tag_uid), header, 16u,
+                                    &caps) == 0 &&
+         !caps.fast_read && !caps.private_write);
+  assert(h2_alipay_nfc_capabilities(tag_uid, sizeof(tag_uid), header, 15u,
+                                    &caps) == H2_PAL_ERR_INVALID_ARG);
+  const uint8_t cascaded_uid[10] = {0x88u, 0x1du, 0u, 0u, 0x95u};
+  header[9] = 0x41u;
+  assert(h2_alipay_nfc_capabilities(cascaded_uid, sizeof(cascaded_uid), header,
+                                    sizeof(header), &caps) == 0 &&
+         !caps.fast_read && caps.private_write);
+  header[9] = 0x62u;
+  assert(h2_alipay_nfc_capabilities(cascaded_uid, sizeof(cascaded_uid), header,
+                                    sizeof(header), &caps) == 0 &&
+         caps.fast_read && caps.private_write);
+  uint8_t unknown_uid[10] = {0x88u, 4u};
+  assert(h2_alipay_nfc_capabilities(unknown_uid, sizeof(unknown_uid), header,
+                                    sizeof(header), &caps) == 0 &&
+         !caps.fast_read && !caps.private_write);
+  uint8_t payload[129], frame[132];
+  size_t size;
+  for (size_t i = 0; i < sizeof(payload); ++i) payload[i] = (uint8_t)i;
+  assert(h2_alipay_nfc_private_frame(payload, 39u, 1u, frame, sizeof(frame),
+                                     &size) == 0);
+  assert(size == 43u &&
+         memcmp(frame, (uint8_t[]){0xa3u, 1u, 1u, 39u}, 4u) == 0 &&
+         memcmp(frame + 4u, payload, 39u) == 0);
+  assert(h2_alipay_nfc_private_frame(payload, 129u, 2u, frame, sizeof(frame),
+                                     &size) == 0);
+  assert(size == 5u && frame[1] == 2u && frame[2] == 2u && frame[3] == 1u &&
+         frame[4] == payload[128]);
+  assert(h2_alipay_nfc_private_frame(payload, 39u, 1u, frame, 42u, &size) ==
+         H2_PAL_ERR_NO_SPACE);
+  const uint8_t ack[] = {0x0au}, nack[] = {4u};
+  assert(h2_alipay_nfc_private_ack(ack, 8u, false) == 0);
+  assert(h2_alipay_nfc_private_ack(ack, 24u, true) == 0);
+  assert(h2_alipay_nfc_private_ack(ack, 4u, false) != 0);
+  assert(h2_alipay_nfc_private_ack(ack, 24u, false) != 0);
+  assert(h2_alipay_nfc_private_ack(nack, 8u, false) != 0);
+}
+
 int main(void) {
+  test_tag_transport_profile();
   h2_app_test_mem_t memory;
   h2_app_test_mem_init(&memory, NULL);
   h2_app_test_pref_t pref;
