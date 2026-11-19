@@ -86,6 +86,15 @@ static void worker_run(void* user) {
 
 int h2_fruit_slice_audio_worker_start(h2_fruit_slice_audio_t* audio) {
   if (audio->worker != NULL) return H2_PAL_OK;
+  const h2_pal_queue_api_t* queue = audio->runtime->queue;
+  const h2_pal_task_api_t* tasks = audio->runtime->task;
+  /* Do not create a producer that this Runtime cannot stop and join. */
+  if (queue == NULL || queue->vtable == NULL || queue->vtable->create == NULL ||
+      queue->vtable->destroy == NULL || queue->vtable->send == NULL ||
+      queue->vtable->recv == NULL || queue->vtable->send_latest == NULL ||
+      queue->vtable->close == NULL || tasks == NULL || tasks->vtable == NULL ||
+      tasks->vtable->start == NULL || tasks->vtable->join == NULL)
+    return H2_PAL_ERR_UNSUPPORTED;
   struct h2_fruit_slice_audio_worker* w =
       h2_pal_mem_alloc(audio->runtime->mem, sizeof(*w));
   if (w == NULL) return H2_PAL_ERR_NO_MEMORY;
@@ -93,7 +102,6 @@ int h2_fruit_slice_audio_worker_start(h2_fruit_slice_audio_t* audio) {
   w->mixer = *audio;
   w->mixer.worker_requested = false;
   w->seen = snapshot(audio, H2_PAL_OK);
-  const h2_pal_queue_api_t* queue = audio->runtime->queue;
   h2_pal_queue_config_t config = {.name = "fruit-audio-commands",
                                   .item_size = sizeof(audio_command_t),
                                   .item_count = COMMANDS,

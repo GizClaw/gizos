@@ -208,6 +208,13 @@ static void test_owner_lifecycle_and_latency(void) {
   a.mute = H2_FRUIT_SLICE_MUTE_MUSIC;
   a.worker_requested = true;
   assert(h2_fruit_slice_audio_prepare(&a) == 0);
+  h2_pal_task_vtable_t unjoinable = task_vt;
+  unjoinable.join = NULL;
+  const h2_pal_task_api_t unjoinable_api = {.vtable = &unjoinable};
+  rt.task = &unjoinable_api;
+  assert(h2_fruit_slice_audio_worker_start(&a) == H2_PAL_ERR_UNSUPPORTED);
+  assert(live_queues == 0u && !a.worker && a.track);
+  rt.task = &task_api;
   for (unsigned failure = 1; failure <= 2; ++failure) {
     queue_create_failures = (int)failure;
     assert(h2_fruit_slice_audio_worker_start(&a) == H2_PAL_ERR_NO_MEMORY);
