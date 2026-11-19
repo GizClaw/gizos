@@ -6,6 +6,16 @@ load("//tools/lvgl/font_conv:font_conv.bzl", "lvgl_font")
 
 package(default_visibility = ["//visibility:private"])
 
+# The preview composes a 1600x960 buffer and two backing layers. Its
+# shipping entries are desktop and Web; host C tests exercise the App too.
+_APP_PLATFORMS = select({
+    "@platforms//os:linux": [],
+    "@platforms//os:macos": [],
+    "@platforms//os:windows": [],
+    "@platforms//cpu:wasm32": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
 _DISH_NAMES = [
     "salmon",
     "tamago",
@@ -56,6 +66,7 @@ py_binary(
     name = "pack",
     srcs = ["art/pack.py"],
     main = "art/pack.py",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
 )
 
 genrule(
@@ -63,6 +74,7 @@ genrule(
     srcs = _PLATES,
     outs = ["buffet_plates.c"],
     cmd = "$(location :pack) $@ $(SRCS)",
+    target_compatible_with = _APP_PLATFORMS,
     tools = [":pack"],
 )
 
@@ -76,6 +88,7 @@ genrule(
     lv_include = "buffet_font_format.h",
     ranges = ["0x20-0x7E"],
     symbol_sources = _TRANSLATIONS if lang == "zh" else [],
+    target_compatible_with = _APP_PLATFORMS,
 ) for lang in [
     "en",
     "zh",
@@ -93,12 +106,14 @@ cc_library(
     ],
     conlyopts = H2_C11_OPTS,
     strip_include_prefix = "src",
+    target_compatible_with = _APP_PLATFORMS,
 )
 
 py_binary(
     name = "pack_audio",
     srcs = ["audio/pack_audio.py"],
     main = "audio/pack_audio.py",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
 )
 
 genrule(
@@ -116,6 +131,7 @@ genrule(
     ]],
     outs = ["buffet_pcm.c"],
     cmd = "$(location :pack_audio) $@ $(SRCS)",
+    target_compatible_with = _APP_PLATFORMS,
     tools = [":pack_audio"],
 )
 
@@ -146,6 +162,7 @@ cc_library(
         "@platforms//os:linux": ["-lm"],
         "//conditions:default": [],
     }),
+    target_compatible_with = _APP_PLATFORMS,
     visibility = ["//visibility:public"],
     deps = [
         ":art",
