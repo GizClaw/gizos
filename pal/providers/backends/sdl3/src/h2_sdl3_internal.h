@@ -33,7 +33,6 @@ struct h2_sdl3 {
   uint8_t brightness_mod = 255u;
   int width = 0;
   int height = 0;
-  int density = 1;
   std::string title;
   std::mutex display_mutex;
   std::mutex event_mutex;

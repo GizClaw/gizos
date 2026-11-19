@@ -38,9 +38,7 @@ int init_display(h2_sdl3_t* state) {
     return init_failure(state, state->init_result, "SDL_Init");
   }
   state->window =
-      SDL_CreateWindow(state->title.c_str(), state->width / state->density,
-                       state->height / state->density,
-                       state->density == 2 ? SDL_WINDOW_HIGH_PIXEL_DENSITY : 0);
+      SDL_CreateWindow(state->title.c_str(), state->width, state->height, 0);
   if (state->window == nullptr) {
     return init_failure(state, state->init_result, "SDL_CreateWindow");
   }
@@ -354,20 +352,14 @@ h2_pal_result_t h2_sdl3_set_frame_capture(h2_sdl3_t* provider,
 }
 
 int h2_sdl3_create(const h2_sdl3_config_t* config, h2_sdl3_t** out_provider) {
-  return h2_sdl3_create_dense(config, 1, out_provider);
-}
-int h2_sdl3_create_dense(const h2_sdl3_config_t* config, int density,
-                         h2_sdl3_t** out_provider) {
   if (out_provider == nullptr) {
     return H2_DISPLAY_ERR_INVALID_ARG;
   }
   *out_provider = nullptr;
   if (config == nullptr || config->title == nullptr ||
       config->title[0] == '\0' || config->width <= 0 || config->height <= 0 ||
-      (density != 1 && density != 2) ||
-      config->height > std::numeric_limits<int>::max() / density ||
       config->width > std::numeric_limits<int>::max() /
-                          (density * static_cast<int>(sizeof(uint16_t)))) {
+                          static_cast<int>(sizeof(uint16_t))) {
     return H2_DISPLAY_ERR_INVALID_ARG;
   }
   std::lock_guard<std::mutex> provider_lock(g_provider_mutex);
@@ -385,9 +377,8 @@ int h2_sdl3_create_dense(const h2_sdl3_config_t* config, int density,
     delete provider;
     return H2_DISPLAY_ERR_NO_MEMORY;
   }
-  provider->density = density;
-  provider->width = config->width * density;
-  provider->height = config->height * density;
+  provider->width = config->width;
+  provider->height = config->height;
   provider->display = {provider, &kDisplayVtable};
   h2_sdl3_init_touch(provider);
   g_provider = provider;

@@ -101,11 +101,6 @@ typedef struct h2_sdl3_pointer_state {
 } h2_sdl3_pointer_state_t;
 
 int h2_sdl3_create(const h2_sdl3_config_t* config, h2_sdl3_t** out_provider);
-/** Like create, with a 1x or 2x RGB565 Display texture per logical window
- * unit. Touch and pointer coordinates remain in the config's window units.
- * The display asks SDL for a high-density drawable at 2x. */
-int h2_sdl3_create_dense(const h2_sdl3_config_t* config, int pixel_density,
-                         h2_sdl3_t** out_provider);
 void h2_sdl3_destroy(h2_sdl3_t* provider);
 h2_pal_display_t* h2_sdl3_display(h2_sdl3_t* provider);
 const h2_pal_touch_api_t* h2_sdl3_touch(h2_sdl3_t* provider);

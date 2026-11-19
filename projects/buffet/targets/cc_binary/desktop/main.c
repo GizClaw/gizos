@@ -128,12 +128,12 @@ static h2_runtime_config_t runtime_config(h2_sdl3_t* sdl) {
 }
 
 int main(void) {
-  const h2_sdl3_config_t surface = {.title = "Tidewheel Sushi",
-                                    .width = H2_BUFFET_WIDTH,
-                                    .height = H2_BUFFET_HEIGHT};
+  const h2_sdl3_config_t surface = {
+      .title = "Tidewheel Sushi",
+      .width = H2_BUFFET_WIDTH * H2_BUFFET_DENSITY,
+      .height = H2_BUFFET_HEIGHT * H2_BUFFET_DENSITY};
   window_t window = {0};
-  if (h2_sdl3_create_dense(&surface, H2_BUFFET_DENSITY, &window.sdl) !=
-      H2_PAL_OK) {
+  if (h2_sdl3_create(&surface, &window.sdl) != H2_PAL_OK) {
     fprintf(stderr, "buffet: SDL3 window failed\n");
     return 1;
   }

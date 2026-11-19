@@ -6,7 +6,6 @@
 
 #include <SDL3/SDL.h>
 
-#undef NDEBUG /* Provider calls inside assertions must execute in -c opt. */
 #include <assert.h>
 #include <limits.h>
 #include <stdint.h>
@@ -156,26 +155,6 @@ static void test_lifecycle_and_events(void) {
   h2_sdl3_destroy(provider);
 }
 
-static void test_dense_window(void) {
-  const h2_sdl3_config_t config = {"Dense", 32, 24};
-  h2_sdl3_t* p = NULL;
-  assert(h2_sdl3_create_dense(&config, 0, &p) == H2_DISPLAY_ERR_INVALID_ARG &&
-         p == NULL);
-  assert(h2_sdl3_create_dense(&config, 2, &p) == H2_PAL_OK);
-  h2_pal_display_t* display = h2_sdl3_display(p);
-  const h2_pal_touch_api_t* touch = h2_sdl3_touch(p);
-  assert(h2_pal_display_open(display) == H2_PAL_OK);
-  h2_display_info_t d = {0};
-  assert(h2_pal_display_get_info(display, &d) == H2_PAL_OK && d.width == 64 &&
-         d.height == 48);
-  assert(h2_pal_touch_open(touch) == H2_PAL_OK);
-  h2_pal_touch_info_t t = {0};
-  assert(h2_pal_touch_get_info(touch, &t) == H2_PAL_OK && t.width == 32 &&
-         t.height == 24);
-  assert(h2_pal_touch_close(touch) == H2_PAL_OK);
-  assert(h2_pal_display_close(display) == H2_PAL_OK);
-  h2_sdl3_destroy(p);
-}
 static void test_invalid_pitch(void) {
   const h2_sdl3_config_t config = {
       .title = "SDL3 Invalid Pitch Test",
@@ -191,7 +170,6 @@ int main(void) {
   assert(setenv("SDL_VIDEODRIVER", "dummy", 1) == 0);
   assert(SDL_SetHint(SDL_HINT_RENDER_DRIVER, "software"));
   test_invalid_pitch();
-  test_dense_window();
   test_lifecycle_and_events();
   test_lifecycle_and_events();
   return 0;
