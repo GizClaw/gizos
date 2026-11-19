@@ -1087,35 +1087,22 @@ static void test_seventh_chapter_keeps_formal_sixth(void) {
   use_prefs = false;
 }
 
-/* Synthetic predecessor for provider error/ownership tests. The browser
- * release chain separately supplies the real published byte fixture. */
+/* Original PAL bytes from the public v0.7 zip (e9d2ddd5...43eebd0),
+ * cleared in fresh Chromium through real pointer input: three right answers,
+ * sword/guard mirror victory, then ending refresh. No new codec generated
+ * this predecessor fixture. */
 static void plant_seventh_clear(void) {
-  const h2_xianxia_rpg_save_t save = {
-      .chapter = 7,
-      .stage = H2_XIANXIA_RPG_STAGE_C7_CLEARED,
-      .level = 10,
-      .pills = 2,
-      .trust = 3,
-      .facts = 4095,
-      .map = H2_XIANXIA_RPG_MAP_MIRROR_HALL,
-      .x = 11,
-      .y = 4,
-      .rest_map = H2_XIANXIA_RPG_MAP_MIRROR_HALL,
-      .rest_x = 11,
-      .rest_y = 4};
-  uint8_t bytes[36];
-  h2_xianxia_rpg_journey7_encode(&save, 0, bytes);
+  static const uint8_t bytes[36] = {
+      0x03, 0x07, 0x2c, 0x0a, 0x03, 0x14, 0x0b, 0x04, 0x14, 0x0b, 0x04, 0x03,
+      0xb2, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x11, 0x00,
+      0x9c, 0xd3, 0x4e, 0xcb, 0xe8, 0x0f, 0x00, 0x00, 0x57, 0xc7, 0x13, 0x61};
+  static const uint8_t table[168] = {
+      [0] = 2,    [1] = 10,     [2] = 64,     [100] = 10,   [101] = 3,
+      [102] = 3,  [103] = 15,   [104] = 0xb2, [105] = 2,    [112] = 1,
+      [114] = 17, [164] = 0x1f, [165] = 0x28, [166] = 0x1a, [167] = 0xf9};
   pref_put(H2_XIANXIA_RPG_PREF_JOURNEY7_KEY, H2_PAL_PREF_ENTRY_BLOB, bytes,
            sizeof(bytes))
       ->writes = 0;
-  h2_xianxia_rpg_progress_t progress = {0};
-  progress.cleared = 64;
-  progress.chapters[6] =
-      (h2_xianxia_rpg_clear_t){.level = 10, .pills = 2, .trust = 3};
-  progress.reserved[5] = 31;
-  progress.reserved[6] = 15;
-  uint8_t table[H2_XIANXIA_RPG_PROGRESS_BYTES];
-  h2_xianxia_rpg_progress_encode(&progress, table);
   pref_put(H2_XIANXIA_RPG_PREF_CHAPTERS_KEY, H2_PAL_PREF_ENTRY_BLOB, table,
            sizeof(table))
       ->writes = 0;
@@ -1144,8 +1131,8 @@ static void test_eighth_record_ownership(void) {
   uint32_t tag = 0;
   CHECK(j8 && j8->writes == 1 &&
         h2_xianxia_rpg_journey8_decode(j8->value, j8->size, &save, &tag));
-  CHECK(save.chapter == 8 && save.level == 10 && save.pills == 2 &&
-        save.trust == 3 && save.facts == 4095);
+  CHECK(save.chapter == 8 && save.level == 10 && save.pills == 3 &&
+        save.trust == 3 && save.facts == 4072);
   CHECK(tag == (h2_xianxia_rpg_predecessor_tag(0, old.value, old.size) ^
                 h2_xianxia_rpg_predecessor_tag(0, NULL, 0)));
   for (unsigned state = 0; state < 8; ++state) {
