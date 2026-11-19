@@ -5,14 +5,15 @@
     "motion": [
       {"name": "conveyor circuit", "value": "27s", "purpose": "One complete turn past the pass."},
       {"name": "bite", "value": "680ms", "purpose": "Dip, lift, taste and settle with feet planted."},
-      {"name": "turn", "value": "115ms", "purpose": "Compress the silhouette as the diner changes facing."}
+      {"name": "turn", "value": "115ms", "purpose": "Shift into the first step when changing facing."},
+      {"name": "collector print", "value": "1000ms", "purpose": "Turn, reveal, then settle one print into this meal's rack."}
     ]
   },
   "components": [
-    {"name": "Meal ticket", "kind": "button", "refersTo": "admission", "description": "Buys entry with the game purse.", "html": "<button class='ds-buy'>Buy ticket</button>", "css": ".ds-buy{background:#a94531;color:#f8ecd1;border:0;padding:0 24px;height:54px;font:600 20px 'Barlow Semi Condensed',sans-serif}.ds-buy:focus-visible{outline:2px solid #8ac3b1}"}
+    {"name": "Meal ticket", "kind": "button", "refersTo": "admission", "description": "Buys entry with the game purse.", "html": "<button class='ds-buy'>Buy ticket</button>", "css": ".ds-buy{background:#a94f38;color:#f6ead0;border:0;padding:0 24px;height:54px;font:600 20px 'Barlow Semi Condensed',sans-serif}.ds-buy:focus-visible{outline:2px solid #8ac3b1}"}
   ],
   "narrative": {
-    "northStar": "The counter cloth",
+    "northStar": "The late-afternoon counter",
     "keyCharacteristics": ["One glaze follows each plate back to the pass.", "Four facings share a heel anchor.", "The clock, lit rim and next action are visible together."]
   }
 }

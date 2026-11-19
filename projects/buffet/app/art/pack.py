@@ -24,7 +24,7 @@ def decode(source):
         chunks[kind] = chunks.get(kind, b'') + payload
         offset = end + 4
     w, h, bits, kind, *options = struct.unpack('>IIBBBBB', chunks[b'IHDR'])
-    if not (0 < w <= 2048 and 0 < h <= 2048 and bits == 8 and kind == 3 and options == [0, 0, 0]):
+    if not (0 < w <= 4096 and 0 < h <= 4096 and bits == 8 and kind == 3 and options == [0, 0, 0]):
         raise ValueError(f'expected noninterlaced indexed plate: {source}')
     raw = zlib.decompress(chunks[b'IDAT'])
     if len(raw) != (w + 1) * h:
@@ -54,13 +54,20 @@ def main():
         print('#include "buffet_sprite.h"', file=out)
         for arg in sys.argv[2:]:
             source = Path(arg)
+            if source.suffix == '.rgb565z':
+                raw = zlib.decompress(source.read_bytes())
+                if len(raw) != 1600*960*2: raise ValueError('wrong painted room extent')
+                print('const uint16_t bf_floor_pixels[] = {', file=out)
+                for off in range(0,len(raw),128):
+                    print(','.join(map(str, struct.unpack_from('<64H',raw,off)))+',',file=out)
+                print('};',file=out)
+                continue
             name = source.stem
             w, h, pixels, palette, alpha = decode(source)
             emit(out, 'uint8_t', name + '_pixels', pixels)
             emit(out, 'uint16_t', name + '_rgb', palette)
             emit(out, 'uint8_t', name + '_alpha', alpha)
             print(f'const bf_sprite_t bf_{name} = {{{w},{h},{name}_pixels,{name}_rgb,{name}_alpha}};', file=out)
-
 
 if __name__ == '__main__':
     main()

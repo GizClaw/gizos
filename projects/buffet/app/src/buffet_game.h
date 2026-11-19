@@ -3,7 +3,18 @@
 
 #include "h2_buffet.h"
 
-enum { BF_SLOTS = 10, BF_DISHES = 6, BF_ROUTE = 8 };
+enum {
+  BF_SLOTS = 10,
+  BF_DISHES = 6,
+  BF_ROUTE = 8,
+  BF_CARD_COUNT = 3,
+  BF_REVEAL_MS = 1000
+};
+typedef struct {
+  unsigned owned, fresh;
+  int reveal_ms, selected;
+  bool open, this_meal, reduced_motion, unsaved;
+} bf_album_t;
 typedef enum { BF_TICKET, BF_DINING, BF_CLOSING, BF_HOSPITAL } bf_phase_t;
 typedef enum { BF_DOWN, BF_RIGHT, BF_UP, BF_LEFT } bf_face_t;
 typedef struct {
@@ -36,6 +47,8 @@ typedef struct {
 } bf_place_t;
 typedef struct {
   bf_phase_t phase;
+  bf_album_t album;
+  float gauge_milli;
   bool en, tasting, keyboard;
   int cover, elapsed_ms, ambient_ms, receipt_ms, red_ms, recovered_ms,
       fullness_milli, value, purse, eaten, returned;
@@ -50,6 +63,13 @@ extern const bf_rules_t bf_rules;
 extern const bf_dish_t bf_menu[BF_DISHES];
 extern const bf_rect_t bf_language_button, bf_goal_button, bf_ticket_button,
     bf_eat_button;
+void bf_award(bf_game_t* g);
+unsigned bf_visible_cards(const bf_game_t* g);
+int bf_card_position(const bf_game_t* g, int index);
+int bf_card_count(unsigned mask);
+int bf_reveal_duration(const bf_game_t* g);
+extern const bf_rect_t bf_album_button, bf_round_cards, bf_album_back,
+    bf_album_tab;
 void bf_init(bf_game_t* g, bool keyboard);
 void bf_action(bf_game_t* g, unsigned actions);
 void bf_tap(bf_game_t* g, float x, float y);

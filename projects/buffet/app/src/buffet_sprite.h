@@ -8,8 +8,10 @@ typedef struct {
   const uint16_t* color;
   const uint8_t* alpha;
 } bf_sprite_t;
-extern const bf_sprite_t bf_room, bf_counter, bf_cloth, bf_mark, bf_cast,
-    bf_otter, bf_rest;
+extern const uint16_t bf_floor_pixels[1600 * 960];
+extern const bf_sprite_t bf_counter, bf_cloth, bf_mark, bf_cast, bf_guest,
+    bf_rest, bf_gauge, bf_gauge_full, bf_card_back, bf_card_bite, bf_card_close,
+    bf_card_rest;
 extern const bf_sprite_t bf_salmon_cleared, bf_tamago_cleared, bf_tuna_cleared,
     bf_shrimp_cleared, bf_maki_cleared, bf_inari_cleared;
 extern const bf_sprite_t bf_salmon, bf_tamago, bf_tuna, bf_shrimp, bf_maki,

@@ -8,6 +8,11 @@ extern const lv_font_t bf_en_small, bf_en_body, bf_en_head, bf_en_title;
 static const lv_font_t* const strikes[2][4] = {
     {&bf_zh_small, &bf_zh_body, &bf_zh_head, &bf_zh_title},
     {&bf_en_small, &bf_en_body, &bf_en_head, &bf_en_title}};
+enum {
+  D = H2_BUFFET_DENSITY,
+  W = H2_BUFFET_WIDTH * D,
+  H = H2_BUFFET_HEIGHT * D
+};
 static int min_i(int a, int b) { return a < b ? a : b; }
 static int max_i(int a, int b) { return a > b ? a : b; }
 static uint16_t blend(uint16_t bg, uint16_t fg, unsigned a) {
@@ -18,26 +23,34 @@ static uint16_t blend(uint16_t bg, uint16_t fg, unsigned a) {
   return (uint16_t)((r << 11) | (g << 5) | b);
 }
 void bf_box(bf_canvas_t c, int x, int y, int w, int h, uint16_t color) {
-  for (int row = max_i(0, y); row < min_i(480, y + h); row++)
-    for (int col = max_i(0, x); col < min_i(800, x + w); col++)
-      c.pixels[row * 800 + col] = color;
+  for (int row = max_i(0, y * D); row < min_i(H, (y + h) * D); row++)
+    for (int col = max_i(0, x * D); col < min_i(W, (x + w) * D); col++)
+      c.pixels[row * W + col] = color;
 }
 void bf_ellipse(bf_canvas_t c, int x, int y, int rx, int ry, uint16_t color,
                 unsigned a) {
   if (rx <= 0 || ry <= 0) return;
-  for (int j = max_i(-ry, -y); j <= min_i(ry, 479 - y); j++) {
+  x *= D;
+  y *= D;
+  rx *= D;
+  ry *= D;
+  for (int j = max_i(-ry, -y); j <= min_i(ry, H - 1 - y); j++) {
     int w = (int)(rx * sqrtf(fmaxf(0, 1 - (float)(j * j) / (float)(ry * ry))));
-    for (int i = max_i(-w, -x); i <= min_i(w, 799 - x); i++) {
-      uint16_t* p = c.pixels + (y + j) * 800 + x + i;
+    for (int i = max_i(-w, -x); i <= min_i(w, W - 1 - x); i++) {
+      uint16_t* p = c.pixels + (y + j) * W + x + i;
       *p = blend(*p, color, a);
     }
   }
 }
 void bf_line(bf_canvas_t c, int x, int y, int x2, int y2, uint16_t color) {
+  x *= D;
+  y *= D;
+  x2 *= D;
+  y2 *= D;
   int dx = abs(x2 - x), dy = -abs(y2 - y), sx = x < x2 ? 1 : -1,
       sy = y < y2 ? 1 : -1, error = dx + dy;
   for (;;) {
-    if (x >= 0 && y >= 0 && x < 800 && y < 480) c.pixels[y * 800 + x] = color;
+    if (x >= 0 && y >= 0 && x < W && y < H) c.pixels[y * W + x] = color;
     if (x == x2 && y == y2) break;
     int e = error * 2;
     if (e >= dy) {
@@ -53,10 +66,11 @@ void bf_line(bf_canvas_t c, int x, int y, int x2, int y2, uint16_t color) {
 void bf_blit(bf_canvas_t c, const bf_sprite_t* s, bf_rect_t src,
              bf_rect_t dst) {
   if (dst.w <= 0 || dst.h <= 0) return;
-  for (int y = max_i(0, -dst.y); y < min_i(dst.h, 480 - dst.y); y++) {
+  dst = (bf_rect_t){dst.x * D, dst.y * D, dst.w * D, dst.h * D};
+  for (int y = max_i(0, -dst.y); y < min_i(dst.h, H - dst.y); y++) {
     const uint8_t* row = s->pixels + (src.y + y * src.h / dst.h) * s->w + src.x;
-    uint16_t* fb = c.pixels + (dst.y + y) * 800;
-    for (int x = max_i(0, -dst.x); x < min_i(dst.w, 800 - dst.x); x++) {
+    uint16_t* fb = c.pixels + (dst.y + y) * W;
+    for (int x = max_i(0, -dst.x); x < min_i(dst.w, W - dst.x); x++) {
       unsigned index = row[src.w == dst.w ? x : x * src.w / dst.w],
                a = s->alpha[index];
       if (a) fb[dst.x + x] = blend(fb[dst.x + x], s->color[index], a);
@@ -135,33 +149,34 @@ bool bf_font_covers(bool en, bf_size_t size, const char* s) {
 }
 int bf_text(bf_canvas_t c, bf_size_t size, int x, int baseline, uint16_t color,
             const char* s) {
-  int pen = x;
+  int pen = x * D;
+  baseline *= D;
   while (*s) {
     const lv_font_t* font;
     unsigned id = lookup(c.en, size, codepoint(&s), &font);
     const lv_font_fmt_txt_dsc_t* d = font->dsc;
     const lv_font_fmt_txt_glyph_dsc_t* g = &d->glyph_dsc[id];
     if (!id) {
-      if (c.pixels) bf_box(c, pen, baseline - 8, 6, 8, color);
-      pen += 8;
+      if (c.pixels) bf_box(c, pen / D, baseline / D - 8, 6, 8, color);
+      pen += 8 * D;
       continue;
     }
     if (c.pixels) {
       const uint8_t* bits = d->glyph_bitmap + g->bitmap_index;
       int x0 = pen + g->ofs_x, y0 = baseline - g->ofs_y - g->box_h;
-      for (int j = max_i(0, -y0); j < min_i(g->box_h, 480 - y0); j++)
-        for (int i = max_i(0, -x0); i < min_i(g->box_w, 800 - x0); i++) {
+      for (int j = max_i(0, -y0); j < min_i(g->box_h, H - y0); j++)
+        for (int i = max_i(0, -x0); i < min_i(g->box_w, W - x0); i++) {
           int n = j * g->box_w + i;
           unsigned coverage = (bits[n / 2] >> (n % 2 ? 0 : 4)) & 15;
           if (coverage) {
-            uint16_t* p = c.pixels + (y0 + j) * 800 + x0 + i;
+            uint16_t* p = c.pixels + (y0 + j) * W + x0 + i;
             *p = blend(*p, color, coverage * 17);
           }
         }
     }
     pen += (g->adv_w + 8) >> 4;
   }
-  return pen - x;
+  return (pen + D / 2) / D - x;
 }
 int bf_width(bool en, bf_size_t size, const char* s) {
   return bf_text((bf_canvas_t){NULL, en}, size, 0, 0, 0, s);

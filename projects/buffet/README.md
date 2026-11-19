@@ -23,11 +23,17 @@ Every meal comes with an 80-coin purse. Admission costs 48. Food contributes to 
 
 Capacity is 100%. Every dish digests at two percentage points per second. Above 120%, the player has seven continuous seconds to get back to the line. Reaching 120% clears that timer. Sustained red during service ends the meal immediately and deducts 24 coins. Closing has priority at the final instant. Tune the shared rules and individual servings in [buffet_game.c](app/src/buffet_game.c).
 
+## Achievement cards
+
+The book on the ticket opens the collection. After settlement a new print flips and slides into **This Round's Cards**. Tap **Collect cards** to finish the whole reveal immediately. Open the result's rack to browse this meal, or switch to the full collection. A browser with reduced motion enabled shows the settled rack directly. **C** opens the album, **G** changes its result filter, the arrow keys select a print and **Enter** returns.
+
+A successful serving followed by a normal close grants `base-bite` (First Bite). Closing a paid round grants `base-settle` (Made It to Closing). A hospital ending grants the hidden `story-hospital` (First Trip to the Hospital). The album stores each catalog ID once under `buffet_cards_v1` in the Pref PAL. Desktop uses its own SQLite database in `TidewheelSushi` under Application Support on macOS, or `gizclaw/tidewheel-sushi` under the Linux data directory. `H2_DESKTOP_STORAGE_ROOT` selects an isolated absolute directory. Web uses origin-local browser storage. On a storage failure the cards remain available in the current session, the album reports that status and pending writes retry without replacing unreadable records.
+
 ## Rendering and assets
 
-The App presents an 800×480 RGB565 surface capped at 30 fps. The counter sits between the rear and front diners in depth order. Static ground, working frame and last-presented frame use approximately 2.20 MiB combined. Indexed art stays in read-only storage. Frames allocate no textures. A stationary ticket or receipt needs no display upload. A moving scene submits at most one changed band of rows per frame.
+The App composes an 800×480 logical stage into a 1600×960 native RGB565 framebuffer, capped at 30 fps. The SDL3 launcher requests a high-density drawable in an 800×480 window. It reports the original window units through Touch. The Web PAL uses the same 1600×960 texture and maps pointer coordinates from the aspect-fitted canvas. Static ground, working frame and last-presented frame use approximately 8.79 MiB combined. The evening room painting is registered to the actual track and encoded directly to dithered RGB565. Diners move behind and in front of the counter's silhouette. Indexed character, food and print art lives in read-only storage. Frames allocate no textures. Stationary ticket and receipt views need no display upload. A moving scene uses at most one changed band of rows per frame.
 
-The plate images are original offline ray-marched sculptures. The six servings use a shared ceramic profile and light, with individual glazes, fish cuts, rice, seaweed, egg folds, prawn tails, cucumber cores and tofu pockets. A second bake preserves their shapes at room scale. Each animal has a posed sheet with four facings, a four-contact walk, idle/blink, bite anticipation, contact and recovery. The source lives in [art/](app/art/) and the baked indexed images in [plates/](app/plates/). The game build uses the committed plates. To rebake them, use Python with Pillow 11.3 and CairoSVG 2.8, Cairo, and a host C compiler.
+The plate images are original offline ray-marched sculptures. The six servings use a shared ceramic profile and light, with individual glazes, fish cuts, rice, seaweed, egg folds, prawn tails, cucumber cores and tofu pockets. A second bake preserves their shapes at room scale. Each human diner has a registered character sheet. The blue-haired visitor uses separately drawn front, three-quarter, profile, rear, bite and savor poses. Her hair follows the stride and her feet share a sole anchor with the turn poses. The source lives in [art/](app/art/) and the baked indexed images in [plates/](app/plates/). The game build uses the committed plates. To rebake them, use Python with Pillow 11.3 and CairoSVG 2.8, Cairo, and a host C compiler.
 
 ```sh
 python3 projects/buffet/app/art/bake.py
@@ -36,7 +42,7 @@ python3 projects/buffet/app/art/bake.py
 The project font converter builds four anti-aliased strikes from the shared Noto Sans SC Bold for Chinese and Barlow Semi Condensed SemiBold for English. Each language falls back to the other's glyphs. The original Barlow font comes from [Google Fonts](https://github.com/google/fonts/tree/main/ofl/barlowsemicondensed). The font licenses are in [app/fonts/](app/fonts/).
 
 ```sh
-bazel test -c opt //projects/buffet/app:game_test
+bazel test //projects/buffet/app:all //pal/providers/backends/sdl3:sdl3_test
 bazel build -c opt //projects/buffet/targets/pkg_tar/web:buffet
 ```
 

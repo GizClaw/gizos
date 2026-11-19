@@ -3,6 +3,7 @@
 #include "h2_pal_unsupported.h"
 #include "h2_sdl3.h"
 #include "h2_buffet.h"
+#include "buffet_desktop_pref.h"
 
 #include <stdio.h>
 
@@ -45,6 +46,9 @@ static void poll(void* user, h2_buffet_input_t* input) {
         break;
       case H2_SDL3_KEY_G:
         if (pressed) input->actions |= H2_BUFFET_GOAL;
+        break;
+      case H2_SDL3_KEY_C:
+        if (pressed) input->actions |= H2_BUFFET_ALBUM;
         break;
       case H2_SDL3_KEY_L:
         if (pressed) input->actions |= H2_BUFFET_LANGUAGE;
@@ -116,11 +120,15 @@ int main(void) {
                                     .width = H2_BUFFET_WIDTH,
                                     .height = H2_BUFFET_HEIGHT};
   window_t window = {0};
-  if (h2_sdl3_create(&surface, &window.sdl) != H2_PAL_OK) {
+  if (h2_sdl3_create_dense(&surface, H2_BUFFET_DENSITY, &window.sdl) !=
+      H2_PAL_OK) {
     fprintf(stderr, "buffet: SDL3 window failed\n");
     return 1;
   }
-  const h2_runtime_config_t config = runtime_config(window.sdl);
+  h2_sqlite_t* storage = NULL;
+  h2_runtime_config_t config = runtime_config(window.sdl);
+  if (buffet_desktop_pref_create(NULL, &storage) == H2_PAL_OK)
+    config.pref = h2_sqlite_pref_api(storage);
   h2_runtime_t* runtime = NULL;
   int rc = h2_runtime_init(&config, &runtime);
   if (rc == H2_PAL_OK) {
@@ -129,7 +137,10 @@ int main(void) {
     rc = h2_buffet_run(runtime, &game);
   }
   const int destroyed = runtime != NULL ? h2_runtime_destroy(&runtime) : 0;
-  if (destroyed == H2_PAL_OK) h2_sdl3_destroy(window.sdl);
+  if (destroyed == H2_PAL_OK) {
+    h2_sdl3_destroy(window.sdl);
+    if (storage) h2_sqlite_destroy(storage);
+  }
   if (rc != H2_PAL_OK || destroyed != H2_PAL_OK) {
     fprintf(stderr, "buffet: rc=%d destroy=%d\n", rc, destroyed);
     return 1;

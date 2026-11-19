@@ -80,8 +80,8 @@ h2_pal_result_t touch_get_info(void* user, h2_pal_touch_info_t* out_info) {
   if (provider->touch_open_count == 0u) {
     return H2_PAL_ERR_INVALID_STATE;
   }
-  *out_info = {static_cast<uint32_t>(provider->width),
-               static_cast<uint32_t>(provider->height)};
+  *out_info = {static_cast<uint32_t>(provider->width / provider->density),
+               static_cast<uint32_t>(provider->height / provider->density)};
   return H2_PAL_OK;
 }
 

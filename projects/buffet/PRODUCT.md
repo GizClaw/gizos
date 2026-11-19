@@ -18,4 +18,4 @@ An original small restaurant, intelligible characters and food that reads at two
 
 ## Implementation assumptions
 
-The first store uses a session purse, can clear its own plates on the belt, and offers value and tasting goals. Store naming, prices, digestion and timing are adjustable. The first audience is a player trying one complete meal on a desktop or landscape touch display.
+The first store uses a session purse, can clear its own plates on the belt, and offers value and tasting goals. Store naming, prices, digestion and timing are adjustable. The album stores three achievement cards with stable identifiers. The player and other diners are full-body human anime chibi characters, with the player's Peetty reference guiding hair, eyes, proportions and facing. The first audience is a player trying one complete meal on a desktop or landscape touch display.

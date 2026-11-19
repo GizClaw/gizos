@@ -47,7 +47,7 @@ const bf_dish_t bf_menu[BF_DISHES] = {
 const bf_rect_t bf_language_button = {710, 12, 74, 34},
                 bf_goal_button = {502, 224, 237, 42},
                 bf_ticket_button = {502, 356, 237, 54},
-                bf_eat_button = {625, 391, 154, 66};
+                bf_eat_button = {690, 413, 88, 50};
 static const float pi = 3.14159265f;
 static const int order[BF_SLOTS] = {0, 4, 2, 1, 3, 5, 0, 3, 4, 1};
 static float sq(float v) { return v * v; }
@@ -132,10 +132,10 @@ bool bf_has_goal(const bf_game_t* g) {
 }
 
 bool bf_walkable(bf_point_t p) {
-  if (p.x < 40 || p.x > 760 || p.y < 150 || p.y > 361) return false;
-  if ((p.x < 127 || p.x > 676) && p.y < 157) return false;
-  if ((p.x < 89 || p.x > 711) &&
-      ((p.y > 174 && p.y < 256) || (p.y > 284 && p.y < 361)))
+  if (p.x < 32 || p.x > 767 || p.y < 150 || p.y > 446) return false;
+  if (p.x < 117 && p.y < 167) return false;
+  if ((p.x < 77 && p.y > 239 && p.y < 425) || (p.x > 700 && p.y < 232) ||
+      (p.x > 678 && p.y > 335))
     return false;
   float dx = p.x - clampf(p.x, 215, 585);
   return sq(dx / 78.f) + sq((p.y - 234) / 60.f) >= 1;
@@ -162,7 +162,7 @@ static void walk_to(bf_game_t* g, bf_point_t dest) {
   bf_point_t node[N] = {g->player.pos, {0, 0},     {141, 168}, {659, 168},
                         {681, 234},    {659, 302}, {141, 302}, {119, 234}};
   dest.x = clampf(dest.x, 41, 759);
-  dest.y = clampf(dest.y, 153, 360);
+  dest.y = clampf(dest.y, 153, 445);
   if (!bf_walkable(dest)) return;
   node[1] = dest;
   float best[N];
@@ -228,6 +228,54 @@ static void diner(bf_actor_t* a, int ms, int who) {
     break;
   }
 }
+const bf_rect_t bf_album_button = {601, 9, 96, 38},
+                bf_round_cards = {24, 322, 419, 107},
+                bf_album_back = {663, 26, 105, 48},
+                bf_album_tab = {264, 27, 255, 41};
+int bf_card_count(unsigned mask) {
+  int n = 0;
+  for (int i = 0; i < BF_CARD_COUNT; i++)
+    if (mask & (1u << i)) n++;
+  return n;
+}
+int bf_reveal_duration(const bf_game_t* g) {
+  return bf_card_count(g->album.fresh) * BF_REVEAL_MS;
+}
+static int first_card(unsigned mask) {
+  for (int i = 0; i < BF_CARD_COUNT; i++)
+    if (mask & (1u << i)) return i;
+  return 0;
+}
+void bf_award(bf_game_t* g) {
+  unsigned earned = g->phase == BF_HOSPITAL  ? 4u
+                    : g->phase == BF_CLOSING ? (2u | (g->eaten ? 1u : 0u))
+                                             : 0;
+  g->album.fresh = earned & ~g->album.owned;
+  g->album.owned |= earned;
+  g->album.selected = first_card(g->album.fresh);
+  g->album.reveal_ms = g->album.reduced_motion ? bf_reveal_duration(g) : 0;
+}
+static void open_album(bf_game_t* g, bool this_meal) {
+  g->album.open = true;
+  g->album.this_meal = this_meal;
+  g->album.selected = first_card(this_meal ? g->album.fresh : g->album.owned);
+  g->album.reveal_ms = bf_reveal_duration(g);
+}
+unsigned bf_visible_cards(const bf_game_t* g) {
+  return g->album.this_meal ? g->album.fresh : (3u | g->album.owned);
+}
+int bf_card_position(const bf_game_t* g, int i) {
+  unsigned mask = bf_visible_cards(g);
+  int count = bf_card_count(mask), slot = bf_card_count(mask & ((1u << i) - 1));
+  return 400 + slot * 222 - (count - 1) * 111;
+}
+static void select_card(bf_game_t* g, int direction) {
+  unsigned mask = bf_visible_cards(g);
+  for (int n = 0; n < 3; n++) {
+    g->album.selected = (g->album.selected + 3 + direction) % 3;
+    if (mask & (1u << g->album.selected)) return;
+  }
+}
 void bf_init(bf_game_t* g, bool keyboard) {
   memset(g, 0, sizeof(*g));
   g->phase = BF_TICKET;
@@ -238,7 +286,11 @@ void bf_init(bf_game_t* g, bool keyboard) {
 static void buy(bf_game_t* g) {
   bool en = g->en, tasting = g->tasting;
   int cover = g->cover;
+  bf_album_t album = g->album;
   bf_init(g, g->keyboard);
+  g->album.owned = album.owned;
+  g->album.reduced_motion = album.reduced_motion;
+  g->album.unsaved = album.unsaved;
   g->en = en;
   g->tasting = tasting;
   g->cover = cover;
@@ -267,6 +319,18 @@ static void eat(bf_game_t* g, int slot) {
   g->player.face = facing(p.x - g->player.pos.x, p.y - g->player.pos.y);
 }
 void bf_action(bf_game_t* g, unsigned actions) {
+  if (g->album.open) {
+    if (actions & (H2_BUFFET_CONFIRM | H2_BUFFET_ALBUM)) g->album.open = false;
+    if (actions & H2_BUFFET_NEXT) select_card(g, 1);
+    if (actions & H2_BUFFET_PREVIOUS) select_card(g, -1);
+    if ((actions & H2_BUFFET_GOAL) && g->phase != BF_TICKET)
+      open_album(g, !g->album.this_meal);
+    return;
+  }
+  if ((actions & H2_BUFFET_ALBUM) && g->phase != BF_DINING) {
+    open_album(g, g->phase != BF_TICKET);
+    return;
+  }
   if (g->phase == BF_TICKET) {
     if (actions & H2_BUFFET_LANGUAGE) g->en = !g->en;
     if (actions & H2_BUFFET_GOAL) g->tasting = !g->tasting;
@@ -277,13 +341,32 @@ void bf_action(bf_game_t* g, unsigned actions) {
   } else if (actions & H2_BUFFET_CONFIRM) {
     if (g->phase == BF_DINING)
       eat(g, bf_nearest(g));
-    else if (g->receipt_ms >= 650) {
+    else if (g->album.reveal_ms < bf_reveal_duration(g)) {
+      g->album.reveal_ms = bf_reveal_duration(g);
+    } else if (g->receipt_ms >= 650) {
       g->phase = BF_TICKET;
       g->purse = bf_rules.purse;
     }
   }
 }
 void bf_tap(bf_game_t* g, float x, float y) {
+  if (g->album.open) {
+    if (bf_in(bf_album_back, x, y))
+      g->album.open = false;
+    else if (bf_in(bf_album_tab, x, y) && g->phase != BF_TICKET)
+      open_album(g, !g->album.this_meal);
+    else if (y >= 102 && y <= 332) {
+      for (int i = 0; i < 3; i++)
+        if ((bf_visible_cards(g) & (1u << i)) &&
+            fabsf(x - bf_card_position(g, i)) < 98)
+          g->album.selected = i;
+    }
+    return;
+  }
+  if (g->phase == BF_TICKET && bf_in(bf_album_button, x, y)) {
+    open_album(g, false);
+    return;
+  }
   if (g->phase == BF_TICKET) {
     if (bf_in(bf_language_button, x, y))
       bf_action(g, H2_BUFFET_LANGUAGE);
@@ -296,14 +379,26 @@ void bf_tap(bf_game_t* g, float x, float y) {
     return;
   }
   if (g->phase != BF_DINING) {
+    if (bf_in(bf_round_cards, x, y)) {
+      open_album(g, true);
+      return;
+    }
+    if (bf_in(bf_album_button, x, y)) {
+      open_album(g, false);
+      return;
+    }
+    if (g->album.reveal_ms < bf_reveal_duration(g)) {
+      g->album.reveal_ms = bf_reveal_duration(g);
+      return;
+    }
     if (bf_in(bf_ticket_button, x, y)) bf_action(g, H2_BUFFET_CONFIRM);
     return;
   }
-  if (bf_in(bf_eat_button, x, y)) {
+  if (bf_in(bf_eat_button, x, y) && (bf_nearest(g) >= 0 || g->bite_ms > 0)) {
     eat(g, bf_nearest(g));
     return;
   }
-  if (y < 132 || y > 374) return;
+  if (y < 132 || y > 462) return;
   float cost = 1;
   int pick = -1;
   for (int i = 0; i < BF_SLOTS; i++) {
@@ -380,6 +475,9 @@ void bf_step(bf_game_t* g, int dt_ms, int dx, int dy) {
   if (dt_ms <= 0) return;
   g->ambient_ms = (g->ambient_ms + dt_ms % 360000) % 360000;
   if (g->phase != BF_DINING) {
+    if (g->phase != BF_TICKET && g->album.reveal_ms < bf_reveal_duration(g))
+      g->album.reveal_ms +=
+          lower(dt_ms, bf_reveal_duration(g) - g->album.reveal_ms);
     if (g->phase != BF_TICKET && g->receipt_ms < 650)
       g->receipt_ms += lower(dt_ms, 650);
     return;
@@ -415,7 +513,13 @@ void bf_step(bf_game_t* g, int dt_ms, int dx, int dy) {
   g->bite_ms = down_timer(g->bite_ms, dt);
   g->turn_ms = down_timer(g->turn_ms, dt);
   g->feedback_ms = down_timer(g->feedback_ms, dt);
+  float gap = g->fullness_milli - g->gauge_milli;
+  if (gap > 0)
+    g->gauge_milli += gap * fminf(1.f, (float)dt / 90.f);
+  else
+    g->gauge_milli = (float)g->fullness_milli;
   if (g->elapsed_ms == bf_rules.duration_ms) g->phase = BF_CLOSING;
+  if (g->phase != BF_DINING) bf_award(g);
   for (int i = 0; i < 2; i++) diner(&g->diners[i], g->elapsed_ms, i);
   if (g->phase == BF_DINING) walk(g, lower(dt, 100), dx, dy);
 }

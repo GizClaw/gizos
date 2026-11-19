@@ -10,8 +10,9 @@
 #include <stdio.h>
 
 static atomic_uint held, edges;
-static atomic_bool hidden, fine_pointer;
-EMSCRIPTEN_KEEPALIVE void bf_web_desktop(int value) {
+static atomic_bool hidden, fine_pointer, reduced_motion;
+EMSCRIPTEN_KEEPALIVE void bf_web_desktop(int value, int reduced) {
+  atomic_store(&reduced_motion, reduced != 0);
   atomic_store(&fine_pointer, value != 0);
 }
 EMSCRIPTEN_KEEPALIVE void bf_web_key(unsigned bit, int down) {
@@ -36,6 +37,7 @@ static void poll(void* user, h2_buffet_input_t* input) {
   if (pressed & 16) input->actions |= H2_BUFFET_CONFIRM;
   if (pressed & 32) input->actions |= H2_BUFFET_GOAL;
   if (pressed & 64) input->actions |= H2_BUFFET_LANGUAGE;
+  if (pressed & 128) input->actions |= H2_BUFFET_ALBUM;
   input->inactive = atomic_load(&hidden);
 }
 
@@ -54,7 +56,7 @@ static h2_runtime_config_t runtime_config(h2_web_platform_t* platform) {
   config.sync = h2_web_platform_sync_api(platform);
   config.fs = h2_pal_unsupported_fs_api();
   config.disk = h2_pal_unsupported_disk_api();
-  config.pref = h2_pal_unsupported_pref_api();
+  config.pref = h2_web_platform_pref_api(platform);
   config.crypto = h2_pal_unsupported_crypto_api();
   config.http = h2_pal_unsupported_http_api();
   config.net = h2_pal_unsupported_net_api();
@@ -91,8 +93,9 @@ static h2_runtime_config_t runtime_config(h2_web_platform_t* platform) {
 
 int main(void) {
   if (emscripten_is_main_runtime_thread()) return 2;
-  const h2_web_platform_config_t surface = {.display_width = H2_BUFFET_WIDTH,
-                                            .display_height = H2_BUFFET_HEIGHT};
+  const h2_web_platform_config_t surface = {
+      .display_width = H2_BUFFET_WIDTH * H2_BUFFET_DENSITY,
+      .display_height = H2_BUFFET_HEIGHT * H2_BUFFET_DENSITY};
   h2_web_platform_t* platform = h2_web_platform_create(&surface);
   if (platform == NULL) {
     printf("H2_BUFFET_WEB_FAIL stage=platform\n");
@@ -101,8 +104,10 @@ int main(void) {
   const h2_runtime_config_t config = runtime_config(platform);
   h2_runtime_t* runtime = NULL;
   int rc = h2_runtime_init(&config, &runtime);
-  const h2_buffet_config_t game = {.poll = poll,
-                                   .keyboard = atomic_load(&fine_pointer)};
+  const h2_buffet_config_t game = {
+      .poll = poll,
+      .reduced_motion = atomic_load(&reduced_motion),
+      .keyboard = atomic_load(&fine_pointer)};
   if (rc == H2_PAL_OK) rc = h2_buffet_run(runtime, &game);
   printf("H2_BUFFET_WEB_EXIT rc=%d\n", rc);
   const int destroyed = runtime != NULL ? h2_runtime_destroy(&runtime) : 0;

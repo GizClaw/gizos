@@ -16,21 +16,26 @@ _DISH_NAMES = [
     "empty",
 ]
 
-_PLATES = ["plates/" + n + ".png" for n in [
-    "room",
+_PLATES = ["plates/room.rgb565z"] + ["plates/" + n + ".png" for n in [
     "counter",
     "cloth",
     "cast",
-    "otter",
+    "guest",
+    "gauge",
+    "gauge_full",
+    "card_back",
+    "card_bite",
+    "card_close",
+    "card_rest",
     "rest",
     "mark",
 ] + _DISH_NAMES + [n + "_belt" for n in _DISH_NAMES] + [n + "_cleared" for n in _DISH_NAMES[:-1]]]
 
 _STRIKES = {
-    "small": 15,
-    "body": 20,
-    "head": 28,
-    "title": 42,
+    "small": 14,
+    "body": 17,
+    "head": 22,
+    "title": 32,
 }
 
 _TRANSLATIONS = [
@@ -63,7 +68,7 @@ genrule(
 
 [lvgl_font(
     name = "bf_" + lang + "_" + strike,
-    size = _STRIKES[strike],
+    size = _STRIKES[strike] * 2,
     out = "bf_" + lang + "_" + strike + ".c",
     bpp = 4,
     font = "//libs/ui/fonts/noto_sans_sc:NotoSansSC-Bold.ttf" if lang == "zh" else "fonts/BarlowSemiCondensed-SemiBold.ttf",
@@ -91,6 +96,7 @@ cc_library(
 )
 
 _PRIVATE = [
+    "src/buffet_cards.h",
     "src/buffet_game.h",
     "src/buffet_draw.h",
     "src/buffet_render.h",
@@ -99,6 +105,7 @@ _PRIVATE = [
 cc_library(
     name = "buffet",
     srcs = _PRIVATE + [
+        "src/buffet_cards.c",
         "src/buffet_draw.c",
         "src/buffet_game.c",
         "src/buffet_render.c",
@@ -117,6 +124,16 @@ cc_library(
         ":art",
         "//libs/runtime",
     ],
+)
+
+cc_test(
+    name = "cards_test",
+    srcs = _PRIVATE + ["tests/test_cards.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [":buffet"],
 )
 
 cc_test(
