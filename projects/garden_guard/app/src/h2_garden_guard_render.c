@@ -1854,6 +1854,13 @@ static void draw_toolbar(h2_garden_guard_canvas_t* canvas,
   else
     (void)snprintf(value, sizeof(value), "WAVE %u/%u", (unsigned)game->wave,
                    (unsigned)H2_GARDEN_GUARD_WAVES);
+  if ((float)h2_garden_guard_text_width(value, 1) > x1 - x0) {
+    if (game->wave == 0u)
+      (void)snprintf(value, sizeof(value), "SET");
+    else
+      (void)snprintf(value, sizeof(value), "W%u/%u", (unsigned)game->wave,
+                     (unsigned)H2_GARDEN_GUARD_WAVES);
+  }
   int32_t label = (int32_t)(l->card_h * 0.22f / 7.0f + 0.5f);
   if (label < 1) label = 1;
   label = fit_scale(value, x1 - x0, label);
@@ -1865,7 +1872,7 @@ static void draw_toolbar(h2_garden_guard_canvas_t* canvas,
   rounded_rect(canvas, x0, bar_y0, x1, bar_y1, radius, RGB(18, 38, 39), 220u);
   const uint32_t step = progress_step(game);
   if (game->sighting_ms != 0u) {
-    const char* sighting = "NEW JOURNAL CARD";
+    const char* sighting = x1 - x0 >= 96.0f ? "NEW JOURNAL CARD" : "NEW";
     text_centered(canvas, sighting, (x0 + x1) * 0.5f,
                   bar_y0 + (bar_y1 - bar_y0 - 7.0f) * 0.5f,
                   fit_scale(sighting, x1 - x0, 1), RGB(255, 218, 119), 256u);
@@ -2020,13 +2027,16 @@ static void draw_collection(h2_garden_guard_canvas_t* canvas,
     }
     const float x = r.x + 92.0f * s;
     const float available = (shop ? 226.0f : 335.0f) * s;
-    text_layer(canvas, name, (int32_t)x, (int32_t)(r.y + 10.0f * s),
+    const float name_y = r.y + (s < 0.42f ? 0.0f : 10.0f * s);
+    const float trait_y = r.y + (s < 0.42f ? 7.0f : 31.0f * s);
+    const float hint_y = r.y + (s < 0.42f ? 14.0f : 45.0f * s);
+    text_layer(canvas, name, (int32_t)x, (int32_t)name_y,
                fit_scale(name, available, text_scale(s, 2.0f)),
                seen ? ink : light, 256u);
-    text_layer(canvas, trait, (int32_t)x, (int32_t)(r.y + 31.0f * s),
+    text_layer(canvas, trait, (int32_t)x, (int32_t)trait_y,
                fit_scale(trait, available, 1), seen ? ink : light, 256u);
     if (hint != NULL)
-      text_layer(canvas, hint, (int32_t)x, (int32_t)(r.y + 45.0f * s),
+      text_layer(canvas, hint, (int32_t)x, (int32_t)hint_y,
                  fit_scale(hint, available, 1), muted, 256u);
     if (shop) {
       const uint32_t price = h2_garden_guard_offer_price(i);
@@ -2042,6 +2052,9 @@ static void draw_collection(h2_garden_guard_canvas_t* canvas,
       const h2_garden_guard_rect_t buy = {r.x + r.w * 0.74f + 7.0f * s,
                                           r.y + 15.0f * s,
                                           r.w * 0.26f - 14.0f * s, 32.0f * s};
+      if (!owned && (float)h2_garden_guard_text_width(label, 1) > buy.w)
+        (void)snprintf(label, sizeof(label), enough ? "%u C" : "NO %u",
+                       (unsigned)price);
       menu_button(canvas, buy, label,
                   owned    ? RGB(126, 162, 120)
                   : enough ? RGB(252, 199, 91)
