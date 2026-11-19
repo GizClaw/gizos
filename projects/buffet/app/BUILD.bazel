@@ -23,13 +23,11 @@ _DISH_NAMES = [
     "shrimp",
     "maki",
     "inari",
+    "ramen",
+    "custard",
 ]
 
 _PAINTS = [
-    "wave",
-    "leaf",
-    "sun",
-    "table_shadow",
     "plate_shade",
     "empty",
 ] + ["hud_" + hud for hud in [
@@ -39,19 +37,12 @@ _PAINTS = [
     "clock",
     "plates",
     "arrival",
-    "berth",
-    "selected",
-    "wave",
-    "leaf",
-    "sun",
 ]] + _DISH_NAMES + [dish + suffix for dish in _DISH_NAMES for suffix in [
     "_table",
     "_bite",
 ]]
 
-_PLATES = [
-    "plates/room.rgb565z",
-] + ["plates/" + name + ".paintz" for name in _PAINTS] + ["plates/" + n + ".png" for n in [
+_PLATES = ["plates/" + name + ".paintz" for name in _PAINTS] + ["plates/" + n + ".png" for n in [
     "cloth",
     "cast",
     "guest",
@@ -165,6 +156,9 @@ _PRIVATE = [
     "src/buffet_audio.h",
     "src/buffet_cards.h",
     "src/buffet_game.h",
+    "src/buffet_rotary.h",
+    "src/buffet_scale.h",
+    "src/buffet_mesh.h",
     "src/buffet_draw.h",
     "src/buffet_render.h",
 ]
@@ -176,8 +170,10 @@ cc_library(
         "src/buffet_cards.c",
         "src/buffet_draw.c",
         "src/buffet_game.c",
+        "src/buffet_mesh.c",
         "src/buffet_render.c",
         "src/buffet_room.c",
+        "src/buffet_rotary.c",
         "src/buffet_stations.c",
         "src/h2_buffet.c",
         ":audio_data",

@@ -2,14 +2,15 @@
 #include "buffet_render.h"
 #include "buffet_cards.h"
 #include "buffet_audio.h"
+#include "buffet_scale.h"
 
 #include <limits.h>
 #include <stdio.h>
 #include <string.h>
 
 enum {
-  WIDTH = H2_BUFFET_WIDTH * H2_BUFFET_DENSITY,
-  HEIGHT = H2_BUFFET_HEIGHT * H2_BUFFET_DENSITY,
+  WIDTH = BF_FRAME_W,
+  HEIGHT = BF_FRAME_H,
   STRIDE = WIDTH * sizeof(uint16_t)
 };
 typedef struct {
@@ -18,6 +19,7 @@ typedef struct {
   uint16_t* frame;
   uint16_t* ground;
   uint16_t* previous;
+  uint8_t* heights;
   h2_pal_touch_info_t touch;
   bool first, dining, pressed;
   float press_x, press_y;
@@ -28,11 +30,17 @@ typedef struct {
 static int present(h2_runtime_t* rt, bf_session_t* s) {
   bool dining = s->game.phase == BF_DINING;
   if (s->first || s->dining != dining) {
-    bf_paint_ground((bf_canvas_t){s->ground, s->game.en}, dining);
+    bf_paint_ground(
+        (bf_canvas_t){
+            .pixels = s->ground, .en = s->game.en, .heights = s->heights},
+        dining);
     s->dining = dining;
   }
   memcpy(s->frame, s->ground, STRIDE * HEIGHT);
-  bf_paint_scene((bf_canvas_t){s->frame, s->game.en}, &s->game);
+  bf_paint_scene(
+      (bf_canvas_t){
+          .pixels = s->frame, .en = s->game.en, .heights = s->heights},
+      &s->game);
   /* One transfer for the changed row range, including the first and last
    * moving sprite. Identical title/result frames cost no PAL submission. */
   int first = 0, last = HEIGHT - 1;
@@ -45,7 +53,7 @@ static int present(h2_runtime_t* rt, bf_session_t* s) {
       last--;
   }
   if (first <= last) {
-    h2_display_rect_t rect = {0, first, WIDTH, last - first + 1};
+    h2_display_rect_t rect = {0, first + BF_LCD_PAD, WIDTH, last - first + 1};
     int rc =
         h2_pal_display_draw_bitmap(rt->display, &rect, s->frame + first * WIDTH,
                                    STRIDE, H2_DISPLAY_PIXEL_RGB565);
@@ -65,8 +73,10 @@ static int touches(h2_runtime_t* rt, bf_session_t* s, bool active) {
     int rc = h2_pal_touch_poll_event(rt->touch, &ev);
     if (rc == H2_PAL_ERR_WOULD_BLOCK) return H2_PAL_OK;
     if (rc != H2_PAL_OK) return rc;
-    float x = (float)ev.x * 800 / s->touch.width,
-          y = (float)ev.y * 480 / s->touch.height;
+    float x = (float)ev.x * H2_BUFFET_WIDTH / s->touch.width;
+    float y = ((float)ev.y * (HEIGHT + 2 * BF_LCD_PAD) / s->touch.height -
+               BF_LCD_PAD) *
+              H2_BUFFET_HEIGHT / HEIGHT;
     if (ev.kind == H2_PAL_TOUCH_EVENT_DOWN) {
       s->pressed = active;
       s->press_x = x;
@@ -105,7 +115,7 @@ static int run(h2_runtime_t* rt, bf_session_t* s,
   int rc = h2_pal_display_get_info(rt->display, &display);
   if (rc != H2_PAL_OK) return rc;
   if (display.native_format != H2_DISPLAY_PIXEL_RGB565 ||
-      display.width != WIDTH || display.height != HEIGHT)
+      display.width != WIDTH || display.height != HEIGHT + 2 * BF_LCD_PAD)
     return H2_PAL_ERR_UNSUPPORTED;
   rc = h2_pal_touch_get_info(rt->touch, &s->touch);
   if (rc != H2_PAL_OK) return rc;
@@ -114,7 +124,9 @@ static int run(h2_runtime_t* rt, bf_session_t* s,
   s->frame = h2_pal_mem_alloc(rt->mem, size);
   s->ground = h2_pal_mem_alloc(rt->mem, size);
   s->previous = h2_pal_mem_alloc(rt->mem, size);
-  if (!s->frame || !s->ground || !s->previous) return H2_PAL_ERR_NO_MEMORY;
+  s->heights = h2_pal_mem_alloc(rt->mem, WIDTH * HEIGHT);
+  if (!s->frame || !s->ground || !s->previous || !s->heights)
+    return H2_PAL_ERR_NO_MEMORY;
   bf_init(&s->game, cfg && cfg->keyboard);
   bf_audio_init(&s->audio, rt, &s->game);
   s->game.album.reduced_motion = cfg && cfg->reduced_motion;
@@ -160,6 +172,7 @@ static int run(h2_runtime_t* rt, bf_session_t* s,
       s->pref_retry_ms = now + (saved == H2_PAL_ERR_WOULD_BLOCK ? 50u : 2400u);
     }
     bf_audio_update(&s->audio, sound, &s->game, now, input.inactive);
+    bool first = s->first;
     if (s->first || sound.muted != s->game.muted || s->game.phase != phase ||
         cover != s->game.cover || album.open != s->game.album.open ||
         album.this_meal != s->game.album.this_meal ||
@@ -171,6 +184,10 @@ static int run(h2_runtime_t* rt, bf_session_t* s,
         (s->game.phase == BF_DINING && !input.inactive)) {
       rc = present(rt, s);
       if (rc != H2_PAL_OK) return rc;
+      if (first && cfg && cfg->ready) {
+        rc = cfg->ready(cfg->user);
+        if (rc != H2_PAL_OK) return rc;
+      }
       s->frames++;
     }
     if (s->game.phase != phase) {
@@ -218,6 +235,7 @@ h2_pal_result_t h2_buffet_run(h2_runtime_t* rt, const h2_buffet_config_t* cfg) {
   h2_pal_mem_free(rt->mem, s->frame);
   h2_pal_mem_free(rt->mem, s->ground);
   h2_pal_mem_free(rt->mem, s->previous);
+  h2_pal_mem_free(rt->mem, s->heights);
   h2_pal_mem_free(rt->mem, s);
   return rc;
 }

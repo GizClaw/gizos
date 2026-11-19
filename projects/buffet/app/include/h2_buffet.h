@@ -37,6 +37,9 @@ typedef struct h2_buffet_config {
   void (*poll)(void* user, h2_buffet_input_t* input);
   bool keyboard;
   bool reduced_motion;
+  /** Called once after the first successful display presentation and touch
+   * open. */
+  h2_pal_result_t (*ready)(void* user);
   /** Optional host serialization for a shared Pref save. Invoke work once
    * while holding the save's exclusive card lock and return its result, or
    * return an acquisition error. Both borrows end before this call returns.

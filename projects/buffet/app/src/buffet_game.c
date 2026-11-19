@@ -1,4 +1,4 @@
-#include "buffet_game.h"
+#include "buffet_rotary.h"
 
 #include <math.h>
 #include <string.h>
@@ -42,6 +42,18 @@ const bf_dish_t bf_menu[BF_DISHES] = {
      {"豆皮袋里点上几粒芝麻。", "A sweet tofu pocket finished with sesame."},
      11,
      25},
+    {"sushi-shoyu-ramen",
+     {"酱油拉面", "Shoyu Ramen"},
+     {"琥珀色汤底，细面配一片叉烧。",
+      "Thin noodles and chashu in amber soy broth."},
+     24,
+     32},
+    {"sushi-chawanmushi",
+     {"茶碗蒸", "Chawanmushi"},
+     {"揭开小盅，蛋羹里透出高汤香。",
+      "A small cup of silky, dashi-steamed egg."},
+     9,
+     9},
 };
 const bf_rect_t bf_language_button = {710, 12, 74, 34},
                 bf_goal_button = {502, 224, 237, 42},
@@ -59,7 +71,10 @@ bool bf_in(bf_rect_t r, float x, float y) {
   return x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h;
 }
 bool bf_has_goal(const bf_game_t* g) {
-  return g->tasting ? g->varieties == BF_DISHES : g->value >= bf_rules.ticket;
+  if (!g->tasting) return g->value >= bf_rules.ticket;
+  for (int d = 0; d < BF_SUSHI; d++)
+    if (!g->bites[d]) return false;
+  return true;
 }
 int bf_card_count(unsigned mask) {
   int count = 0;
@@ -120,6 +135,7 @@ void bf_init(bf_game_t* g, bool keyboard) {
   g->keyboard = keyboard;
   g->purse = bf_rules.purse;
   g->last_dish = -1;
+  g->follow_slot = -1;
 }
 static void buy(bf_game_t* g) {
   bool en = g->en, tasting = g->tasting, muted = g->muted;
@@ -135,7 +151,8 @@ static void buy(bf_game_t* g) {
   g->cover = cover;
   g->phase = BF_DINING;
   g->purse -= bf_rules.ticket;
-  g->player = (bf_actor_t){.pos = {400, 378}, .face = BF_DOWN};
+  g->player = (bf_actor_t){.pos = bf_project((bf_world_t){10, 10.9f}, 0),
+                           .face = BF_DOWN};
   bf_service_open(g);
 }
 static void eat(bf_game_t* g, int slot) {
@@ -156,6 +173,7 @@ static void eat(bf_game_t* g, int slot) {
   g->eaten++;
   g->last_dish = dish;
   g->route_at = g->route_len;
+  g->follow_slot = -1;
   g->player.walking = false;
   g->bite_ms = 680;
   g->feedback_ms = 850;
@@ -197,17 +215,7 @@ bf_rect_t bf_sound_bounds(const bf_game_t* g) {
   return g->phase == BF_DINING ? (bf_rect_t){745, 5, 45, 42}
                                : (bf_rect_t){523, 9, 74, 38};
 }
-bf_rect_t bf_eat_bounds(const bf_game_t* g, int slot) {
-  (void)g;
-  bf_rect_t table = bf_table_footprint(slot / BF_SETTINGS);
-  return (bf_rect_t){table.x + table.w - 58, table.y + table.h - 22, 64, 44};
-}
 static void dining_tap(bf_game_t* g, float x, float y) {
-  int near = bf_nearest(g);
-  if (near >= 0 && bf_in(bf_eat_bounds(g, near), x, y)) {
-    eat(g, near);
-    return;
-  }
   for (int i = 0; i < BF_SLOTS; i++) {
     if (g->settings[i].dish < 0) continue;
     bf_place_t p = bf_place(g, i);
@@ -215,24 +223,35 @@ static void dining_tap(bf_game_t* g, float x, float y) {
     if (dx * dx + dy * dy <= 1) {
       if (bf_can_take(g, i))
         eat(g, i);
-      else
+      else {
+        g->follow_slot = i;
+        g->follow_at_ms = g->elapsed_ms + 220;
         bf_walk_to(g, p.station);
+      }
       return;
     }
   }
-  /* A tap on an empty setting still walks to that portion of the table. */
-  for (int i = 0; i < BF_TABLES; i++) {
-    bf_rect_t top = bf_table_footprint(i);
-    top.y -= BF_TABLE_RISE;
-    top.h += BF_TABLE_RISE;
-    if (bf_in(top, x, y)) {
-      int index = (int)((x - top.x) * 3 / top.w);
-      bf_walk_to(g, bf_place(g, i * BF_SETTINGS + index).station);
+  g->follow_slot = -1;
+  /* The top and the floor are separate pick surfaces in the same projection. */
+  bf_world_t w = bf_unproject((bf_point_t){x, y + BF_TABLE_RISE});
+  for (int t = 0; t < BF_LOOPS; t++)
+    if (bf_inside(w, bf_islands[t], 0)) {
+      float best = 1e9f;
+      bf_point_t dest = g->player.pos;
+      for (int i = 0; i < 64; i++) {
+        bf_mark_t m = bf_perimeter(bf_islands[t], i / 64.f);
+        float d = hypotf(m.point.u - w.u, m.point.v - w.v);
+        if (d < best) {
+          best = d;
+          dest = bf_project((bf_world_t){m.point.u + .42f * m.normal.u,
+                                         m.point.v + .42f * m.normal.v},
+                            0);
+        }
+      }
+      bf_walk_to(g, dest);
       return;
     }
-  }
-  if (y < BF_FLOOR_Y || y > BF_FLOOR_Y + BF_ROWS * BF_TILE_H) return;
-  bf_walk_to(g, (bf_point_t){x, y});
+  bf_walk_to(g, bf_pick_floor((bf_point_t){x, y}));
 }
 void bf_tap(bf_game_t* g, float x, float y) {
   if (bf_in(bf_sound_bounds(g), x, y)) {
@@ -261,8 +280,9 @@ void bf_tap(bf_game_t* g, float x, float y) {
       bf_action(g, H2_BUFFET_GOAL);
     else if (bf_in(bf_ticket_button, x, y))
       bf_action(g, H2_BUFFET_CONFIRM);
-    else if (bf_in((bf_rect_t){24, 389, 420, 65}, x, y))
-      g->cover = (int)(x - 24) / 70;
+    else if (bf_in((bf_rect_t){BF_MENU_X, 389, BF_DISHES * BF_MENU_PITCH, 65},
+                   x, y))
+      g->cover = (int)(x - BF_MENU_X) / BF_MENU_PITCH;
   } else if (g->phase == BF_DINING)
     dining_tap(g, x, y);
   else if (bf_in(bf_round_cards, x, y))

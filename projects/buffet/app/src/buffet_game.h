@@ -4,24 +4,32 @@
 #include "h2_buffet.h"
 
 enum {
-  BF_TABLES = 3,
-  BF_SETTINGS = 3,
-  BF_SLOTS = BF_TABLES * BF_SETTINGS,
-  BF_DISHES = 6,
-  BF_ROUTE = 16,
+  BF_LOOPS = 2,
+  BF_LEAF = 2,
+  BF_HOT = 3,
+  BF_CUSTARD = 4,
+  BF_TABLES = 5,
+  BF_SETTINGS = 8,
+  BF_PASS_SLOTS = 3,
+  BF_SIDE_SLOTS = 4,
+  BF_FIRST_PASS = BF_LOOPS * BF_SETTINGS,
+  BF_FIRST_HOT = BF_FIRST_PASS + BF_PASS_SLOTS,
+  BF_FIRST_CUSTARD = BF_FIRST_HOT + BF_SIDE_SLOTS,
+  BF_SLOTS = BF_FIRST_CUSTARD + BF_SIDE_SLOTS,
+  BF_SUSHI = 6,
+  BF_DISHES = 8,
+  BF_MENU_X = 24,
+  BF_MENU_PITCH = 52,
+  BF_ROUTE = 24,
   BF_CARD_COUNT = 3,
   BF_REVEAL_MS = 1000,
-  BF_FLOOR_X = 40,
-  BF_FLOOR_Y = 72,
-  BF_TILE_W = 48,
-  BF_TILE_H = 36,
   BF_PERSON_W = 64,
   BF_PERSON_H = 72,
   BF_PERSON_FOOT = 65,
   BF_PERSON_MOUTH = 24,
-  BF_COLS = 15,
-  BF_ROWS = 10,
-  BF_TABLE_RISE = 22
+  BF_COLS = 20,
+  BF_ROWS = 13,
+  BF_TABLE_RISE = 18
 };
 typedef struct {
   unsigned owned, fresh, awaiting;
@@ -59,7 +67,7 @@ typedef struct {
   bf_point_t pos, station;
 } bf_place_t;
 typedef struct {
-  int col, row, period_ms, first_ms;
+  int first_slot, slots, period_ms, first_ms;
   bf_text_t name;
 } bf_table_t;
 /* dish is -1 at an empty setting. The kitchen waits for space at a full table.
@@ -84,7 +92,8 @@ typedef struct {
   bf_actor_t player;
   bf_point_t bite_source;
   bf_point_t route[BF_ROUTE];
-  int route_len, route_at;
+  int route_len, route_at, follow_slot, follow_at_ms;
+  unsigned served;
 } bf_game_t;
 
 extern const bf_rules_t bf_rules;
@@ -104,10 +113,9 @@ void bf_action(bf_game_t* g, unsigned actions);
 void bf_tap(bf_game_t* g, float x, float y);
 void bf_step(bf_game_t* g, int dt_ms, int dx, int dy);
 bf_rect_t bf_sound_bounds(const bf_game_t* g);
-bf_rect_t bf_eat_bounds(const bf_game_t* g, int slot);
+int bf_station_of(int slot);
 bool bf_has_goal(const bf_game_t* g);
 bool bf_in(bf_rect_t b, float x, float y);
-bf_rect_t bf_table_footprint(int table);
 bf_place_t bf_place(const bf_game_t* g, int slot);
 bool bf_can_take(const bf_game_t* g, int slot);
 bf_face_t bf_facing(float dx, float dy);

@@ -9,11 +9,12 @@ static const uint16_t ink = C(0x273d3c), paper = C(0xf3e3bf),
                       light = C(0xf6ead0), sea = C(0x294c4b),
                       patina = C(0xaacaba), clay = C(0xa94f38),
                       mute = C(0x536457);
-static const bf_paint_t* const detail[] = {&bf_salmon, &bf_tamago, &bf_tuna,
-                                           &bf_shrimp, &bf_maki,   &bf_inari};
-static const bf_paint_t* const small[] = {&bf_salmon_table, &bf_tamago_table,
-                                          &bf_tuna_table,   &bf_shrimp_table,
-                                          &bf_maki_table,   &bf_inari_table};
+static const bf_paint_t* const detail[BF_DISHES] = {
+    &bf_salmon, &bf_tamago, &bf_tuna,  &bf_shrimp,
+    &bf_maki,   &bf_inari,  &bf_ramen, &bf_custard};
+static const bf_paint_t* const small[] = {
+    &bf_salmon_table, &bf_tamago_table, &bf_tuna_table,  &bf_shrimp_table,
+    &bf_maki_table,   &bf_inari_table,  &bf_ramen_table, &bf_custard_table};
 static const bf_sprite_t* const prints[] = {&bf_card_bite, &bf_card_close,
                                             &bf_card_rest};
 static const bf_text_t card_names[] = {
@@ -90,10 +91,10 @@ static void foyer(bf_canvas_t c, const bf_game_t* g) {
            T("价值 %d 币    饱腹 +%d%%", "%d coins    +%d%% fullness"),
            bf_menu[d].coins, bf_menu[d].fullness);
   bf_text(c, BF_SMALL, 35, 383, patina, s);
-  for (int i = 0; i < 6; i++) {
-    int x = 24 + i * 70;
-    bf_layer(c, small[i], (bf_rect_t){x + 2, 397, 66, 43}, false);
-    if (i == d) bf_box(c, x + 10, 446, 47, 2, C(0xefc589));
+  for (int i = 0; i < BF_DISHES; i++) {
+    int x = BF_MENU_X + i * BF_MENU_PITCH;
+    bf_layer(c, small[i], (bf_rect_t){x, 396, BF_MENU_PITCH, 44}, false);
+    if (i == d) bf_box(c, x + 8, 446, BF_MENU_PITCH - 16, 2, C(0xefc589));
   }
   ticket(c);
   bf_text(c, BF_HEAD, 502, 102, ink, T("用餐券", "Meal ticket"));
@@ -107,15 +108,15 @@ static void foyer(bf_canvas_t c, const bf_game_t* g) {
   bf_text(c, BF_SMALL, 502, 215, mute, T("这顿想试试", "Meal goal"));
   slab(c, bf_goal_button, C(0xdac9a7));
   bf_center(c, BF_BODY, 620, 250, ink,
-            g->tasting ? T("尝遍六种", "Taste all six")
+            g->tasting ? T("尝遍六种寿司", "Taste six sushi")
                        : T("吃回票价", "Cover the ticket"));
   bf_line(c, 718, 243, 722, 247, mute);
   bf_line(c, 722, 247, 726, 243, mute);
   bf_text(c, BF_SMALL, 502, 288, mute,
           g->keyboard ? T("点地面或方向键行走，点吃或按空格。",
                           "Walk by tap or arrow keys. Eat with Space.")
-                      : T("点地面行走，靠近餐桌点吃。",
-                          "Tap to walk. Eat beside a table."));
+                      : T("点地面行走，靠近回转台点菜。",
+                          "Tap to walk. Tap a nearby plate to eat."));
   bf_text(c, BF_SMALL, 502, 311, mute,
           T("米碗白线是吃饱，尖格亮起就歇口。",
             "The white notch is full. Rest at the points."));
@@ -160,11 +161,10 @@ static void receipt(bf_canvas_t c, const bf_game_t* g) {
   row(c, 247, T("住院费", "Hospital fee"), hospital ? bf_rules.fee : 0, false);
   row(c, 272, T("餐费余额", "Purse left"), g->purse, false);
   const char* outcome =
-      g->tasting
-          ? (g->varieties == 6 ? T("已尝遍六种", "All six tasted")
-                               : T("还有新口味可尝", "More dishes to try"))
-          : (bf_has_goal(g) ? T("已吃回票价", "Ticket covered")
-                            : T("未吃回票价", "Below ticket value"));
+      g->tasting ? (bf_has_goal(g) ? T("已尝遍六种寿司", "All six sushi tasted")
+                                   : T("还有新口味可尝", "More dishes to try"))
+                 : (bf_has_goal(g) ? T("已吃回票价", "Ticket covered")
+                                   : T("未吃回票价", "Below ticket value"));
   bf_text(c, BF_SMALL, 502, 305, ink, outcome);
   bool revealing = a->reveal_ms < bf_reveal_duration(g);
   btn(c, bf_ticket_button, clay,
@@ -188,7 +188,9 @@ static void receipt(bf_canvas_t c, const bf_game_t* g) {
   int count = bf_card_count(a->fresh);
   if (!count)
     bf_text(c, BF_SMALL, 35, 375, patina,
-            T("本局没有新卡", "No new cards this meal"));
+            a->awaiting && !a->unsaved
+                ? T("正在整理本局卡片", "Checking your cards")
+                : T("本局没有新卡", "No new cards this meal"));
   for (int i = 0; i < count; i++) {
     int card = index_at(a->fresh, i), x = 38 + i * 74;
     if (a->reveal_ms >= (i + 1) * BF_REVEAL_MS)

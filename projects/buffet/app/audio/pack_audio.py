@@ -1,4 +1,5 @@
 """Embed the checked-in mono PCM tracks without a runtime decoder."""
+import math
 import struct
 import sys
 import wave
@@ -22,9 +23,25 @@ def main():
                 while data := wav.readframes(48):
                     print(','.join(str(v[0]) for v in struct.iter_unpack('<h', data))+',', file=out)
                 print('};', file=out)
+        # A glazed bowl touching the serving pass. Short, in-key partials let
+        # the kitchen announce one landing under the music without voices.
+        samples = []
+        length = 3520
+        for frame in range(length):
+            t = frame / 16000
+            attack = min(1, t / .003)
+            release = min(1, (length - 1 - frame) / 160)
+            struck = (math.sin(math.tau * 988 * t) * math.exp(-23 * t)
+                      + .31 * math.sin(math.tau * 2490 * t) * math.exp(-46 * t))
+            samples.append(round(12400 * attack * release * struck))
+        print('static const int16_t pcm_served[] = {', file=out)
+        for start in range(0, length, 48):
+            print(','.join(map(str, samples[start:start + 48])) + ',', file=out)
+        print('};', file=out)
         print('const bf_clip_t bf_tracks[BF_SOUND_COUNT] = {',file=out)
         for i, size in enumerate(sizes):
             print(f'{{pcm_{i},{size}}},',file=out)
+        print(f'{{pcm_served,{length}}},', file=out)
         print('};',file=out)
 
 

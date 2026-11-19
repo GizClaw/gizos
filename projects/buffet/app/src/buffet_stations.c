@@ -1,83 +1,90 @@
-#include "buffet_game.h"
+#include "buffet_rotary.h"
 #include <math.h>
 
-/* Floor positions project 48x36 from square world tiles. Tables, service
- * approach points and path finding all share these footprints. */
-const bf_table_t bf_tables[BF_TABLES] = {{2, 2, 6800, 5100, {"潮桌", "Wave"}},
-                                         {6, 5, 6100, 7600, {"叶桌", "Leaf"}},
-                                         {10, 2, 7400, 3000, {"日桌", "Sun"}}};
+const bf_table_t bf_tables[BF_TABLES] = {
+    {0, BF_SETTINGS, 5100, 5100, {"潮轮", "Wave"}},
+    {BF_SETTINGS, BF_SETTINGS, 5400, 3000, {"日轮", "Sun"}},
+    {BF_FIRST_PASS, BF_PASS_SLOTS, 8100, 7600, {"叶台", "Leaf"}},
+    {BF_FIRST_HOT, BF_SIDE_SLOTS, 11600, 6200, {"汤面台", "Ramen"}},
+    {BF_FIRST_CUSTARD, BF_SIDE_SLOTS, 9600, 4300, {"蒸物台", "Custard"}}};
 static const int menu_order[BF_TABLES][4] = {
-    {0, 2, 3, 0}, {1, 4, 5, 1}, {3, 5, 2, 4}};
-static const int next_setting[3] = {1, 0, 2};
+    {0, 2, 4, 3}, {1, 3, 5, 2}, {5, 4, 1, 0}, {6, 6, 6, 6}, {7, 7, 7, 7}};
+/* A service round gives alternating sections first choice. Each carrier
+ * retains its identity, including while it travels empty. */
+static const int loading_order[BF_SETTINGS] = {4, 0, 6, 2, 5, 1, 7, 3};
 
-bf_rect_t bf_table_footprint(int table) {
-  const bf_table_t* t = &bf_tables[table];
-  return (bf_rect_t){BF_FLOOR_X + t->col * BF_TILE_W,
-                     BF_FLOOR_Y + t->row * BF_TILE_H, 3 * BF_TILE_W,
-                     2 * BF_TILE_H};
-}
-static float squared(float x) { return x * x; }
 static float distance_sq(bf_point_t a, bf_point_t b) {
-  return squared(a.x - b.x) + squared((a.y - b.y) * BF_TILE_W / BF_TILE_H);
-}
-static float bounded(float x, float low, float high) {
-  return fminf(high, fmaxf(low, x));
+  float x = a.x - b.x, y = (a.y - b.y) / .75f;
+  return x * x + y * y;
 }
 bool bf_walkable(bf_point_t p) {
-  if (p.x < BF_FLOOR_X + 8 || p.x > BF_FLOOR_X + BF_TILE_W * BF_COLS - 8 ||
-      p.y < BF_FLOOR_Y + 6 || p.y > BF_FLOOR_Y + BF_TILE_H * BF_ROWS - 6)
+  bf_world_t w = bf_unproject(p);
+  const float sole = .23f;
+  if (w.u < sole || w.u > BF_COLS - sole || w.v < sole || w.v > BF_ROWS - sole)
     return false;
-  for (int t = 0; t < BF_TABLES; t++) {
-    bf_rect_t r = bf_table_footprint(t);
-    if (p.x > r.x - 8 && p.x < r.x + r.w + 8 && p.y > r.y - 6 &&
-        p.y < r.y + r.h + 6)
-      return false;
-  }
+  if (fabsf(w.v - 2.55f) < .11f && (w.u < 8.5f + sole || w.u > 11.5f - sole))
+    return false;
+  for (int i = 0; i < BF_LOOPS; i++)
+    if (bf_inside(w, bf_islands[i], sole)) return false;
+  for (unsigned i = 0; i < bf_counter_count; i++)
+    if (bf_inside(w, bf_counters[i], sole)) return false;
   return true;
 }
+int bf_station_of(int slot) {
+  for (int t = BF_TABLES - 1; t > 0; t--)
+    if (slot >= bf_tables[t].first_slot) return t;
+  return 0;
+}
 bf_place_t bf_place(const bf_game_t* g, int slot) {
-  int table = slot / BF_SETTINGS, index = slot % BF_SETTINGS;
-  bf_rect_t r = bf_table_footprint(table);
-  float x = r.x + r.w * (.2f + .3f * index);
-  bf_place_t p = {.pos = {x, r.y - BF_TABLE_RISE + r.h * .6f},
-                  .station = {x, r.y + r.h + 9}};
-  bf_point_t options[2] = {
-      {x, r.y - 9}, {index == 0 ? r.x - 12 : r.x + r.w + 12, r.y + r.h * .57f}};
-  for (int i = 0; i < (index == 1 ? 1 : 2); i++)
-    if (distance_sq(g->player.pos, options[i]) <
-        distance_sq(g->player.pos, p.station))
-      p.station = options[i];
-  return p;
+  int t = bf_station_of(slot), i = slot - bf_tables[t].first_slot;
+  if (t == BF_HOT || t == BF_CUSTARD) {
+    float v = 3.7f + 1.5f * i;
+    return (bf_place_t){
+        bf_project((bf_world_t){t == BF_HOT ? .85f : 19.15f, v}, 18),
+        bf_project((bf_world_t){t == BF_HOT ? 1.86f : 18.14f, v}, 0)};
+  }
+  if (t == BF_LEAF) {
+    float u = 8.5f + 1.5f * i;
+    return (bf_place_t){bf_project((bf_world_t){u, .85f}, 26),
+                        bf_project((bf_world_t){u, 1.88f}, 0)};
+  }
+  bf_mark_t mark =
+      bf_perimeter(bf_inset(bf_islands[t], .47f),
+                   bf_loop_phase(t, g->elapsed_ms) + (float)i / BF_SETTINGS);
+  bf_world_t reach = {mark.point.u + .89f * mark.normal.u,
+                      mark.point.v + .89f * mark.normal.v};
+  return (bf_place_t){bf_project(mark.point, BF_TABLE_RISE),
+                      bf_project(reach, 0)};
 }
 static float reach_cost(const bf_game_t* g, int slot) {
-  bf_point_t edge = bf_place(g, slot).station;
-  return squared((g->player.pos.x - edge.x) / 33.f) +
-         squared((g->player.pos.y - edge.y) / 24.f);
+  return distance_sq(g->player.pos, bf_place(g, slot).station);
 }
 int bf_nearest(const bf_game_t* g) {
-  float best = 1.f;
+  float best = 28.f * 28;
   int selected = -1;
-  for (int slot = 0; slot < BF_SLOTS; slot++)
-    if (g->settings[slot].dish >= 0) {
-      float cost = reach_cost(g, slot);
-      if (cost <= best) {
-        selected = slot;
-        best = cost;
+  for (int i = 0; i < BF_SLOTS; i++)
+    if (g->settings[i].dish >= 0) {
+      float d = reach_cost(g, i);
+      if (d <= best) {
+        best = d;
+        selected = i;
       }
     }
   return selected;
 }
 bool bf_can_take(const bf_game_t* g, int slot) {
   return slot >= 0 && slot < BF_SLOTS && g->settings[slot].dish >= 0 &&
-         reach_cost(g, slot) <= 1.f;
+         reach_cost(g, slot) <= 28.f * 28;
 }
 int bf_next_dish(const bf_game_t* g, int t) {
   return menu_order[t][g->service[t].course % 4];
 }
 int bf_next_setting(const bf_game_t* g, int t) {
-  for (int i = 0; i < BF_SETTINGS; i++) {
-    int slot = t * BF_SETTINGS +
-               next_setting[(g->service[t].cursor + i) % BF_SETTINGS];
+  int n = bf_tables[t].slots;
+  for (int i = 0; i < n; i++) {
+    int index = (g->service[t].cursor + i) % n;
+    int slot =
+        bf_tables[t].first_slot + (t < BF_LOOPS ? loading_order[index] : index);
     if (g->settings[slot].dish < 0) return slot;
   }
   return -1;
@@ -85,20 +92,21 @@ int bf_next_setting(const bf_game_t* g, int t) {
 static void serve(bf_game_t* g, int t, int slot, int at) {
   g->settings[slot] = (bf_setting_t){bf_next_dish(g, t), at};
   g->service[t].course++;
-  g->service[t].cursor = (g->service[t].cursor + 1) % BF_SETTINGS;
+  g->service[t].cursor = (g->service[t].cursor + 1) % bf_tables[t].slots;
+  g->served++;
 }
 void bf_service_open(bf_game_t* g) {
   for (int i = 0; i < BF_SLOTS; i++) g->settings[i] = (bf_setting_t){-1, -1};
   for (int t = 0; t < BF_TABLES; t++)
     g->service[t] = (bf_service_t){.next_at_ms = bf_tables[t].first_ms};
-  serve(g, 0, 1, -1000);
-  serve(g, 1, 4, -1000);
+  serve(g, 0, 4, -1000);
+  serve(g, 1, BF_SETTINGS + 6, -1000);
+  serve(g, BF_HOT, BF_FIRST_HOT + 2, -1000);
+  serve(g, BF_CUSTARD, BF_FIRST_CUSTARD + 2, -1000);
 }
 void bf_service_update(bf_game_t* g) {
   for (int t = 0; t < BF_TABLES; t++) {
     bf_service_t* q = &g->service[t];
-    /* Even a long elapsed step can fill at most three settings. A full table
-     * takes no more orders until a setting becomes free. */
     while (q->next_at_ms >= 0 && q->next_at_ms <= g->elapsed_ms &&
            q->next_at_ms < bf_rules.duration_ms) {
       int slot = bf_next_setting(g, t);
@@ -114,9 +122,8 @@ void bf_service_update(bf_game_t* g) {
   }
 }
 void bf_service_clear(bf_game_t* g, int slot) {
-  int t = slot / BF_SETTINGS;
+  int t = bf_station_of(slot);
   g->settings[slot].dish = -1;
-  /* Staff clear the setting. The existing tickets count returned plates. */
   g->returned++;
   if (g->service[t].next_at_ms < 0)
     g->service[t].next_at_ms = g->elapsed_ms + bf_tables[t].period_ms;
@@ -137,7 +144,7 @@ int bf_next_tables(const bf_game_t* g, int order[BF_TABLES]) {
 }
 
 static bool clear_line(bf_point_t a, bf_point_t b) {
-  int steps = (int)(sqrtf(distance_sq(a, b)) / 4) + 1;
+  int steps = (int)(sqrtf(distance_sq(a, b)) / 2.8f) + 1;
   for (int i = 1; i <= steps; i++) {
     float t = (float)i / steps;
     if (!bf_walkable(
@@ -146,21 +153,29 @@ static bool clear_line(bf_point_t a, bf_point_t b) {
   }
   return true;
 }
+/* The visibility graph contains the four outer approaches of each loop and
+ * the stair landings. Direct travel and every edge use the same sole test. */
 void bf_walk_to(bf_game_t* g, bf_point_t dest) {
-  enum { N = 2 + 4 * BF_TABLES };
-  bf_point_t node[N] = {g->player.pos};
-  dest.x =
-      bounded(dest.x, BF_FLOOR_X + 8, BF_FLOOR_X + BF_COLS * BF_TILE_W - 8);
-  dest.y =
-      bounded(dest.y, BF_FLOOR_Y + 6, BF_FLOOR_Y + BF_ROWS * BF_TILE_H - 6);
+  enum { N = 2 + 4 * BF_LOOPS + 6 };
   if (!bf_walkable(dest)) return;
-  node[1] = dest;
-  for (int t = 0; t < BF_TABLES; t++) {
-    bf_rect_t r = bf_table_footprint(t);
-    for (int k = 0; k < 4; k++)
-      node[2 + 4 * t + k] = (bf_point_t){k & 1 ? r.x + r.w + 11 : r.x - 11,
-                                         k & 2 ? r.y + r.h + 8 : r.y - 8};
+  if (clear_line(g->player.pos, dest)) {
+    g->route[0] = dest;
+    g->route_at = 0;
+    g->route_len = 1;
+    return;
   }
+  bf_point_t node[N] = {g->player.pos, dest};
+  for (int loop = 0; loop < BF_LOOPS; loop++) {
+    bf_footprint_t r = bf_islands[loop];
+    for (int j = 0; j < 4; j++)
+      node[2 + loop * 4 + j] =
+          bf_project((bf_world_t){j & 1 ? r.u + r.w + .40f : r.u - .40f,
+                                  j & 2 ? r.v + r.h + .40f : r.v - .40f},
+                     0);
+  }
+  const bf_world_t gates[] = {{10, 3.45f}, {10, 2.01f},     {2, 3.25f},
+                              {18, 3.25f}, {2.15f, 11.17f}, {17.85f, 11.17f}};
+  for (int i = 0; i < 6; i++) node[N - 6 + i] = bf_project(gates[i], 0);
   float best[N];
   bool done[N] = {0};
   int prev[N];
@@ -187,8 +202,8 @@ void bf_walk_to(bf_game_t* g, bf_point_t dest) {
   if (prev[1] < 0) return;
   int reverse[N], n = 0;
   for (int j = 1; j > 0; j = prev[j]) reverse[n++] = j;
-  g->route_len = n;
   g->route_at = 0;
+  g->route_len = n;
   for (int i = 0; i < n; i++) g->route[i] = node[reverse[n - 1 - i]];
 }
 bf_face_t bf_facing(float dx, float dy) {
@@ -200,14 +215,26 @@ void bf_walk(bf_game_t* g, int dt, int dx, int dy) {
   if (g->bite_ms) return;
   bool route = !dx && !dy;
   float vx = dx, vy = dy * .75f;
-  if (!route)
+  if (!route) {
     g->route_at = g->route_len;
-  else if (g->route_at < g->route_len) {
+    g->follow_slot = -1;
+  } else {
+    if (g->follow_slot >= 0) {
+      if (bf_can_take(g, g->follow_slot)) {
+        g->follow_slot = -1;
+        g->route_at = g->route_len;
+        return;
+      }
+      if (g->elapsed_ms >= g->follow_at_ms) {
+        bf_walk_to(g, bf_place(g, g->follow_slot).station);
+        g->follow_at_ms = g->elapsed_ms + 220;
+      }
+    }
+    if (g->route_at >= g->route_len) return;
     vx = g->route[g->route_at].x - g->player.pos.x;
     vy = g->route[g->route_at].y - g->player.pos.y;
-  } else
-    return;
-  float length = hypotf(vx, vy / 0.75f);
+  }
+  float length = hypotf(vx, vy / .75f);
   if (length <= .1f) {
     if (route) g->route_at++;
     return;
@@ -219,13 +246,13 @@ void bf_walk(bf_game_t* g, int dt, int dx, int dy) {
   if (route) delta = fminf(delta, length);
   bf_point_t old = g->player.pos,
              next = {old.x + vx * delta / length, old.y + vy * delta / length};
-  if (bf_walkable(next))
+  if (clear_line(old, next))
     g->player.pos = next;
   else if (!route) {
     bf_point_t x = {next.x, old.y}, y = {old.x, next.y};
-    if (bf_walkable(x))
+    if (clear_line(old, x))
       g->player.pos = x;
-    else if (bf_walkable(y))
+    else if (clear_line(old, y))
       g->player.pos = y;
   }
   float moved = sqrtf(distance_sq(old, g->player.pos));

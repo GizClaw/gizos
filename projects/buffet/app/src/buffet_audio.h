@@ -12,6 +12,7 @@ enum {
   BF_FLIP,
   BF_REVEAL,
   BF_CLOSE,
+  BF_SERVE,
   BF_SOUND_COUNT
 };
 typedef struct {
@@ -34,7 +35,7 @@ typedef struct {
   bf_phase_t phase;
   int eaten, reveal, queue;
   bool red, muted;
-  unsigned red_entries;
+  unsigned red_entries, served;
 } bf_sound_state_t;
 typedef struct {
   h2_runtime_t* rt;

@@ -1,11 +1,11 @@
-"""Export the three sushi tables and their menu at the game's display density."""
+"""Export the dishes and inked HUD pieces used by the geometry-led room."""
 from array import array
 import struct
 import sys
 import zlib
 from PIL import Image
 
-NAMES = ('salmon', 'tamago', 'tuna', 'shrimp', 'maki', 'inari')
+NAMES = ('salmon', 'tamago', 'tuna', 'shrimp', 'maki', 'inari', 'ramen', 'custard')
 DITHER = (0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5)
 
 
@@ -34,14 +34,7 @@ def texture(image, out, name, size=None):
 
 def service_layers(source, out):
     stations = source/'stations'
-    floor = Image.open(stations/'room.png')
-    if floor.size != (1600, 960):
-        raise ValueError('The room must use the native framebuffer extent.')
-    (out/'room.rgb565z').write_bytes(zlib.compress(rgb565(floor), 9))
-    for name in ('wave','leaf','sun','shadow'):
-        key = 'table_shadow' if name == 'shadow' else name
-        texture(Image.open(stations/'tables'/f'{name}.png'),out,key,(320,220))
-    for name in ('next', 'fullness', 'clock-bg', 'clock', 'plates', 'arrival', 'berth', 'selected', 'wave', 'leaf', 'sun'):
+    for name in ('next','fullness','clock-bg','clock','plates','arrival'):
         texture(Image.open(stations/'hud'/f'{name}.png'),out,'hud_'+name.replace('-','_'))
     menu = stations/'menu'
     texture(Image.open(menu/'plate-shadow.png'),out,'plate_shade',(128,102))

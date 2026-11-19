@@ -12,10 +12,11 @@ static int count_edge(void* user, h2_pal_log_level_t level, const char* scope,
   if (strcmp(message, "red") == 0) ++counts[0];
   if (strcmp(message, "recovery") == 0) ++counts[1];
   if (strcmp(message, "plate") == 0) ++counts[2];
+  if (strcmp(message, "serving") == 0) ++counts[3];
   return H2_PAL_OK;
 }
 static void alarm_edges(void) {
-  int counts[3] = {0};
+  int counts[4] = {0};
   const h2_pal_log_vtable_t vt = {.write = count_edge};
   const h2_pal_log_api_t log = {counts, &vt};
   h2_runtime_t rt = {.log = &log};
@@ -28,7 +29,7 @@ static void alarm_edges(void) {
   bf_action(&g, H2_BUFFET_CONFIRM);
   g.fullness_milli = 120010;
   g.red_ms = 6000;
-  g.player.pos = bf_place(&g, 1).station;
+  g.player.pos = bf_place(&g, 4).station;
   bf_sound_state_t before = bf_sound_state(&g);
   bf_step(&g, 33, 0, 0);
   assert(g.fullness_milli == 119944 && g.red_ms == 0);
@@ -49,6 +50,10 @@ static void alarm_edges(void) {
   bf_step(&g, 33, 0, 0);
   bf_audio_update(&audio, before, &g, 132, false);
   assert(counts[0] == 1 && counts[1] == 1);
+  before = bf_sound_state(&g);
+  bf_step(&g, 3000, 0, 0);
+  bf_audio_update(&audio, before, &g, 3132, false);
+  assert(counts[3] == 1);
 }
 int main(void) {
   alarm_edges();

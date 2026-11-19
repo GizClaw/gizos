@@ -1,5 +1,5 @@
 #include "buffet_draw.h"
-#include "buffet_game.h"
+#include "buffet_rotary.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -65,33 +65,35 @@ static void clock_and_stomach(void) {
 static void play_and_route(void) {
   bf_game_t g = paid();
   CHECK(bf_nearest(&g) < 0);
-  bf_place_t p = bf_place(&g, 1);
+  bf_place_t p = bf_place(&g, 4);
   bf_tap(&g, p.pos.x, p.pos.y);
   CHECK(g.eaten == 0 && g.route_len > 0);
-  for (int i = 0; i < 220 && g.route_at < g.route_len; i++) {
+  for (int i = 0; i < 220 && (g.route_at < g.route_len || g.follow_slot >= 0);
+       i++) {
     bf_step(&g, 33, 0, 0);
     CHECK(bf_walkable(g.player.pos));
   }
-  CHECK(bf_can_take(&g, 1) && g.eaten == 0);
+  CHECK(bf_can_take(&g, 4) && g.eaten == 0);
+  p = bf_place(&g, 4);
   bf_tap(&g, p.pos.x, p.pos.y);
-  CHECK(g.eaten == 1 && g.returned == 1 && g.settings[1].dish < 0);
+  CHECK(g.eaten == 1 && g.returned == 1 && g.settings[4].dish < 0);
   CHECK(g.value == bf_menu[0].coins &&
         g.fullness_milli == bf_menu[0].fullness * 1000);
   bf_action(&g, H2_BUFFET_CONFIRM);
   CHECK(g.eaten == 1);
   bf_step(&g, 1000, 0, 0);
-  bf_rect_t table = bf_table_footprint(0);
-  g.player.pos = (bf_point_t){table.x + table.w * .5f, table.y + table.h + 8};
+  g.player.pos = bf_project((bf_world_t){6, 10.35f}, 0);
   for (int i = 0; i < 24; i++) bf_step(&g, 33, 0, -1);
-  CHECK(g.player.pos.y >= table.y + table.h + 6 && bf_walkable(g.player.pos));
-  bf_point_t rear = {table.x + table.w * .5f, table.y - 9};
-  bf_tap(&g, rear.x, rear.y - 24);
+  CHECK(bf_unproject(g.player.pos).v >= 10.22f && bf_walkable(g.player.pos));
+  /* Tap the visible floor just above the raised rear lip. */
+  bf_point_t rear = bf_project((bf_world_t){6, 3.10f}, 0);
+  bf_tap(&g, rear.x, rear.y);
   CHECK(g.route_len >= 2);
   for (int i = 0; i < 220 && g.route_at < g.route_len; i++) {
     bf_step(&g, 33, 0, 0);
     CHECK(bf_walkable(g.player.pos));
   }
-  CHECK(hypotf(g.player.pos.x - rear.x, g.player.pos.y - rear.y + 24) < 1);
+  CHECK(hypotf(g.player.pos.x - rear.x, g.player.pos.y - rear.y) < 1);
   bf_point_t before = g.player.pos;
   bf_step(&g, 60, 1, 0);
   CHECK(g.player.pos.x > before.x && g.player.face == BF_RIGHT);

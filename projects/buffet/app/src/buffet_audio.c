@@ -4,11 +4,12 @@
 #include <string.h>
 
 enum { BANK_RATE = 16000, ONE = 65536, MAX_FRAME = 4096 };
-static const unsigned gain[] = {500, 550, 650, 620, 520, 430, 600, 660, 560};
-static const unsigned priority[] = {0, 2, 2, 2, 5, 3, 3, 4, 4};
-static const char* const cue_name[] = {"music", "admission", "plate",
-                                       "bite",  "red",       "recovery",
-                                       "flip",  "reveal",    "closing"};
+static const unsigned gain[] = {500, 550, 650, 620, 520,
+                                430, 600, 660, 560, 470};
+static const unsigned priority[] = {0, 2, 2, 2, 5, 3, 3, 4, 4, 1};
+static const char* const cue_name[] = {
+    "music",    "admission", "plate",  "bite",    "red",
+    "recovery", "flip",      "reveal", "closing", "serving"};
 
 bf_sound_state_t bf_sound_state(const bf_game_t* g) {
   return (bf_sound_state_t){g->phase,
@@ -17,7 +18,8 @@ bf_sound_state_t bf_sound_state(const bf_game_t* g) {
                             bf_reveal_duration(g),
                             g->fullness_milli > bf_rules.red_line * 1000,
                             g->muted,
-                            g->red_entries};
+                            g->red_entries,
+                            g->served};
 }
 void bf_mix_emit(bf_mix_t* m, unsigned cue, unsigned delay_ms) {
   if (!m->rate || cue == BF_MUSIC || cue >= BF_SOUND_COUNT) return;
@@ -217,6 +219,7 @@ void bf_audio_update(bf_audio_t* a, bf_sound_state_t old, const bf_game_t* g,
     emit(a, BF_ADMIT, 0);
   }
   if (old.phase == BF_DINING && next.phase == BF_DINING) {
+    if (next.served != old.served) emit(a, BF_SERVE, 0);
     if (next.eaten > old.eaten) {
       emit(a, BF_PLATE, 0);
       emit(a, BF_BITE, 185);
