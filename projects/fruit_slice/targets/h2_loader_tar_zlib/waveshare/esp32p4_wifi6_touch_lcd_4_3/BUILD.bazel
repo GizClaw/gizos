@@ -25,6 +25,7 @@ esp_target_task_policy(
     graph = [":launcher"],
     policies = [
         "fruit-slice/game 4 any 32768 psram",
+        "fruit-slice/audio default",
         "h2loader/appcmd 8 0 4096 psram",
         "h2loader/blecmd 8 0 4096 psram",
         "$h2loader/return 8 0 4096 psram",

@@ -2,6 +2,7 @@
 
 #include "h2_fruit_slice.h"
 #include "h2_fruit_slice_audio_bank.h"
+#include "h2_fruit_slice_audio_worker.h"
 
 #include <string.h>
 
@@ -60,6 +61,10 @@ void h2_fruit_slice_audio_emit(h2_fruit_slice_audio_t* audio,
       (unsigned)sound >= H2_FRUIT_SLICE_SOUND_COUNT ||
       (audio->mute & H2_FRUIT_SLICE_MUTE_SFX))
     return;
+  if (audio->worker != NULL) {
+    h2_fruit_slice_audio_worker_emit(audio, sound, now_ms);
+    return;
+  }
   const uint32_t bit = 1u << (unsigned)sound;
   const uint32_t cooldown = sound == H2_FRUIT_SLICE_SOUND_SLICE   ? 35u
                             : sound == H2_FRUIT_SLICE_SOUND_SWING ? 100u
@@ -89,6 +94,8 @@ void h2_fruit_slice_audio_emit(h2_fruit_slice_audio_t* audio,
 
 int h2_fruit_slice_audio_suspend(h2_fruit_slice_audio_t* audio) {
   if (audio == NULL) return H2_PAL_ERR_INVALID_ARG;
+  const int stopped = h2_fruit_slice_audio_worker_stop(audio);
+  if (stopped != H2_PAL_OK) return stopped;
   int first_error = H2_PAL_OK;
   if (audio->track != NULL) {
     first_error = h2_pal_audio_track_close(audio->track);
@@ -110,8 +117,8 @@ int h2_fruit_slice_audio_suspend(h2_fruit_slice_audio_t* audio) {
 int h2_fruit_slice_audio_set_mute(h2_fruit_slice_audio_t* audio, uint8_t mute) {
   if (audio == NULL || mute > 3u) return H2_PAL_ERR_INVALID_ARG;
   if (audio->mute == mute) return H2_PAL_OK;
-  audio->mute = mute;
   int rc = h2_fruit_slice_audio_suspend(audio);
+  audio->mute = mute;
   if (rc != H2_PAL_OK) return rc;
   h2_pal_pref_namespace_t* ns = NULL;
   rc = h2_pal_pref_open(audio->runtime->pref, H2_FRUIT_SLICE_PREF_NAMESPACE,
@@ -169,7 +176,8 @@ static void mix_frame(h2_fruit_slice_audio_t* audio) {
 int h2_fruit_slice_audio_prepare(h2_fruit_slice_audio_t* audio) {
   if (audio == NULL) return H2_PAL_ERR_INVALID_ARG;
   if (!audio->available) return H2_PAL_ERR_UNSUPPORTED;
-  if (audio->mute == 3u || audio->track != NULL) return H2_PAL_OK;
+  if (audio->mute == 3u || audio->track != NULL || audio->worker != NULL)
+    return H2_PAL_OK;
   int rc = h2_pal_audio_start_speaker(audio->runtime->audio);
   if (rc != H2_PAL_OK) return rc;
   audio->speaker_started = true;
@@ -187,6 +195,11 @@ int h2_fruit_slice_audio_pump(h2_fruit_slice_audio_t* audio, uint64_t now_ms) {
   if (audio == NULL) return H2_PAL_ERR_INVALID_ARG;
   if (!audio->available) return H2_PAL_ERR_UNSUPPORTED;
   if (audio->mute == 3u) return H2_PAL_OK;
+  if (audio->worker_requested && audio->worker == NULL) {
+    const int started = h2_fruit_slice_audio_worker_start(audio);
+    if (started != H2_PAL_OK) return started;
+  }
+  if (audio->worker != NULL) return h2_fruit_slice_audio_worker_poll(audio);
   if (audio->pumped && now_ms >= audio->last_pump_ms) {
     const uint64_t gap = now_ms - audio->last_pump_ms;
     if (gap > audio->max_pump_gap_ms)

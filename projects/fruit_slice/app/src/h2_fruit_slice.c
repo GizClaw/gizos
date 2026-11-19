@@ -1,6 +1,7 @@
 #include "h2_fruit_slice.h"
 
 #include "h2_fruit_slice_audio.h"
+#include "h2_fruit_slice_audio_worker.h"
 #include "h2_fruit_slice_game.h"
 #include "h2_fruit_slice_render.h"
 
@@ -304,7 +305,8 @@ static uint64_t clock_ms(const session_t* s) {
 static h2_pal_result_t service_audio(session_t* s, uint64_t now) {
   if (!s->audio_unlocked || s->audio_paused || !s->audio.available)
     return H2_PAL_OK;
-  const bool opening = s->audio.track == NULL && s->audio.mute != 3u;
+  const bool opening =
+      s->audio.track == NULL && s->audio.worker == NULL && s->audio.mute != 3u;
   const uint32_t attempts = s->audio.writes + s->audio.blocked_writes;
   const int played = h2_fruit_slice_audio_pump(&s->audio, now);
   if (opening || attempts != s->audio.writes + s->audio.blocked_writes ||
@@ -491,8 +493,8 @@ static h2_pal_result_t wait_frame(session_t* s, uint64_t deadline_ms) {
     rc = service_audio(s, now);
     if (rc != H2_PAL_OK) return rc;
     uint32_t wait_ms = remaining == 0u ? 1u : (uint32_t)remaining;
-    if (s->audio_unlocked && s->audio.available && !s->audio_paused &&
-        s->audio.mute != 3u && wait_ms > 10u)
+    if (s->audio_unlocked && s->audio.available && s->audio.worker == NULL &&
+        !s->audio_paused && s->audio.mute != 3u && wait_ms > 10u)
       wait_ms = 10u;
     rc = h2_runtime_wait_notify(s->runtime, wait_ms);
     waited = true;
@@ -549,10 +551,14 @@ static void report_stats(session_t* s, uint64_t now) {
   log_line(s, H2_PAL_LOG_INFO, message);
   (void)snprintf(message, sizeof(message),
                  "H2_FRUIT_SLICE_AUDIO_TIMING gap_ms=%u writes=%u blocked=%u "
-                 "rebases=%u max_ms=%u open_max_ms=%u",
+                 "rebases=%u max_ms=%u open_max_ms=%u command_drops=%u "
+                 "worker=%u gap_scope=%s",
                  (unsigned)s->audio.max_pump_gap_ms, (unsigned)s->audio.writes,
                  (unsigned)s->audio.blocked_writes, (unsigned)s->audio.rebases,
-                 (unsigned)s->audio_max_ms, (unsigned)s->audio_open_max_ms);
+                 (unsigned)s->audio_max_ms, (unsigned)s->audio_open_max_ms,
+                 (unsigned)s->audio.dropped_commands,
+                 s->audio.worker != NULL ? 1u : 0u,
+                 s->audio.worker != NULL ? "stream" : "window");
   log_line(s, H2_PAL_LOG_INFO, message);
   if (s->config.report_diagnostics != NULL)
     s->config.report_diagnostics(s->config.user);
@@ -787,6 +793,18 @@ static h2_pal_result_t prepare(session_t* s) {
       rc = h2_fruit_slice_audio_suspend(&s->audio);
       if (rc != H2_PAL_OK) return rc;
       s->audio.available = false;
+    }
+  }
+  if (s->config.audio_worker && s->audio.available) {
+    s->audio.worker_requested = true;
+    if (s->audio.mute != 3u) {
+      rc = h2_fruit_slice_audio_worker_start(&s->audio);
+      if (rc != H2_PAL_OK) {
+        log_line(s, H2_PAL_LOG_WARN, "H2_FRUIT_SLICE_AUDIO_WORKER_FAILED");
+        const int stopped = h2_fruit_slice_audio_suspend(&s->audio);
+        if (stopped != H2_PAL_OK) return stopped;
+        s->audio.available = false;
+      }
     }
   }
   s->first_frame = true;

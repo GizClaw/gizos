@@ -56,6 +56,10 @@ typedef struct h2_fruit_slice_config {
    * submitted before the first user gesture; fully muted audio stays closed.
    * Default false keeps browser/mobile gesture-based hardware startup. */
   bool prewarm_audio;
+  /** Opt into an independent PCM producer using Runtime task/queue APIs.
+   * The worker owns audio state; pause/mute/exit join it before teardown.
+   * Hosts must declare fruit-slice/audio scheduling policy. Default false. */
+  bool audio_worker;
 } h2_fruit_slice_config_t;
 
 /**

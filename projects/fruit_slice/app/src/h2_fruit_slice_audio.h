@@ -13,8 +13,12 @@ typedef struct h2_fruit_slice_audio_voice {
   bool active;
 } h2_fruit_slice_audio_voice_t;
 
+/* The optional worker owns a copy of the mixer and provider handles until
+ * stop/join returns them. The controller stays on the App thread. */
+struct h2_fruit_slice_audio_worker;
+
 /* Main-loop-owned, bounded mixer. Runtime and APIs are borrowed until close.
- * No audio worker or shared mutable state; all calls run on the App thread.
+ * Optional worker mode transfers mixer ownership through bounded queues.
  * Unsupported audio is optional and explicitly reported by init/pump.
  */
 typedef struct h2_fruit_slice_audio {
@@ -33,6 +37,9 @@ typedef struct h2_fruit_slice_audio {
   uint32_t seen;
   uint8_t mute;
   bool available, speaker_started;
+  struct h2_fruit_slice_audio_worker* worker;
+  bool worker_requested;
+  uint32_t dropped_commands;
 } h2_fruit_slice_audio_t;
 
 /* Loads independent fruit_slice/audio_v1 u32 preference. Does not start a
