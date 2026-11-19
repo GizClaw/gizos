@@ -67,11 +67,14 @@ typedef struct {
   int (*init)(const tp_i2c_callback_t*, tp_sensor_user_config_t*);
   int (*read_tp_info)(const tp_i2c_callback_t*, uint8_t, uint8_t*);
 } tp_sensor_config_t;
+uint32_t rtos_get_time(void);
 uint32_t rtos_enter_critical(void);
 void rtos_exit_critical(uint32_t flags);
 int rtos_delay_milliseconds(uint32_t ms);
 int gpio_dev_unmap(gpio_id_t id);
 int bk_gpio_set_config(gpio_id_t id, const gpio_config_t* config);
+bool bk_gpio_get_input(gpio_id_t id);
+bool bk_gpio_get_output(gpio_id_t id);
 int bk_gpio_set_output_high(gpio_id_t id);
 int bk_gpio_set_output_low(gpio_id_t id);
 int bk_gpio_disable_interrupt(gpio_id_t id);
