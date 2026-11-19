@@ -290,6 +290,7 @@ static int payment_query_code(void* user, const char* code,
 
 static int payment_write_reply(const uint8_t* data, uint32_t length) {
   if (!s_tap_active) return H2_PAL_ERR_CLOSED;
+  if (s_tap.write_attempted) return H2_PAL_ERR_INVALID_STATE;
   if (s_transport.write_reply == NULL) return H2_PAL_ERR_UNSUPPORTED;
   s_tap.write_attempted = true;
   s_tap.nfc_write_rc =
@@ -303,6 +304,7 @@ static int payment_write_reply(const uint8_t* data, uint32_t length) {
 
 static int payment_processed(alipay_payment_status_t* status) {
   if (status == NULL || !s_tap_active) return H2_PAL_ERR_INVALID_STATE;
+  s_tap.processing_notified = true;
   s_tap.processing_status = (int)status->status;
   s_tap.processing_error = (int)status->code;
   /* Internal callback success is not a financial success result. */

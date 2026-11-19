@@ -242,6 +242,34 @@ static int write_nfc(void* user, h2_pal_periph_id_t id, const uint8_t* uid,
   return fixture->flow == 7u || fixture->flow == 20u ? H2_PAL_ERR_IO : 0;
 }
 
+static int prepare_ndef_write(void* user, h2_pal_periph_id_t id,
+                              const uint8_t* uid, uint8_t uid_length,
+                              const h2_pal_mem_api_t* memory,
+                              h2_pal_nfc_data_read_t* out) {
+  int rc =
+      read_nfc(user, id, uid, uid_length, H2_PAL_NFC_DATA_NDEF, memory, out);
+  if (rc == H2_PAL_OK) {
+    out->uid_len = uid_length;
+    memcpy(out->uid, uid, uid_length);
+  }
+  return rc;
+}
+
+static int finish_ndef_write(void* user, h2_pal_periph_id_t id,
+                             const h2_pal_nfc_data_read_t* prepared,
+                             const uint8_t* data, size_t length) {
+  assert(prepared->len == sizeof(nfc_input) &&
+         memcmp(prepared->bytes, nfc_input, prepared->len) == 0);
+  if (data == NULL) {
+    fixture_t* fixture = user;
+    worker(fixture);
+    assert(length == 0u && fixture->accepted_writes == 0u);
+    return H2_PAL_OK;
+  }
+  return write_nfc(user, id, prepared->uid, prepared->uid_len,
+                   H2_PAL_NFC_DATA_NDEF, data, length);
+}
+
 static int receive_ndef(void* user, const uint8_t* data, size_t length,
                         h2_alipay_payment_result_t* out) {
   fixture_t* fixture = user;
@@ -255,6 +283,7 @@ static int receive_ndef(void* user, const uint8_t* data, size_t length,
                                           sizeof(reply) - 1u);
   *out = (h2_alipay_payment_result_t){
       .state = rc == 0 ? H2_ALIPAY_PAYMENT_PENDING : H2_ALIPAY_PAYMENT_UNKNOWN,
+      .processing_notified = true,
       .processing_status = 1,
       .write_attempted = true,
       .nfc_write_rc = rc,
@@ -497,6 +526,12 @@ static bool unbind_exit(fixture_t* f) {
                         "Unbind this device?\nYou will need to bind again.")) {
     lv_obj_t* cancel =
         lv_obj_get_parent(find_label(lv_screen_active(), "Cancel"));
+    lv_obj_t* confirm =
+        lv_obj_get_parent(find_label(lv_screen_active(), "Confirm"));
+    lv_obj_update_layout(lv_screen_active());
+    assert(lv_obj_get_x(cancel) + lv_obj_get_width(cancel) <=
+           lv_obj_get_x(confirm));
+    assert(lv_obj_get_y(cancel) == lv_obj_get_y(confirm));
     assert(lv_group_get_focused(lv_obj_get_group(cancel)) == cancel);
     assert(atomic_load(&f->unbinds) == 0u);
     save_frame(f, "unbind-confirmation-cancel-focused");
@@ -518,6 +553,11 @@ static bool unbind_exit(fixture_t* f) {
           lv_screen_active(),
           "Device unbound locally.\nCheck Alipay > Smart Devices\non your phone and unbind\nthere if still linked.")) {
     assert(atomic_load(&f->unbinds) == 1u);
+    lv_obj_t* screen = lv_screen_active();
+    lv_obj_t* continue_button =
+        lv_obj_get_parent(find_label(screen, "Continue"));
+    lv_obj_update_layout(screen);
+    assert(lv_obj_get_x(continue_button) > lv_obj_get_width(screen) / 2);
     save_frame(f, "unbind-success-reminder");
     f->flow_phase = 10u;
   } else if (f->flow_phase == 10u && activate(f, "Continue")) {
@@ -756,8 +796,10 @@ static void run(bool buttons, bool production, bool payer_only, int touch_rc,
   config.ble_host = &ble;
   config.sync = h2_desktop_platform_sync_api();
   config.task = h2_desktop_platform_task_api();
-  const h2_pal_nfc_vtable_t nfc_vtable = {.read_nfc_data = read_nfc,
-                                          .write_nfc_data = write_nfc};
+  const h2_pal_nfc_vtable_t nfc_vtable = {
+      .prepare_ndef_write = prepare_ndef_write,
+      .finish_ndef_write = finish_ndef_write,
+  };
   const h2_pal_nfc_api_t nfc = {.user = &f, .vtable = &nfc_vtable};
   config.nfc = &nfc;
   const h2_pal_button_vtable_t buttons_vt = {.read_radio_button_group =

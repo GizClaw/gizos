@@ -3115,7 +3115,9 @@ static void test_nfc_discovery_and_state(void) {
   assert(event_state.uid_len == 4u);
   assert(memcmp(event_state.uid, env.nfc_state.scan.uid, 4u) == 0);
 
+  env.nfc_state.scan_rc = H2_PAL_ERR_BUSY;
   env.time_state.now_ms += H2_RUNTIME_NFC_POLL_INTERVAL_MS;
+  run_nfc_task_once(&env, runtime);
   assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
   assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_ERR_WOULD_BLOCK);
 
@@ -3124,6 +3126,15 @@ static void test_nfc_discovery_and_state(void) {
   assert(state.status == H2_RUNTIME_NFC_STATE_DISCOVERED);
   assert(state.tag_type == H2_PAL_NFC_TAG_TYPE_NTAG);
   assert(state.uid_len == 4u);
+  assert(state.updated_at_ms == event_state.updated_at_ms);
+
+  env.nfc_state.scan_rc = H2_PAL_OK;
+  env.nfc_state.scan = (h2_pal_nfc_scan_t){.stage = H2_PAL_NFC_STAGE_ABSENT};
+  run_nfc_task_once(&env, runtime);
+  assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+  assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+  assert(h2_runtime_component_state_nfc(runtime, 1u, &state) == H2_PAL_OK);
+  assert(state.status == H2_RUNTIME_NFC_STATE_ABSENT);
 
   h2_runtime_deinit(runtime);
 }

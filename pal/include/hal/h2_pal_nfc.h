@@ -79,6 +79,20 @@ typedef struct h2_pal_nfc_vtable {
                                     uint8_t expected_uid_len,
                                     h2_pal_nfc_data_type_t type,
                                     const uint8_t* bytes, size_t length);
+  /** Read NDEF and reserve its selection for a short, provider-bounded
+   * interval. Return caller-owned bytes using allocator. Keep out_data at
+   * the same address until finish; it identifies this preparation. */
+  h2_pal_result_t (*prepare_ndef_write)(void* user, h2_pal_periph_id_t id,
+                                        const uint8_t* expected_uid,
+                                        uint8_t expected_uid_len,
+                                        const h2_pal_mem_api_t* allocator,
+                                        h2_pal_nfc_data_read_t* out_data);
+  /** Write without rereading or reselecting, or cancel with NULL and 0.
+   * Finish consumes the matching preparation even on failure, except BUSY
+   * which means no operation started. Finish before freeing the read bytes. */
+  h2_pal_result_t (*finish_ndef_write)(void* user, h2_pal_periph_id_t id,
+                                       const h2_pal_nfc_data_read_t* prepared,
+                                       const uint8_t* bytes, size_t length);
 } h2_pal_nfc_vtable_t;
 
 typedef struct h2_pal_nfc_api {
@@ -130,6 +144,34 @@ static inline h2_pal_result_t h2_pal_nfc_write_nfc_data(
     return H2_PAL_ERR_UNSUPPORTED;
   return api->vtable->write_nfc_data(api->user, id, expected_uid,
                                      expected_uid_len, type, bytes, length);
+}
+
+static inline h2_pal_result_t h2_pal_nfc_prepare_ndef_write(
+    const h2_pal_nfc_api_t* api, h2_pal_periph_id_t id,
+    const uint8_t* expected_uid, uint8_t expected_uid_len,
+    const h2_pal_mem_api_t* allocator, h2_pal_nfc_data_read_t* out_data) {
+  if (expected_uid == NULL || expected_uid_len == 0u ||
+      expected_uid_len > H2_PAL_NFC_UID_MAX_LEN || allocator == NULL ||
+      out_data == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  if (api == NULL || api->vtable == NULL ||
+      api->vtable->prepare_ndef_write == NULL ||
+      api->vtable->finish_ndef_write == NULL)
+    return H2_PAL_ERR_UNSUPPORTED;
+  return api->vtable->prepare_ndef_write(api->user, id, expected_uid,
+                                         expected_uid_len, allocator, out_data);
+}
+
+static inline h2_pal_result_t h2_pal_nfc_finish_ndef_write(
+    const h2_pal_nfc_api_t* api, h2_pal_periph_id_t id,
+    const h2_pal_nfc_data_read_t* prepared, const uint8_t* bytes,
+    size_t length) {
+  if (prepared == NULL || (bytes == NULL) != (length == 0u))
+    return H2_PAL_ERR_INVALID_ARG;
+  if (api == NULL || api->vtable == NULL ||
+      api->vtable->finish_ndef_write == NULL)
+    return H2_PAL_ERR_UNSUPPORTED;
+  return api->vtable->finish_ndef_write(api->user, id, prepared, bytes, length);
 }
 
 /** RF technologies supported by the independent card-emulation capability. */

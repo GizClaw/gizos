@@ -431,7 +431,7 @@ static void run(void* user) {
       .feature = h2_alipay_e2e_target_feature(),
       .payment = h2_alipay_e2e_target_payment_api(),
       .payment_nfc_component_id = 1u,
-      .payment_nfc_encode_reply = h2_alipay_nfc_copy_raw_reply,
+      .payment_nfc_encode_reply = h2_alipay_nfc_encode_wallet_reply,
       .payment_ready = payment_ready,
       .payment_buttons = {.previous = 2u,
                           .next = 3u,
@@ -473,7 +473,7 @@ static void image_entry(void* user) {
 
   printf("H2_ALIPAY_E2E_BOOT board=%s target=%s version=%s\n", runtime->board,
          runtime->target, esp_app_get_description()->version);
-  printf("H2_ALIPAY_NFC_PROFILE mode=raw source=independent extra_bytes=0\n");
+  printf("H2_ALIPAY_NFC_PROFILE mode=text source=independent callbacks=1\n");
   run(NULL);
 }
 

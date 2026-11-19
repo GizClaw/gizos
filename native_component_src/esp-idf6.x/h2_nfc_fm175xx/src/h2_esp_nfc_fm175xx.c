@@ -5,7 +5,10 @@
 #include "esp_log.h"
 
 #include <limits.h>
+#include <stdbool.h>
 #include <string.h>
+
+#define H2_ESP_NFC_FM175XX_NDEF_UPDATE_TIMEOUT_MS 500u
 
 static h2_pal_result_t pal_rc_from_fm(int rc) {
   switch (rc) {
@@ -24,6 +27,25 @@ static h2_pal_result_t pal_rc_from_fm(int rc) {
     default:
       return H2_PAL_ERR_IO;
   }
+}
+
+static void clear_ndef_update(h2_esp_nfc_fm175xx_t* adapter) {
+  adapter->prepared_ndef_id = 0u;
+  adapter->read_selection_valid = 0;
+  adapter->ndef_update.size = 0u;
+  memset(adapter->ndef_update.raw, 0, sizeof(adapter->ndef_update.raw));
+}
+
+static bool ndef_update_active(h2_esp_nfc_fm175xx_t* adapter) {
+  if (adapter->prepared_ndef_id == 0u) return false;
+  uint64_t now_ms;
+  if (h2_pal_time_get_monotonic_ms(adapter->config.time, &now_ms) ==
+          H2_PAL_OK &&
+      now_ms - adapter->ndef_update_started_ms <
+          H2_ESP_NFC_FM175XX_NDEF_UPDATE_TIMEOUT_MS)
+    return true;
+  clear_ndef_update(adapter);
+  return false;
 }
 
 static h2_pal_result_t ensure_open(h2_esp_nfc_fm175xx_t* adapter) {
@@ -93,6 +115,7 @@ static h2_pal_result_t scan_nfc_reader(void* user, h2_pal_periph_id_t id,
   if (id != adapter->config.id) {
     return H2_PAL_ERR_NOT_FOUND;
   }
+  if (ndef_update_active(adapter)) return H2_PAL_ERR_BUSY;
 
   memset(out_scan, 0, sizeof(*out_scan));
   out_scan->id = id;
@@ -162,18 +185,17 @@ static void report_read(const char* phase, h2_pal_result_t result, int fm,
            (unsigned)card->sak[2], length);
 }
 
-static h2_pal_result_t read_nfc_data(void* user, h2_pal_periph_id_t id,
-                                     const uint8_t* expected_uid,
-                                     uint8_t expected_uid_len,
-                                     h2_pal_nfc_data_type_t requested_type,
-                                     const h2_pal_mem_api_t* allocator,
-                                     h2_pal_nfc_data_read_t* out_data) {
+static h2_pal_result_t read_nfc(void* user, h2_pal_periph_id_t id,
+                                const uint8_t* expected_uid,
+                                uint8_t expected_uid_len,
+                                h2_pal_nfc_data_type_t requested_type,
+                                const h2_pal_mem_api_t* allocator,
+                                h2_pal_nfc_data_read_t* out_data,
+                                bool prepare) {
   h2_esp_nfc_fm175xx_t* adapter = (h2_esp_nfc_fm175xx_t*)user;
   if (out_data == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  memset(out_data, 0, sizeof(*out_data));
-
   if (adapter == NULL || allocator == NULL ||
       (expected_uid == NULL && expected_uid_len != 0u) ||
       expected_uid_len > H2_PAL_NFC_UID_MAX_LEN) {
@@ -182,6 +204,9 @@ static h2_pal_result_t read_nfc_data(void* user, h2_pal_periph_id_t id,
   if (id != adapter->config.id) {
     return H2_PAL_ERR_NOT_FOUND;
   }
+  if (ndef_update_active(adapter)) return H2_PAL_ERR_BUSY;
+  memset(out_data, 0, sizeof(*out_data));
+  if (prepare && adapter->config.time == NULL) return H2_PAL_ERR_UNSUPPORTED;
   if (requested_type != H2_PAL_NFC_DATA_NTAG_PAGES &&
       requested_type != H2_PAL_NFC_DATA_NDEF) {
     return H2_PAL_ERR_UNSUPPORTED;
@@ -245,10 +270,28 @@ static h2_pal_result_t read_nfc_data(void* user, h2_pal_periph_id_t id,
 
   size_t len = 0u;
   h2_fm175xx_read_diagnostics_t diagnostics = {0};
-  rc = requested_type == H2_PAL_NFC_DATA_NDEF
-           ? h2_fm175xx_ntag_read_ndef_diagnostic(&adapter->reader, bytes,
-                                                  capacity, &len, &diagnostics)
-           : h2_fm175xx_ntag_read_all(&adapter->reader, bytes, capacity, &len);
+  if (prepare) {
+    h2_fm175xx_write_diagnostics_t preparation;
+    rc = h2_fm175xx_ntag_prepare_ndef_update(
+        &adapter->reader, &adapter->ndef_update, &preparation);
+    diagnostics = preparation.preread;
+    if (rc == H2_FM175XX_OK) {
+      len = adapter->ndef_update.value_length;
+      if (len == 0u)
+        rc = H2_FM175XX_ERR_PROTOCOL;
+      else if (len > capacity)
+        rc = H2_FM175XX_ERR_NO_MEMORY;
+      else
+        memcpy(bytes,
+               adapter->ndef_update.raw + adapter->ndef_update.value_offset,
+               len);
+    }
+  } else if (requested_type == H2_PAL_NFC_DATA_NDEF) {
+    rc = h2_fm175xx_ntag_read_ndef_diagnostic(&adapter->reader, bytes, capacity,
+                                              &len, &diagnostics);
+  } else {
+    rc = h2_fm175xx_ntag_read_all(&adapter->reader, bytes, capacity, &len);
+  }
   if (requested_type == H2_PAL_NFC_DATA_NDEF)
     ESP_LOGW("h2_nfc_fm175xx",
              "H2_NFC_READ_FRAMES count=%zu crc_frames=%zu last_page=%u "
@@ -264,11 +307,15 @@ static h2_pal_result_t read_nfc_data(void* user, h2_pal_periph_id_t id,
              (unsigned)diagnostics.last_control, diagnostics.rx_status_result,
              (unsigned)diagnostics.rx_irq, (unsigned)diagnostics.rx_error,
              (unsigned)diagnostics.rx_fifo, (unsigned)diagnostics.rx_control);
-  report_read("content", pal_rc_from_fm(rc), rc, requested_type,
-              expected_uid_len, &card, len);
-  if (rc != H2_FM175XX_OK) {
+  prc = pal_rc_from_fm(rc);
+  if (prc == H2_PAL_OK && prepare)
+    prc = h2_pal_time_get_monotonic_ms(adapter->config.time,
+                                       &adapter->ndef_update_started_ms);
+  report_read("content", prc, rc, requested_type, expected_uid_len, &card, len);
+  if (prc != H2_PAL_OK) {
+    if (prepare) clear_ndef_update(adapter);
     h2_pal_mem_free(allocator, bytes);
-    return pal_rc_from_fm(rc);
+    return prc;
   }
 
   out_data->id = id;
@@ -282,7 +329,27 @@ static h2_pal_result_t read_nfc_data(void* user, h2_pal_periph_id_t id,
   out_data->len = len;
   adapter->read_selection = card;
   adapter->read_selection_valid = 1;
+  if (prepare) adapter->prepared_ndef_id = (uintptr_t)out_data;
   return H2_PAL_OK;
+}
+
+static h2_pal_result_t read_nfc_data(void* user, h2_pal_periph_id_t id,
+                                     const uint8_t* expected_uid,
+                                     uint8_t expected_uid_len,
+                                     h2_pal_nfc_data_type_t type,
+                                     const h2_pal_mem_api_t* allocator,
+                                     h2_pal_nfc_data_read_t* out_data) {
+  return read_nfc(user, id, expected_uid, expected_uid_len, type, allocator,
+                  out_data, false);
+}
+
+static h2_pal_result_t prepare_ndef_write(void* user, h2_pal_periph_id_t id,
+                                          const uint8_t* expected_uid,
+                                          uint8_t expected_uid_len,
+                                          const h2_pal_mem_api_t* allocator,
+                                          h2_pal_nfc_data_read_t* out_data) {
+  return read_nfc(user, id, expected_uid, expected_uid_len,
+                  H2_PAL_NFC_DATA_NDEF, allocator, out_data, true);
 }
 
 static void report_write(const char* phase, int result, int fm, size_t length) {
@@ -380,11 +447,12 @@ static void report_ndef_fingerprint(const char* phase, uint8_t valid,
            length, hex);
 }
 
-static h2_pal_result_t write_nfc_data(void* user, h2_pal_periph_id_t id,
-                                      const uint8_t* expected_uid,
-                                      uint8_t expected_uid_len,
-                                      h2_pal_nfc_data_type_t type,
-                                      const uint8_t* bytes, size_t length) {
+static h2_pal_result_t write_nfc(void* user, h2_pal_periph_id_t id,
+                                 const uint8_t* expected_uid,
+                                 uint8_t expected_uid_len,
+                                 h2_pal_nfc_data_type_t type,
+                                 const uint8_t* bytes, size_t length,
+                                 bool prepared) {
   h2_esp_nfc_fm175xx_t* adapter = user;
   if (adapter == NULL || expected_uid == NULL || expected_uid_len == 0u ||
       expected_uid_len > H2_PAL_NFC_UID_MAX_LEN || bytes == NULL ||
@@ -392,6 +460,7 @@ static h2_pal_result_t write_nfc_data(void* user, h2_pal_periph_id_t id,
     return H2_PAL_ERR_INVALID_ARG;
   if (id != adapter->config.id) return H2_PAL_ERR_NOT_FOUND;
   if (type != H2_PAL_NFC_DATA_NDEF) return H2_PAL_ERR_UNSUPPORTED;
+  if (!prepared && ndef_update_active(adapter)) return H2_PAL_ERR_BUSY;
   report_write("begin", H2_PAL_OK, INT_MIN, length);
   int rc = ensure_open(adapter);
   if (rc != H2_PAL_OK) {
@@ -407,8 +476,10 @@ static h2_pal_result_t write_nfc_data(void* user, h2_pal_periph_id_t id,
   if (reuse) {
     ESP_LOGW("h2_nfc_fm175xx", "H2_NFC_WRITE_SELECT mode=read-session fm=0");
     report_write("activate", H2_PAL_OK, H2_FM175XX_OK, length);
-  } else {
+  } else if (!prepared) {
     rc = select_write_tag(adapter, &card, length);
+  } else {
+    return H2_PAL_ERR_INVALID_STATE;
   }
   if (rc == H2_FM175XX_ERR_TIMEOUT) return H2_PAL_ERR_NOT_FOUND;
   if (rc != H2_FM175XX_OK) return pal_rc_from_fm(rc);
@@ -422,8 +493,11 @@ static h2_pal_result_t write_nfc_data(void* user, h2_pal_periph_id_t id,
     return H2_PAL_ERR_UNSUPPORTED;
   }
   h2_fm175xx_write_diagnostics_t diagnostics;
-  rc = h2_fm175xx_ntag_write_ndef_diagnostic(&adapter->reader, bytes, length,
-                                             &diagnostics);
+  rc = prepared ? h2_fm175xx_ntag_commit_ndef_update(
+                      &adapter->reader, &adapter->ndef_update, bytes, length,
+                      &diagnostics)
+                : h2_fm175xx_ntag_write_ndef_diagnostic(&adapter->reader, bytes,
+                                                        length, &diagnostics);
   ESP_LOGW("h2_nfc_fm175xx",
            "H2_NFC_WRITE_DETAIL phase=%s fm=%d capacity=%zu metadata=%u "
            "cc=%02x%02x%02x%02x locks=%02x%02x first_tlv=0x%02x "
@@ -502,10 +576,41 @@ static h2_pal_result_t write_nfc_data(void* user, h2_pal_periph_id_t id,
   return pal_rc_from_fm(rc);
 }
 
+static h2_pal_result_t write_nfc_data(void* user, h2_pal_periph_id_t id,
+                                      const uint8_t* expected_uid,
+                                      uint8_t expected_uid_len,
+                                      h2_pal_nfc_data_type_t type,
+                                      const uint8_t* bytes, size_t length) {
+  return write_nfc(user, id, expected_uid, expected_uid_len, type, bytes,
+                   length, false);
+}
+
+static h2_pal_result_t finish_ndef_write(void* user, h2_pal_periph_id_t id,
+                                         const h2_pal_nfc_data_read_t* prepared,
+                                         const uint8_t* bytes, size_t length) {
+  h2_esp_nfc_fm175xx_t* adapter = user;
+  if (adapter == NULL || prepared == NULL || (bytes == NULL) != (length == 0u))
+    return H2_PAL_ERR_INVALID_ARG;
+  if (id != adapter->config.id) return H2_PAL_ERR_NOT_FOUND;
+  if (!ndef_update_active(adapter) ||
+      adapter->prepared_ndef_id != (uintptr_t)prepared)
+    return H2_PAL_ERR_INVALID_STATE;
+  h2_pal_result_t rc = H2_PAL_OK;
+  if (bytes != NULL) {
+    const h2_fm175xx_type_a_card_t* card = &adapter->read_selection;
+    rc = write_nfc(adapter, id, card->uid, card->uid_len, H2_PAL_NFC_DATA_NDEF,
+                   bytes, length, true);
+  }
+  clear_ndef_update(adapter);
+  return rc;
+}
+
 const h2_pal_nfc_vtable_t h2_esp_nfc_fm175xx_nfc_vtable = {
     .scan_nfc_reader = scan_nfc_reader,
     .read_nfc_data = read_nfc_data,
     .write_nfc_data = write_nfc_data,
+    .prepare_ndef_write = prepare_ndef_write,
+    .finish_ndef_write = finish_ndef_write,
 };
 
 h2_pal_result_t h2_esp_nfc_fm175xx_init(
@@ -535,7 +640,7 @@ void h2_esp_nfc_fm175xx_deinit(h2_esp_nfc_fm175xx_t* adapter) {
   memset(&adapter->reader, 0, sizeof(adapter->reader));
   adapter->opened = 0;
   memset(&adapter->read_selection, 0, sizeof(adapter->read_selection));
-  adapter->read_selection_valid = 0;
+  clear_ndef_update(adapter);
 }
 
 const h2_pal_nfc_api_t* h2_esp_nfc_fm175xx_api(h2_esp_nfc_fm175xx_t* adapter) {

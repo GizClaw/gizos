@@ -122,6 +122,16 @@ int main(void) {
       "0123456789abcdef_SIG_a_b_c_d_3%22%7D";
   uint8_t input[5u + sizeof(url) - 1u] = {0xd1u, 1u, sizeof(url), 'U', 0u};
   memcpy(input + 5u, url, sizeof(url) - 1u);
+  const uint8_t invalid_ndef[] = {0xd1u, 1u, 5u, 'U', 0u};
+  assert(payment->vtable->start_tap(payment->user, &nfc, &result) == 0);
+  assert(payment->vtable->receive_ndef(payment->user, invalid_ndef,
+                                       sizeof(invalid_ndef),
+                                       &result) == H2_PAL_ERR_IO);
+  assert(result.processing_notified &&
+         result.processing_status == NFC_PAYMENT_STATUS_FAIL &&
+         !result.write_attempted && !result.response_sent &&
+         fixture.writes == 0u && fixture.requests == 0u);
+  assert(payment->vtable->stop_tap(payment->user) == 0);
   const int failures[] = {H2_PAL_ERR_IO, H2_PAL_ERR_BUSY, H2_PAL_ERR_TIMEOUT};
   for (size_t index = 0u; index < sizeof(failures) / sizeof(failures[0]);
        ++index) {
@@ -136,6 +146,7 @@ int main(void) {
     assert(result.sdk_rc == 0 && result.write_attempted &&
            !result.response_sent && result.nfc_write_rc == failures[index] &&
            result.transport_rc == failures[index] &&
+           result.processing_notified &&
            result.processing_status == NFC_PAYMENT_STATUS_SUCCESS &&
            result.state != H2_ALIPAY_PAYMENT_PAID && result.amount[0] == '\0' &&
            fixture.writes == index + 1u && fixture.requests == 0u);
@@ -151,6 +162,7 @@ int main(void) {
   assert(payment->vtable->receive_ndef(payment->user, input, sizeof(input),
                                        &result) == 0);
   assert(result.write_attempted && result.response_sent &&
+         result.processing_notified &&
          result.processing_status == NFC_PAYMENT_STATUS_SUCCESS &&
          result.state == H2_ALIPAY_PAYMENT_PENDING &&
          result.amount[0] == '\0' && fixture.writes == 4u &&

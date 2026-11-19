@@ -28,6 +28,7 @@ typedef struct fixture {
   unsigned reads;
   unsigned reads_after_writes;
   unsigned writes;
+  uint8_t first_writes[16][5];
   unsigned reject_write;
   unsigned discard_write;
   bool discard_all_writes;
@@ -178,6 +179,9 @@ static void exchange(fixture_t* f) {
   } else if (f->tx_len == 6u && f->tx[0] == 0xa2u && f->card == ACTIVE) {
     const size_t offset = (size_t)f->tx[1] * 4u;
     assert(offset >= 16u && offset + 4u <= sizeof(f->memory));
+    if (f->writes < sizeof(f->first_writes) / sizeof(f->first_writes[0]))
+      memcpy(f->first_writes[f->writes], f->tx + 1u,
+             sizeof(f->first_writes[0]));
     ++f->writes;
     bool accepted = f->writes != f->reject_write;
     if (accepted && !f->discard_all_writes && f->writes != f->discard_write)
@@ -960,6 +964,51 @@ static void test_write_control_prefix(void) {
                 sizeof(original) - 392u) == 0);
 }
 
+static void test_prepared_ndef_commit(void) {
+  fixture_t fixture;
+  h2_fm175xx_t reader;
+  prepare_control_ndef(&fixture, &reader, 21u);
+  h2_fm175xx_ndef_update_t update;
+  assert(h2_fm175xx_ntag_prepare_ndef_update(&reader, &update, NULL) ==
+         H2_FM175XX_OK);
+  assert(update.value_offset == 25u && update.value_length == 292u);
+  assert(memcmp(update.raw + update.value_offset, fixture.memory + 25u,
+                update.value_length) == 0);
+  unsigned reads = fixture.reads;
+  fixture.memory[25] ^= 1u;
+  uint8_t original[sizeof(fixture.memory)];
+  memcpy(original, fixture.memory, sizeof(original));
+  uint8_t message[46] = {0xd1u, 1u, 0x2au, 'T', 2u, 'e', 'n'};
+  memset(message + 7u, 'x', 39u);
+  assert(h2_fm175xx_ntag_commit_ndef_update(&reader, &update, message,
+                                            sizeof(message),
+                                            NULL) == H2_FM175XX_OK);
+  assert(fixture.reads == reads && fixture.writes == 15u);
+  const uint8_t invalidation[] = {5u, original[20], 3u, 0u, original[23]};
+  assert(memcmp(fixture.first_writes[0], invalidation, sizeof(invalidation)) ==
+         0);
+  assert(fixture.first_writes[1][0] == 5u && fixture.first_writes[1][3] == 0u &&
+         fixture.first_writes[1][4] == 0xd1u);
+  for (size_t index = 2u; index < 14u; ++index) {
+    size_t page = index + 4u;
+    assert(fixture.first_writes[index][0] == page &&
+           memcmp(fixture.first_writes[index] + 1u, fixture.memory + page * 4u,
+                  4u) == 0);
+  }
+  const uint8_t published[] = {5u, original[20], 3u, 0x2eu, 0xd1u};
+  assert(memcmp(fixture.first_writes[14], published, sizeof(published)) == 0);
+  assert(memcmp(original, fixture.memory, 21u) == 0);
+  assert(fixture.memory[21u] == 3u && fixture.memory[22u] == sizeof(message));
+  assert(memcmp(fixture.memory + 23u, message, sizeof(message)) == 0);
+  assert(fixture.memory[69u] == 0xfeu);
+  assert(memcmp(original + 70u, fixture.memory + 70u, sizeof(original) - 70u) ==
+         0);
+  assert(h2_fm175xx_ntag_commit_ndef_update(&reader, &update, message,
+                                            sizeof(message), NULL) ==
+         H2_FM175XX_ERR_INVALID_ARG);
+  assert(fixture.reads == reads && fixture.writes == 15u);
+}
+
 static void test_acknowledged_unchanged_tag(void) {
   fixture_t fixture;
   h2_fm175xx_t reader;
@@ -1149,6 +1198,7 @@ int main(void) {
   test_write_reply_diagnostics();
   test_write_partial_reply_snapshot();
   test_acknowledged_unchanged_tag();
+  test_prepared_ndef_commit();
   test_write_reply_crc();
   test_activation_diagnostics();
   test_read_error_snapshot();

@@ -109,6 +109,25 @@ static void test_raw_reply(void) {
 }
 
 int main(void) {
+  uint8_t wallet_reply[40] = {0};
+  uint8_t wallet_ndef[46];
+  size_t wallet_length = 0u;
+  memset(wallet_reply, 'x', 39u);
+  wallet_reply[12] = 0u;
+  const uint8_t wallet_header[] = {0xd1u, 0x01u, 0x2au, 'T', 2u, 'e', 'n'};
+  assert(h2_alipay_nfc_encode_wallet_reply(NULL, wallet_reply, 39u, wallet_ndef,
+                                           sizeof(wallet_ndef),
+                                           &wallet_length) == H2_PAL_OK);
+  assert(wallet_length == sizeof(wallet_ndef) &&
+         memcmp(wallet_ndef, wallet_header, sizeof(wallet_header)) == 0 &&
+         memcmp(wallet_ndef + sizeof(wallet_header), wallet_reply, 39u) == 0);
+  for (size_t length = 38u; length <= 40u; length += 2u) {
+    assert(h2_alipay_nfc_encode_wallet_reply(
+               NULL, wallet_reply, length, wallet_ndef, sizeof(wallet_ndef),
+               &wallet_length) == H2_PAL_ERR_FORMAT);
+    assert(wallet_length == 0u &&
+           memcmp(wallet_ndef, wallet_header, sizeof(wallet_header)) == 0);
+  }
   test_inspect_reply();
   test_raw_reply();
   const uint8_t reply[] = "NW310abcd";

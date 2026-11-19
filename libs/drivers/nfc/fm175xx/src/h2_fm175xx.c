@@ -3,6 +3,7 @@
 #include "h2_fm175xx_defs.h"
 #include "h2_sha256.h"
 
+#include <stdbool.h>
 #include <string.h>
 
 static int write_reg(h2_fm175xx_t* reader, uint8_t reg, uint8_t value) {
@@ -933,11 +934,10 @@ typedef struct ntag_write_layout {
   uint8_t protected_pages[32];
 } ntag_write_layout_t;
 
-static int ntag_pages_protected(const ntag_write_layout_t* layout, size_t start,
+static int ntag_pages_protected(const uint8_t* protected_pages, size_t start,
                                 size_t end) {
   for (size_t page = start / 4u; page < (end + 3u) / 4u; ++page) {
-    if ((layout->protected_pages[page / 8u] & (uint8_t)(1u << (page % 8u))) !=
-        0u)
+    if ((protected_pages[page / 8u] & (uint8_t)(1u << (page % 8u))) != 0u)
       return 1;
   }
   return 0;
@@ -997,7 +997,7 @@ static int ntag_find_write_layout(h2_fm175xx_t* reader, const uint8_t* raw,
   *layout = (ntag_write_layout_t){.ndef_offset = 16u, .previous_end = 16u};
   for (size_t offset = 16u; offset < size;) {
     size_t start = offset;
-    if (ntag_pages_protected(layout, offset, offset + 1u))
+    if (ntag_pages_protected(layout->protected_pages, offset, offset + 1u))
       return H2_FM175XX_ERR_UNAVAILABLE;
     uint8_t type = raw[offset++];
     if (type == 0u) continue;
@@ -1017,7 +1017,7 @@ static int ntag_find_write_layout(h2_fm175xx_t* reader, const uint8_t* raw,
       offset += 2u;
     }
     if (length > size - offset) return H2_FM175XX_ERR_PROTOCOL;
-    if (ntag_pages_protected(layout, start, offset + length))
+    if (ntag_pages_protected(layout->protected_pages, start, offset + length))
       return H2_FM175XX_ERR_UNAVAILABLE;
     if (type == 3u) {
       layout->ndef_offset = start;
@@ -1048,8 +1048,7 @@ static void ntag_message_sha256(const uint8_t* data, size_t length,
   h2_sha256_finish(&sha, digest);
 }
 
-int h2_fm175xx_ntag_write_ndef_diagnostic(
-    h2_fm175xx_t* reader, const uint8_t* data, size_t length,
+static void ntag_init_write_diagnostics(
     h2_fm175xx_write_diagnostics_t* diagnostics) {
   if (diagnostics != NULL) {
     memset(diagnostics, 0, sizeof(*diagnostics));
@@ -1059,16 +1058,19 @@ int h2_fm175xx_ntag_write_ndef_diagnostic(
     diagnostics->rx_status_result = H2_FM175XX_ERR_UNAVAILABLE;
     diagnostics->configuration_result = H2_FM175XX_ERR_UNAVAILABLE;
   }
-  if (reader == NULL || data == NULL || length == 0u || length > 1003u)
-    return H2_FM175XX_ERR_INVALID_ARG;
-  if (diagnostics != NULL) {
-    ntag_message_sha256(data, length, diagnostics->expected_ndef_sha256);
-    diagnostics->expected_ndef_valid = 1u;
-  }
-  uint8_t raw[1024];
+}
+
+int h2_fm175xx_ntag_prepare_ndef_update(
+    h2_fm175xx_t* reader, h2_fm175xx_ndef_update_t* update,
+    h2_fm175xx_write_diagnostics_t* diagnostics) {
+  ntag_init_write_diagnostics(diagnostics);
+  if (update == NULL) return H2_FM175XX_ERR_INVALID_ARG;
+  update->size = 0u;
+  if (reader == NULL) return H2_FM175XX_ERR_INVALID_ARG;
+  uint8_t* raw = update->raw;
   size_t size = 0u;
   if (diagnostics != NULL) diagnostics->phase = H2_FM175XX_WRITE_READ_TAG;
-  int rc = ntag_read_all(reader, raw, sizeof(raw), &size,
+  int rc = ntag_read_all(reader, raw, sizeof(update->raw), &size,
                          diagnostics != NULL ? &diagnostics->preread : NULL);
   if (diagnostics != NULL && diagnostics->preread.required_capacity != 0u) {
     diagnostics->preread_header_valid = 1u;
@@ -1109,13 +1111,42 @@ int h2_fm175xx_ntag_write_ndef_diagnostic(
     if (raw[i] == 0xfeu) break;
     if (raw[i] != 0u) return H2_FM175XX_ERR_UNAVAILABLE;
   }
+  update->size = size;
+  update->ndef_offset = start;
+  update->value_offset = layout.previous_value_offset;
+  update->value_length = layout.previous_length;
+  memcpy(update->protected_pages, layout.protected_pages,
+         sizeof(update->protected_pages));
+  return H2_FM175XX_OK;
+}
+
+static int ntag_commit_ndef_update(h2_fm175xx_t* reader,
+                                   h2_fm175xx_ndef_update_t* update,
+                                   const uint8_t* data, size_t length,
+                                   h2_fm175xx_write_diagnostics_t* diagnostics,
+                                   bool stage_shared_page) {
+  if (update == NULL) return H2_FM175XX_ERR_INVALID_ARG;
+  size_t size = update->size;
+  update->size = 0u;
+  if (reader == NULL || data == NULL || length == 0u || length > 1003u ||
+      size < 20u || size > sizeof(update->raw))
+    return H2_FM175XX_ERR_INVALID_ARG;
+  size_t start = update->ndef_offset;
+  if (start < 16u || start >= size) return H2_FM175XX_ERR_INVALID_ARG;
+  if (diagnostics != NULL) {
+    ntag_message_sha256(data, length, diagnostics->expected_ndef_sha256);
+    diagnostics->expected_ndef_valid = 1u;
+    diagnostics->tag_capacity = size;
+    diagnostics->ndef_offset = start;
+  }
+  uint8_t* raw = update->raw;
   size_t header = length < 255u ? 2u : 4u;
   if (diagnostics != NULL) diagnostics->phase = H2_FM175XX_WRITE_CAPACITY;
   if (header + length + 1u > size - start) return H2_FM175XX_ERR_NO_MEMORY;
   size_t end = start + header + length + 1u;
   size_t page_end = (end + 3u) & ~(size_t)3u;
   if (page_end > size) return H2_FM175XX_ERR_NO_MEMORY;
-  if (ntag_pages_protected(&layout, start, end))
+  if (ntag_pages_protected(update->protected_pages, start, end))
     return H2_FM175XX_ERR_UNAVAILABLE;
   size_t length_offset = start + 1u;
   size_t length_page = length_offset & ~(size_t)3u;
@@ -1123,31 +1154,65 @@ int h2_fm175xx_ntag_write_ndef_diagnostic(
   memcpy(empty, raw + length_page, sizeof(empty));
   empty[length_offset - length_page] = 0u;
   if (start >= length_page) empty[start - length_page] = 3u;
-  if (start + 2u < length_page + 4u) empty[start + 2u - length_page] = 0xfeu;
+  if (!stage_shared_page && start + 2u < length_page + 4u)
+    empty[start + 2u - length_page] = 0xfeu;
   if (diagnostics != NULL) diagnostics->phase = H2_FM175XX_WRITE_INVALIDATE;
-  rc = write_ndef_page(reader, (uint8_t)(length_page / 4u), empty, diagnostics);
+  int rc =
+      write_ndef_page(reader, (uint8_t)(length_page / 4u), empty, diagnostics);
   if (rc != H2_FM175XX_OK) return rc;
+  if (stage_shared_page && start < length_page && raw[start] != 3u) {
+    uint8_t type_page[4];
+    memcpy(type_page, raw + length_page - 4u, sizeof(type_page));
+    type_page[3] = 3u;
+    rc = write_ndef_page(reader, (uint8_t)(length_page / 4u - 1u), type_page,
+                         diagnostics);
+    if (rc != H2_FM175XX_OK) return rc;
+  }
+  memmove(raw + start + header, data, length);
   raw[start] = 3u;
-  raw[start + 1u] = length < 255u ? (uint8_t)length : 255u;
+  raw[length_offset] = 0u;
   if (header == 4u) {
     raw[start + 2u] = (uint8_t)(length >> 8u);
     raw[start + 3u] = (uint8_t)length;
   }
-  memcpy(raw + start + header, data, length);
   raw[end - 1u] = 0xfeu;
   if (diagnostics != NULL) diagnostics->phase = H2_FM175XX_WRITE_PAYLOAD;
-  for (size_t offset = start & ~(size_t)3u;
+  size_t first_byte = stage_shared_page ? start + 2u : start;
+  for (size_t offset = first_byte & ~(size_t)3u;
        rc == H2_FM175XX_OK && offset < page_end; offset += 4u) {
-    if (offset == length_page) continue;
+    if (!stage_shared_page && offset == length_page) continue;
     rc = write_ndef_page(reader, (uint8_t)(offset / 4u), raw + offset,
                          diagnostics);
   }
   if (rc == H2_FM175XX_OK) {
     if (diagnostics != NULL) diagnostics->phase = H2_FM175XX_WRITE_PUBLISH;
+    raw[length_offset] = length < 255u ? (uint8_t)length : 255u;
     rc = write_ndef_page(reader, (uint8_t)(length_page / 4u), raw + length_page,
                          diagnostics);
   }
   if (rc != H2_FM175XX_OK) return rc;
   if (diagnostics != NULL) diagnostics->phase = H2_FM175XX_WRITE_COMPLETE;
   return H2_FM175XX_OK;
+}
+
+int h2_fm175xx_ntag_commit_ndef_update(
+    h2_fm175xx_t* reader, h2_fm175xx_ndef_update_t* update, const uint8_t* data,
+    size_t length, h2_fm175xx_write_diagnostics_t* diagnostics) {
+  ntag_init_write_diagnostics(diagnostics);
+  return ntag_commit_ndef_update(reader, update, data, length, diagnostics,
+                                 true);
+}
+
+int h2_fm175xx_ntag_write_ndef_diagnostic(
+    h2_fm175xx_t* reader, const uint8_t* data, size_t length,
+    h2_fm175xx_write_diagnostics_t* diagnostics) {
+  if (reader == NULL || data == NULL || length == 0u || length > 1003u) {
+    ntag_init_write_diagnostics(diagnostics);
+    return H2_FM175XX_ERR_INVALID_ARG;
+  }
+  h2_fm175xx_ndef_update_t update;
+  int rc = h2_fm175xx_ntag_prepare_ndef_update(reader, &update, diagnostics);
+  if (rc != H2_FM175XX_OK) return rc;
+  return ntag_commit_ndef_update(reader, &update, data, length, diagnostics,
+                                 false);
 }

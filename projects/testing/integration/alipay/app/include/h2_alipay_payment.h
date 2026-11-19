@@ -28,7 +28,7 @@ typedef struct h2_alipay_payment_result {
   int sdk_rc, sdk_status;
   int transport_rc, processing_status, processing_error;
   int nfc_write_rc;
-  bool write_attempted, response_sent;
+  bool processing_notified, write_attempted, response_sent;
   char amount[32];
   /** Optional observations from the completed query, excluding private data.
    * action is the client's bounded numeric classification. False valid means

@@ -213,6 +213,24 @@ typedef struct h2_fm175xx_write_diagnostics {
   uint8_t preread_header_valid, preread_cc[4], preread_static_locks[2];
 } h2_fm175xx_write_diagnostics_t;
 
+typedef struct h2_fm175xx_ndef_update {
+  size_t size, ndef_offset, value_offset, value_length;
+  uint8_t protected_pages[32];
+  uint8_t raw[1024];
+} h2_fm175xx_ndef_update_t;
+
+/** Capture a selected Type 2 tag's NDEF and write layout before building a
+ * reply. On success the input NDEF is
+ * raw[value_offset..value_offset+value_length). The caller owns the snapshot
+ * and must keep the same selection until commit. */
+int h2_fm175xx_ntag_prepare_ndef_update(
+    h2_fm175xx_t* reader, h2_fm175xx_ndef_update_t* update,
+    h2_fm175xx_write_diagnostics_t* diagnostics);
+/** Consume one prepared snapshot, even on failure. Only sends page writes. */
+int h2_fm175xx_ntag_commit_ndef_update(
+    h2_fm175xx_t* reader, h2_fm175xx_ndef_update_t* update, const uint8_t* data,
+    size_t length, h2_fm175xx_write_diagnostics_t* diagnostics);
+
 /** Same single write with optional per-call diagnostics.
  * Cleared before validation; metadata_valid requires a complete tag read.
  * Metadata and bounded control replies are retained, never UID or message

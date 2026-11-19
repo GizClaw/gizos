@@ -65,6 +65,7 @@ typedef struct payment_page {
   h2_pal_task_t* worker;
   h2_atomic_bool_t done;
   uint8_t uid[H2_PAL_NFC_UID_MAX_LEN], uid_length;
+  const h2_pal_nfc_data_read_t* nfc_prepared;
   uint8_t generated[H2_ALIPAY_PAYMENT_CODE_CAPACITY];
   uint32_t generated_length, generation, job_generation;
   int call_rc, sdk_rc, nfc_read_rc;
@@ -149,6 +150,9 @@ static void controls(payment_page_t* p) {
                     p->mode == UNBIND_CONFIRM ? "Cancel" : "Back");
   lv_label_set_text(lv_obj_get_child(p->buttons[B_CONFIRM_UNBIND], 0),
                     p->mode == UNBIND_DONE ? "Continue" : "Confirm");
+  int right_button_x = p->width / 2 + 4;
+  lv_obj_set_x(p->buttons[B_BACK],
+               p->mode == UNBIND_CONFIRM ? 8 : right_button_x);
   if (p->mode == MENU) {
     lv_obj_set_hidden(p->buttons[B_CODE], false);
     lv_obj_set_hidden(p->buttons[B_TAP], p->api->vtable->start_tap == NULL);
@@ -307,6 +311,7 @@ static int show_qr(payment_page_t* p) {
 
 static int write_reply(void* user, const uint8_t* data, size_t length) {
   payment_page_t* page = user;
+  if (page->nfc_prepared == NULL) return H2_PAL_ERR_INVALID_STATE;
   if (page->config->payment_nfc_encode_reply == NULL)
     return H2_PAL_ERR_UNSUPPORTED;
   uint8_t message[512];
@@ -345,9 +350,9 @@ static int write_reply(void* user, const uint8_t* data, size_t length) {
                               &id);
   unsigned busy_waits = 0u;
   while (rc == H2_PAL_OK) {
-    rc = h2_pal_nfc_write_nfc_data(page->rt->nfc, id, page->uid,
-                                   page->uid_length, H2_PAL_NFC_DATA_NDEF,
-                                   message, size);
+    rc = h2_pal_nfc_finish_ndef_write(page->rt->nfc, id, page->nfc_prepared,
+                                      message, size);
+    if (rc != H2_PAL_ERR_BUSY) page->nfc_prepared = NULL;
     if (rc != H2_PAL_ERR_BUSY || busy_waits == 100u) break;
     if (busy_waits == 0u)
       (void)h2_pal_log_write(
@@ -371,9 +376,8 @@ static int read_ndef_frame(payment_page_t* page, h2_pal_periph_id_t id,
   unsigned attempt = 1u, busy_waits = 0u;
   int last_read_rc = H2_PAL_ERR_BUSY;
   while (attempt <= 3u) {
-    int rc =
-        h2_pal_nfc_read_nfc_data(page->rt->nfc, id, page->uid, page->uid_length,
-                                 H2_PAL_NFC_DATA_NDEF, page->rt->mem, data);
+    int rc = h2_pal_nfc_prepare_ndef_write(
+        page->rt->nfc, id, page->uid, page->uid_length, page->rt->mem, data);
     if (rc != H2_PAL_ERR_BUSY)
       log_payment(page,
                   "H2_ALIPAY_NFC_READ attempt=%u limit=3 pal_rc=%d bytes=%zu "
@@ -452,8 +456,23 @@ static void work(void* user) {
         h2_sha256_init(&sha);
         h2_sha256_update(&sha, data.bytes, data.len);
         h2_sha256_finish(&sha, digest);
+        p->nfc_prepared = &data;
         p->call_rc =
             api->receive_ndef(p->api->user, data.bytes, data.len, &p->result);
+        if (p->nfc_prepared != NULL) {
+          (void)h2_pal_nfc_finish_ndef_write(p->rt->nfc, id, p->nfc_prepared,
+                                             NULL, 0u);
+          p->nfc_prepared = NULL;
+        }
+        log_payment(
+            p,
+            "H2_ALIPAY_NFC_CALLBACKS notify_payment_result_handle=%u "
+            "processing_status=%d processing_error=%d send_data_handle=%u "
+            "write_rc=%d response_sent=%u",
+            (unsigned)p->result.processing_notified,
+            p->result.processing_status, p->result.processing_error,
+            (unsigned)p->result.write_attempted, p->result.nfc_write_rc,
+            (unsigned)p->result.response_sent);
         char hex[65], diagnostic[160];
         h2_sha256_hex(digest, hex);
         (void)snprintf(
@@ -783,8 +802,9 @@ int h2_alipay_payment_page_run(h2_runtime_t* rt,
                                    (width - 24) / 2, back_clicked);
   p->buttons[B_UNBIND] =
       make_button(p, "Unbind", 20, 174, width - 40, unbind_clicked);
-  p->buttons[B_CONFIRM_UNBIND] = make_button(
-      p, "Confirm", 8, height - 44, (width - 24) / 2, confirm_unbind_clicked);
+  p->buttons[B_CONFIRM_UNBIND] =
+      make_button(p, "Confirm", width / 2 + 4, height - 44, (width - 24) / 2,
+                  confirm_unbind_clicked);
   for (unsigned i = 0u; i < B_COUNT; ++i)
     if (p->buttons[i] == NULL) {
       rc = H2_PAL_ERR_NO_MEMORY;

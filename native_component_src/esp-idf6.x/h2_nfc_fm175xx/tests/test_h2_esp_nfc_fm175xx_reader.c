@@ -1,5 +1,6 @@
 #include "h2_esp_nfc_fm175xx_internal.h"
 #include "h2_app_test_mem.h"
+#include "h2_app_test_time.h"
 #include "esp_log.h"
 
 #include <assert.h>
@@ -14,6 +15,7 @@ static struct {
   int activation_results[3];
   unsigned activation_result_count, activations, sleeps;
   unsigned reads, writes;
+  h2_app_test_time_t clock;
   bool preread_failure;
   char diagnostics[4096];
   size_t diagnostic_length;
@@ -121,6 +123,28 @@ int h2_fm175xx_ntag_write_ndef(h2_fm175xx_t* reader, const uint8_t* bytes,
   return fixture.write_result;
 }
 
+int h2_fm175xx_ntag_prepare_ndef_update(
+    h2_fm175xx_t* reader, h2_fm175xx_ndef_update_t* update,
+    h2_fm175xx_write_diagnostics_t* diagnostics) {
+  *diagnostics = (h2_fm175xx_write_diagnostics_t){0};
+  update->size = sizeof(update->raw);
+  update->value_offset = 18u;
+  return h2_fm175xx_ntag_read_ndef_diagnostic(
+      reader, update->raw + update->value_offset,
+      sizeof(update->raw) - update->value_offset, &update->value_length,
+      &diagnostics->preread);
+}
+
+int h2_fm175xx_ntag_commit_ndef_update(
+    h2_fm175xx_t* reader, h2_fm175xx_ndef_update_t* update,
+    const uint8_t* bytes, size_t length,
+    h2_fm175xx_write_diagnostics_t* diagnostics) {
+  assert(update->size != 0u);
+  *diagnostics = (h2_fm175xx_write_diagnostics_t){0};
+  update->size = 0u;
+  return h2_fm175xx_ntag_write_ndef(reader, bytes, length);
+}
+
 int h2_fm175xx_ntag_write_ndef_diagnostic(
     h2_fm175xx_t* reader, const uint8_t* bytes, size_t length,
     h2_fm175xx_write_diagnostics_t* diagnostics) {
@@ -193,6 +217,7 @@ void h2_esp_nfc_fm175xx_spi_close(h2_esp_nfc_fm175xx_t* adapter) {
 
 static void setup(h2_esp_nfc_fm175xx_t* adapter) {
   memset(&fixture, 0, sizeof(fixture));
+  h2_app_test_time_init(&fixture.clock, 0u);
   memcpy(fixture.card.uid, uid, sizeof(uid));
   fixture.card.uid_len = sizeof(uid);
   fixture.card.atqa[0] = 0x44u;
@@ -202,7 +227,8 @@ static void setup(h2_esp_nfc_fm175xx_t* adapter) {
       .bus = (i2c_master_bus_handle_t)&fixture,
       .i2c_address = 0x28u,
       .i2c_speed_hz = 400000u,
-      .read_capacity = 128u};
+      .read_capacity = 128u,
+      .time = &fixture.clock.api};
   assert(h2_esp_nfc_fm175xx_init(adapter, &config) == H2_PAL_OK);
   adapter->opened = 1;
   adapter->reader.transport.user = &fixture;
@@ -386,7 +412,59 @@ static void test_write_selection_recovery(void) {
          fixture.writes == 1u);
 }
 
+static void test_prepared_ndef_write(void) {
+  h2_app_test_mem_t memory;
+  h2_app_test_mem_init(&memory, NULL);
+  h2_esp_nfc_fm175xx_t adapter;
+  h2_pal_nfc_data_read_t data = {0}, other = {0};
+  h2_pal_nfc_scan_t scan;
+  setup(&adapter);
+  const h2_pal_nfc_api_t* api = h2_esp_nfc_fm175xx_api(&adapter);
+
+  for (unsigned scenario = 0u; scenario < 5u; ++scenario) {
+    unsigned reads = fixture.reads;
+    unsigned activations = fixture.activations;
+    unsigned writes = fixture.writes;
+    assert(h2_pal_nfc_prepare_ndef_write(api, 201u, uid, sizeof(uid),
+                                         &memory.api, &data) == H2_PAL_OK);
+    assert(data.len == sizeof(message) &&
+           memcmp(data.bytes, message, data.len) == 0);
+    assert(h2_pal_nfc_scan_nfc_reader(api, 201u, &scan) == H2_PAL_ERR_BUSY);
+    assert(read_ndef(&adapter, &memory.api, &other) == H2_PAL_ERR_BUSY);
+    assert(write_ndef(&adapter) == H2_PAL_ERR_BUSY);
+    assert(h2_pal_nfc_finish_ndef_write(api, 201u, &other, message,
+                                        sizeof(message)) ==
+           H2_PAL_ERR_INVALID_STATE);
+    const uint8_t* reply = scenario == 1u ? NULL : message;
+    size_t reply_length = reply != NULL ? sizeof(message) : 0u;
+    fixture.write_result =
+        scenario == 2u ? H2_FM175XX_ERR_TIMEOUT : H2_FM175XX_OK;
+    if (scenario == 3u || scenario == 4u)
+      assert(h2_app_test_time_advance(&fixture.clock, 500u) == H2_PAL_OK);
+    if (scenario == 4u) {
+      assert(h2_pal_nfc_scan_nfc_reader(api, 201u, &scan) == H2_PAL_OK);
+      ++activations;
+    }
+    int expected = scenario >= 3u   ? H2_PAL_ERR_INVALID_STATE
+                   : scenario == 2u ? H2_PAL_ERR_TIMEOUT
+                                    : H2_PAL_OK;
+    assert(h2_pal_nfc_finish_ndef_write(api, 201u, &data, reply,
+                                        reply_length) == expected);
+    assert(h2_pal_nfc_finish_ndef_write(api, 201u, &data, message,
+                                        sizeof(message)) ==
+           H2_PAL_ERR_INVALID_STATE);
+    assert(fixture.activations == activations + 1u &&
+           fixture.reads == reads + 1u &&
+           fixture.writes == writes + (scenario == 0u || scenario == 2u));
+    assert(h2_pal_nfc_scan_nfc_reader(api, 201u, &scan) == H2_PAL_OK);
+    h2_pal_mem_free(&memory.api, data.bytes);
+    fixture.diagnostic_length = 0u;
+  }
+  assert(memory.live_blocks == 0u);
+}
+
 int main(void) {
+  test_prepared_ndef_write();
   test_write_read_selection();
   test_write_selection_recovery();
   h2_app_test_mem_t memory;

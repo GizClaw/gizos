@@ -25,6 +25,15 @@ h2_pal_result_t h2_alipay_nfc_encode_text_reply(void* user, const uint8_t* data,
                                                 size_t capacity,
                                                 size_t* ndef_length);
 
+/** Encode exactly 39 SDK reply bytes as a 46-byte UTF-8 Text/en record.
+ * Copy the reply as supplied. Buffer and result contracts match the Text
+ * encoder. */
+h2_pal_result_t h2_alipay_nfc_encode_wallet_reply(void* user,
+                                                  const uint8_t* data,
+                                                  size_t length, uint8_t* ndef,
+                                                  size_t capacity,
+                                                  size_t* ndef_length);
+
 /** Diagnostic passthrough for merchant A/B tests: copy callback bytes exactly,
  * without a Text record header, language metadata, encoding or terminator.
  * These bytes need not form a valid NDEF record. The tag writer still owns
