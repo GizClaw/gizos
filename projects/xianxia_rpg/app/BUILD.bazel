@@ -162,6 +162,28 @@ cc_test(
     deps = [":xianxia_rpg"],
 )
 
+# The longer chapter-8 persistence group shares the same PAL fixture and
+# production input driver, with its own default cc_test time budget.
+cc_test(
+    name = "chapter8_app_test",
+    srcs = _PRIVATE_HEADERS + ["tests/test_app.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    local_defines = ["H2_XIANXIA_RPG_TEST_EIGHTH_RECORD_OWNERSHIP=1"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":xianxia_rpg",
+        "//libs/sync/atomic/providers/c11",
+        "//pal:unsupported",
+        "//pal/providers/platforms/desktop/pal_core:core",
+    ],
+)
+
 cc_test(
     name = "app_test",
     srcs = _PRIVATE_HEADERS + ["tests/test_app.c"],

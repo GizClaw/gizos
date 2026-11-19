@@ -24,6 +24,12 @@
 #define PREF_MAX 16
 #define PREF_VALUE_MAX 256
 
+/* Each normal cc_test selects its group while sharing this fixture and
+ * the production App driver. Keep the default target on chapters 1–7. */
+#ifndef H2_XIANXIA_RPG_TEST_EIGHTH_RECORD_OWNERSHIP
+#define H2_XIANXIA_RPG_TEST_EIGHTH_RECORD_OWNERSHIP 0
+#endif
+
 typedef struct fake_display {
   h2_display_info_t info;
   int opened, open_calls, close_calls;
@@ -1176,20 +1182,26 @@ static void test_eighth_record_ownership(void) {
 }
 
 int main(void) {
-  test_eighth_record_ownership();
-  test_seventh_chapter_keeps_formal_sixth();
-  test_sixth_chapter_keeps_released_records();
-  CHECK(h2_xianxia_rpg_run(NULL, NULL) == H2_PAL_ERR_INVALID_ARG);
-  test_plays_and_cleans_up();
-  test_rejects_unusable_displays();
-  test_ready_failure_ends_run();
-  test_upgrade_keeps_v01_keys();
-  test_corrupt_journey_is_kept();
-  test_import_record_combinations();
-  test_three_key_import_and_write_failures();
-  test_third_chapter_keeps_released_journey();
-  test_fourth_chapter_keeps_released_records();
-  test_fifth_chapter_keeps_released_records();
-  printf("xianxia_rpg app tests passed\n");
+  if (H2_XIANXIA_RPG_TEST_EIGHTH_RECORD_OWNERSHIP) {
+    puts("xianxia_rpg App group: chapter 8 record ownership (9 scenarios)");
+    test_eighth_record_ownership();
+    puts("xianxia_rpg chapter8 App tests passed");
+  } else {
+    puts("xianxia_rpg App group: lifecycle and chapters 1-7");
+    test_seventh_chapter_keeps_formal_sixth();
+    test_sixth_chapter_keeps_released_records();
+    CHECK(h2_xianxia_rpg_run(NULL, NULL) == H2_PAL_ERR_INVALID_ARG);
+    test_plays_and_cleans_up();
+    test_rejects_unusable_displays();
+    test_ready_failure_ends_run();
+    test_upgrade_keeps_v01_keys();
+    test_corrupt_journey_is_kept();
+    test_import_record_combinations();
+    test_three_key_import_and_write_failures();
+    test_third_chapter_keeps_released_journey();
+    test_fourth_chapter_keeps_released_records();
+    test_fifth_chapter_keeps_released_records();
+    printf("xianxia_rpg app tests passed\n");
+  }
   return 0;
 }
