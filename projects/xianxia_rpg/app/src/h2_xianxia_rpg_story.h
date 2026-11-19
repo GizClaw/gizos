@@ -578,6 +578,8 @@ typedef enum h2_xianxia_rpg_c10_text_id {
   H2_XIANXIA_RPG_C10_END_RELEASE,
   H2_XIANXIA_RPG_C10_END_KEEP,
   H2_XIANXIA_RPG_C10_END_COMPLETE,
+  H2_XIANXIA_RPG_C10_TURBIDITY,
+  H2_XIANXIA_RPG_C10_CENTER,
   H2_XIANXIA_RPG_C10_TEXT_COUNT,
 } h2_xianxia_rpg_c10_text_id_t;
 extern const char* const h2_xianxia_rpg_c10_text[H2_XIANXIA_RPG_C10_TEXT_COUNT];

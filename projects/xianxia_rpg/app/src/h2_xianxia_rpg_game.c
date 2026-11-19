@@ -3372,9 +3372,9 @@ static void continue_journey(h2_xianxia_rpg_game_t* game,
   h2_xianxia_rpg_map_t map = (h2_xianxia_rpg_map_t)s->map;
   int32_t x = (int32_t)s->x, y = (int32_t)s->y;
   if (!cell_usable(game, s->map, s->x, s->y)) {
-    map = info->rest_map;
-    x = info->rest_x;
-    y = info->rest_y;
+    map = game->chapter == 10u ? (h2_xianxia_rpg_map_t)s->map : info->rest_map;
+    x = game->chapter == 10u ? 7 : info->rest_x;
+    y = game->chapter == 10u ? 5 : info->rest_y;
   }
   if (game->chapter == 5u &&
       (game->stage == H2_XIANXIA_RPG_STAGE_C5_RESCUE ||

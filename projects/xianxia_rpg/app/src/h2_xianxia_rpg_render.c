@@ -838,6 +838,8 @@ static void battle_backdrop(canvas_t* canvas, const game_t* game) {
       fill_rect(canvas, x + w * .012f, sh * .76f, w * .016f, sh * .04f,
                 RGB(255, 236, 174), 256u);
     }
+    fill_rect(canvas, 0, (float)l->panel.y, w, (float)l->panel.h,
+              RGB(20, 16, 24), 256u);
     return;
   }
   if (game->chapter == 9u) {
@@ -2340,7 +2342,7 @@ static const char* c10_label(const game_t* game, char tile) {
   if (tile == 'F')
     return game->stage >= H2_XIANXIA_RPG_STAGE_C10_CHOICE
                ? h2_xianxia_rpg_c10_text[H2_XIANXIA_RPG_C10_CONTINUE]
-               : h2_xianxia_rpg_c10_text[H2_XIANXIA_RPG_C10_FORM];
+               : h2_xianxia_rpg_c10_text[H2_XIANXIA_RPG_C10_CENTER];
   return NULL;
 }
 
@@ -2366,8 +2368,11 @@ static void map_background(canvas_t* canvas, const game_t* game) {
                                                   : c8_label(tile);
         if (label == NULL) continue;
         const float cx = (float)l->map_x + ((float)col + .5f) * (float)l->tile;
-        const int y = l->map_y + row * l->tile +
-                      (l->tile >= 32 ? l->tile / 2 : (l->tile - LINE_PX) / 2);
+        const bool helper = game->chapter == 10u && tile >= 'a' && tile <= 'd';
+        const int y =
+            l->map_y + row * l->tile +
+            (helper ? l->tile
+                    : (l->tile >= 32 ? l->tile / 2 : (l->tile - LINE_PX) / 2));
         const float tw = (float)h2_xianxia_rpg_text_width(false, label);
         fill_rect(canvas, cx - tw * .5f - 2, (float)y, tw + 4, LINE_PX,
                   RGB(20, 33, 43), 256u);
@@ -3177,8 +3182,11 @@ void h2_xianxia_rpg_static_key(const game_t* game,
       f[18] = (int32_t)game->flags;
       f[19] = (int32_t)game->ally_hp;
       f[20] = (int32_t)game->battle.lamp_hp;
-      f[21] = (int32_t)(game->battle.dual_lamps ? game->battle.west_lamp_hp
-                                                : game->battle.wave);
+      f[21] = (int32_t)(game->battle.finale
+                            ? game->battle.formation_step |
+                                  ((uint32_t)game->battle.formation_round << 8)
+                        : game->battle.dual_lamps ? game->battle.west_lamp_hp
+                                                  : game->battle.wave);
       f[22] = (int32_t)((game->chapter == 5u || game->chapter >= 9u)
                             ? game->battle.turn
                             : game->battle.wave_turn);
@@ -3893,8 +3901,16 @@ static void draw_battle_static(canvas_t* canvas, const game_t* game) {
                       ? C_GOLD
                       : C_TEXT,
                   256u);
-    bar(canvas, foe->x + 8, foe->y + LINE_PX + 4, foe->w - 16, 10, b->enemy_hp,
-        b->enemy_hp_max, c9_color(b->node_phase));
+    if (b->finale) {
+      (void)snprintf(line, sizeof(line),
+                     h2_xianxia_rpg_c10_text[H2_XIANXIA_RPG_C10_TURBIDITY],
+                     (unsigned)b->enemy_hp);
+      text_centered(canvas, false, line, (float)(foe->x + foe->w / 2),
+                    foe->y + LINE_PX, c9_color(0), 256u);
+    } else {
+      bar(canvas, foe->x + 8, foe->y + LINE_PX + 4, foe->w - 16, 10,
+          b->enemy_hp, b->enemy_hp_max, c9_color(b->node_phase));
+    }
     const int y = game->height < 300 ? 48 : 58;
     if (b->finale) {
       const uint32_t phase =
@@ -4999,7 +5015,8 @@ void h2_xianxia_rpg_render_scene(canvas_t* canvas, const game_t* game) {
     case H2_XIANXIA_RPG_PHASE_CHAPTERS:
       break;
     case H2_XIANXIA_RPG_PHASE_EXPLORE:
-      if (game->chapter != 9u || !game->glyph_view) explore_scene(canvas, game);
+      if (game->chapter < 9u || !game->glyph_view || game->dialogue.active)
+        explore_scene(canvas, game);
       break;
     case H2_XIANXIA_RPG_PHASE_BATTLE:
       battle_scene(canvas, game);

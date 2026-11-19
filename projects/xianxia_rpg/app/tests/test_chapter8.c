@@ -236,7 +236,12 @@ static void small_menu(void) {
   box(&g.layout.chapter_more);
   CHECK(g.chapter_page == 1u);
   box(&g.layout.chapter_rows[9]);
-  CHECK(g.phase == H2_XIANXIA_RPG_PHASE_CHAPTERS);
+  CHECK(g.phase == H2_XIANXIA_RPG_PHASE_PROLOGUE && g.prologue_chapter == 10u);
+  h2_xianxia_rpg_game_init(&g, 320, 240, 8, NULL);
+  step(300);
+  box(&g.layout.title_buttons[2]);
+  step(300);
+  box(&g.layout.chapter_more);
   box(&g.layout.chapter_more);
   CHECK(g.chapter_page == 0u);
   box(&g.layout.chapter_more);

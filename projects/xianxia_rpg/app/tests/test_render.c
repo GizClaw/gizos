@@ -717,6 +717,58 @@ static void test_chapter9_screens(int32_t width, int32_t height) {
   check_all_layers(&game);
 }
 
+static void test_chapter10_screens(int32_t width, int32_t height) {
+  h2_xianxia_rpg_game_init(&game, width, height, 10, NULL);
+  game.chapter = game.prologue_chapter = 10;
+  game.phase = H2_XIANXIA_RPG_PHASE_PROLOGUE;
+  check_all_layers(&game);
+  game.phase = H2_XIANXIA_RPG_PHASE_EXPLORE;
+  game.stage = H2_XIANXIA_RPG_STAGE_C10_ARRANGE;
+  game.flags = 0x79u;
+  for (int map = H2_XIANXIA_RPG_MAP_HOME_VILLAGE;
+       map <= H2_XIANXIA_RPG_MAP_HOME_TOWER; ++map) {
+    game.map = (h2_xianxia_rpg_map_t)map;
+    check_all_layers(&game);
+  }
+  for (uint8_t view = 1; view <= 2; ++view) {
+    game.glyph_view = view;
+    check_all_layers(&game);
+  }
+  game.glyph_view = 0;
+  game.phase = H2_XIANXIA_RPG_PHASE_BATTLE;
+  game.battle.finale = game.battle.ally = game.battle.boss = true;
+  game.battle.enemy_hp = game.battle.enemy_hp_max = 600;
+  game.battle.state = H2_XIANXIA_RPG_BATTLE_COMMAND;
+  for (unsigned phase = 0; phase < 3; ++phase) {
+    game.stage =
+        (h2_xianxia_rpg_stage_t)(H2_XIANXIA_RPG_STAGE_C10_SHRINE + phase);
+    game.battle.enemy = (uint8_t)(H2_XIANXIA_RPG_ENEMY_HOME_DRAGON + phase);
+    for (uint8_t beat = 0; beat < 3; ++beat) {
+      game.battle.formation_step = beat;
+      game.facts ^= H2_XIANXIA_RPG_FACT_C10_ACTIVE_WEN;
+      check_all_layers(&game);
+    }
+  }
+  h2_xianxia_rpg_layer_key_t a, b;
+  h2_xianxia_rpg_static_key(&game, &a);
+  ++game.battle.formation_round;
+  h2_xianxia_rpg_static_key(&game, &b);
+  CHECK(memcmp(&a, &b, sizeof(a)) != 0);
+  game.phase = H2_XIANXIA_RPG_PHASE_ENDING;
+  check_all_layers(&game);
+  h2_xianxia_rpg_static_key(&game, &a);
+  game.facts |= H2_XIANXIA_RPG_FACT_C10_KEEP_LIGHT;
+  h2_xianxia_rpg_static_key(&game, &b);
+  CHECK(memcmp(&a, &b, sizeof(a)) != 0);
+  check_all_layers(&game);
+  game.phase = H2_XIANXIA_RPG_PHASE_CHAPTERS;
+  game.chapter_page = 0;
+  h2_xianxia_rpg_static_key(&game, &a);
+  game.chapter_page = 1;
+  h2_xianxia_rpg_static_key(&game, &b);
+  CHECK(memcmp(&a, &b, sizeof(a)) != 0);
+}
+
 int main(void) {
   test_story_string_capacity();
   test_glyph_coverage();
@@ -734,6 +786,7 @@ int main(void) {
     test_chapter7_screens(sizes[i][0], sizes[i][1]);
     test_chapter8_screens(sizes[i][0], sizes[i][1]);
     test_chapter9_screens(sizes[i][0], sizes[i][1]);
+    test_chapter10_screens(sizes[i][0], sizes[i][1]);
   }
   printf("xianxia_rpg render tests passed\n");
   return 0;
