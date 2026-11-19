@@ -49,6 +49,8 @@ extern "C" {
 #define H2_XIANXIA_RPG_PREF_JOURNEY8_KEY "journey8"
 /** Chapter-9 journey, v3; fingerprint includes the exact journey8 bytes. */
 #define H2_XIANXIA_RPG_PREF_JOURNEY9_KEY "journey9"
+/** Final journey, v3; fingerprints the raw bytes of all nine predecessors. */
+#define H2_XIANXIA_RPG_PREF_JOURNEY10_KEY "journey10"
 /** Blob with the cleared chapters and the hero at each clear, used to enter
  * the next chapter; a v0.1 chapter-1 clear is copied into it on start. */
 #define H2_XIANXIA_RPG_PREF_CHAPTERS_KEY "chapters"
