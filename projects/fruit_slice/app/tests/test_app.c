@@ -26,7 +26,8 @@
 
 typedef struct fake_display {
   h2_display_info_t info;
-  int open_result;
+  int open_result, draw_result, present_result;
+  unsigned fail_from_frame;
   int opened, open_calls, close_calls;
   size_t draws, presents, rows_drawn, pixels_drawn, full_frames;
   uint32_t brightness;
@@ -64,6 +65,11 @@ typedef struct fixture {
   unsigned autoplay_from, autoplay_until, autoplay_pause_from,
       autoplay_pause_until, reveal_until;
   uint64_t clock_ms;
+  int clock_error;
+  uint64_t clock_fail_after_ms;
+  unsigned failure_count;
+  bool failure_before_close;
+  char failure_message[224];
   uint32_t seed;
   uint32_t earned_fruit_credit;
   const char* capture_name;
@@ -72,6 +78,9 @@ typedef struct fixture {
   unsigned header_from, header_check, claim_check;
   uint32_t header_hash;
   const h2_pal_pref_api_t* pref_override;
+  const h2_pal_task_api_t* task_override;
+  bool background_saves;
+  void (*loop_hook)(void);
   bool use_audio, audio_active;
   unsigned audio_starts, audio_stops, audio_opens, audio_closes, audio_writes;
   unsigned pause_from, pause_until;
@@ -82,6 +91,24 @@ typedef struct fixture {
 } fixture_t;
 
 static fixture_t fx;
+
+static int capture_log(void* user, h2_pal_log_level_t level, const char* scope,
+                       const char* message) {
+  (void)user;
+  const char prefix[] = "H2_FRUIT_SLICE_FAILURE ";
+  if (scope != NULL && !strcmp(scope, "fruit-slice") &&
+      !strncmp(message, prefix, sizeof(prefix) - 1u)) {
+    CHECK(level == H2_PAL_LOG_ERROR);
+    ++fx.failure_count;
+    (void)snprintf(fx.failure_message, sizeof(fx.failure_message), "%s",
+                   message);
+    fx.failure_before_close = fx.display.opened && fx.touch.opened;
+  }
+  return h2_pal_log_write(h2_desktop_platform_log_api(), level, scope, message);
+}
+static const h2_pal_log_vtable_t capture_log_vtable = {.write = capture_log};
+static const h2_pal_log_api_t captured_log = {.vtable = &capture_log_vtable};
+
 static struct {
   uint8_t saved[H2_FRUIT_SLICE_PROGRESS_BYTES];
   uint8_t staged[H2_FRUIT_SLICE_PROGRESS_BYTES];
@@ -209,6 +236,8 @@ static int display_draw(void* user, const h2_display_rect_t* rect,
                         h2_display_pixel_format_t format) {
   fake_display_t* d = user;
   CHECK(d->opened);
+  if (d->draw_result != H2_PAL_OK && fx.frames >= d->fail_from_frame)
+    return d->draw_result;
   CHECK(format == H2_DISPLAY_PIXEL_RGB565);
   /* Partial rectangles start and end on even columns. */
   CHECK(rect->x >= 0 && rect->width > 0 && rect->x % 2 == 0 &&
@@ -232,6 +261,8 @@ static int display_present(void* user) {
   fake_display_t* d = user;
   CHECK(d->opened);
   ++d->presents;
+  if (d->present_result != H2_PAL_OK && fx.frames >= d->fail_from_frame)
+    return d->present_result;
   if (fx.paced_clock) fx.clock_ms += fx.present_cost_ms;
   return H2_PAL_OK;
 }
@@ -511,6 +542,7 @@ static bool should_exit(void* user) {
     capture_frame(f);
   if (f->frames == 3u)
     f->probe_before = f->display.shadow[288u * SHADOW_STRIDE + 240u];
+  if (f->loop_hook != NULL) f->loop_hook();
   return f->frames++ >= f->exit_after;
 }
 
@@ -543,6 +575,8 @@ static void reset(unsigned exit_after) {
 
 static h2_pal_result_t accelerated_clock(void* user, uint64_t* out_ms) {
   (void)user;
+  if (fx.clock_error != H2_PAL_OK && fx.clock_ms >= fx.clock_fail_after_ms)
+    return fx.clock_error;
   if (!fx.paced_clock) fx.clock_ms += 10u;
   *out_ms = fx.clock_ms;
   return H2_PAL_OK;
@@ -579,10 +613,11 @@ static h2_pal_result_t run(void) {
   config.chip = "host";
   config.firmware_info = h2_pal_unsupported_firmware_info_api();
   config.mem = &fx.mem_api;
-  config.log = h2_desktop_platform_log_api();
+  config.log = &captured_log;
   config.time = fx.fast_clock || fx.paced_clock ? &time_api : real_time;
   config.timer = h2_pal_unsupported_timer_api();
-  config.task = h2_desktop_platform_task_api();
+  config.task = fx.task_override != NULL ? fx.task_override
+                                         : h2_desktop_platform_task_api();
   config.queue = fx.paced_clock ? &queue_api : real_queue;
   config.sync = h2_desktop_platform_sync_api();
   config.fs = h2_pal_unsupported_fs_api();
@@ -634,6 +669,7 @@ static h2_pal_result_t run(void) {
                                         .is_paused = is_paused,
                                         .language = fx.language,
                                         .prewarm_audio = fx.prewarm_audio,
+                                        .background_saves = fx.background_saves,
                                         .user = &fx};
   const h2_pal_result_t rc = h2_fruit_slice_run(runtime, &game);
   CHECK(h2_runtime_destroy(&runtime) == H2_PAL_OK);
@@ -704,6 +740,9 @@ static void test_persistent_touch_failure(void) {
   CHECK(run() == H2_PAL_ERR_IO);
   CHECK(fx.frames == 30u);
   CHECK(fx.touch.close_calls == 1);
+  CHECK(fx.failure_count == 1u && fx.failure_before_close);
+  CHECK(strstr(fx.failure_message, "op=touch_poll rc=-4") != NULL);
+  CHECK(strstr(fx.failure_message, "touch_failures=30") != NULL);
 }
 
 static void test_ready_failure_stops(void) {
@@ -1941,7 +1980,364 @@ static void test_layout_claim_buy_and_back(int32_t width, int32_t height,
         saved.score_task == 2u);
 }
 
+/* A real SQLite namespace remains owned by its writer while the public App
+ * continues accepting controls. Later run-loop iterations release the
+ * barrier; static menus need not present when their pixels are unchanged. */
+typedef struct held_namespace {
+  h2_pal_pref_namespace_t base;
+  h2_pal_pref_namespace_t* real;
+  bool held;
+} held_namespace_t;
+
+static struct {
+  const h2_pal_pref_api_t* real;
+  h2_pal_queue_t* entered;
+  h2_pal_queue_t* release;
+  h2_fruit_slice_game_t model;
+  h2_pal_task_t* save_task;
+  const char* held_key;
+  bool block, held, observed, appended, released;
+  bool fail_commit, fail_close, fail_start, fail_join;
+  unsigned starts, failed_joins, held_frame;
+  size_t held_presents;
+  uint64_t started_ms;
+} background;
+
+static int held_get_blob(h2_pal_pref_namespace_t* base,
+                         const h2_pal_mem_api_t* allocator, const char* key,
+                         void** out, size_t* size) {
+  held_namespace_t* ns = (held_namespace_t*)base;
+  return ns->real->get_blob(ns->real, allocator, key, out, size);
+}
+
+static int held_get_u32(h2_pal_pref_namespace_t* base, const char* key,
+                        uint32_t* out) {
+  held_namespace_t* ns = (held_namespace_t*)base;
+  return ns->real->get_u32(ns->real, key, out);
+}
+
+static int held_set_u32(h2_pal_pref_namespace_t* base, const char* key,
+                        uint32_t value) {
+  held_namespace_t* ns = (held_namespace_t*)base;
+  return ns->real->set_u32(ns->real, key, value);
+}
+
+static int held_set_blob(h2_pal_pref_namespace_t* base, const char* key,
+                         const void* data, size_t size) {
+  held_namespace_t* ns = (held_namespace_t*)base;
+  if (background.block && !background.held &&
+      !strcmp(key, background.held_key)) {
+    background.held = ns->held = true;
+    const unsigned token = 1u;
+    unsigned reply = 0u;
+    const h2_pal_queue_api_t* queues = h2_desktop_platform_queue_api();
+    CHECK(h2_pal_queue_send(queues, background.entered, &token, 0u) ==
+          H2_PAL_OK);
+    CHECK(h2_pal_queue_recv(queues, background.release, &reply, 5000u) ==
+          H2_PAL_OK);
+  }
+  return ns->real->set_blob(ns->real, key, data, size);
+}
+
+static int held_commit(h2_pal_pref_namespace_t* base) {
+  held_namespace_t* ns = (held_namespace_t*)base;
+  if (ns->held && background.fail_commit) {
+    background.fail_commit = false;
+    return H2_PAL_ERR_IO;
+  }
+  return ns->real->commit(ns->real);
+}
+
+static int held_close(h2_pal_pref_namespace_t* base) {
+  held_namespace_t* ns = (held_namespace_t*)base;
+  int rc = ns->real->close(ns->real);
+  if (ns->held && background.fail_close) {
+    background.fail_close = false;
+    rc = H2_PAL_ERR_IO;
+  }
+  free(ns);
+  return rc;
+}
+
+static int held_open(void* user, const char* name, h2_pal_pref_open_mode_t mode,
+                     h2_pal_pref_namespace_t** out) {
+  (void)user;
+  *out = NULL;
+  held_namespace_t* ns = calloc(1u, sizeof(*ns));
+  CHECK(ns != NULL);
+  const int rc = h2_pal_pref_open(background.real, name, mode, &ns->real);
+  if (rc != H2_PAL_OK) {
+    free(ns);
+    return rc;
+  }
+  ns->base = (h2_pal_pref_namespace_t){.get_blob = held_get_blob,
+                                       .get_u32 = held_get_u32,
+                                       .set_u32 = held_set_u32,
+                                       .set_blob = held_set_blob,
+                                       .commit = held_commit,
+                                       .close = held_close};
+  *out = &ns->base;
+  return H2_PAL_OK;
+}
+
+static int background_task_start(void* user,
+                                 const h2_pal_task_options_t* options,
+                                 h2_pal_task_entry_t entry, void* ctx,
+                                 h2_pal_task_t** out) {
+  (void)user;
+  const bool save = !strcmp(options->name, "fruit-slice/save");
+  if (save) {
+    ++background.starts;
+    if (background.fail_start) {
+      background.fail_start = false;
+      *out = NULL;
+      return H2_PAL_ERR_NO_MEMORY;
+    }
+  }
+  const int rc = h2_pal_task_start(h2_desktop_platform_task_api(), options,
+                                   entry, ctx, out);
+  if (save && rc == H2_PAL_OK) background.save_task = *out;
+  return rc;
+}
+
+static int background_task_join(void* user, h2_pal_task_t* task) {
+  (void)user;
+  if (task == background.save_task && background.fail_join &&
+      fx.frames > fx.exit_after) {
+    background.fail_join = false;
+    ++background.failed_joins;
+    return H2_PAL_ERR_TASK;
+  }
+  return h2_pal_task_join(h2_desktop_platform_task_api(), task);
+}
+
+static const h2_pal_pref_vtable_t held_pref_vtable = {.open = held_open};
+static const h2_pal_pref_api_t held_preferences = {.vtable = &held_pref_vtable};
+static const h2_pal_task_vtable_t background_task_vtable = {
+    .start = background_task_start, .join = background_task_join};
+static const h2_pal_task_api_t background_tasks = {.vtable =
+                                                       &background_task_vtable};
+
+static void script_select_card(unsigned slot) {
+  h2_fruit_slice_album_layout_t layout;
+  h2_fruit_slice_game_t* game = &background.model;
+  h2_fruit_slice_cards_album_layout(game->width, game->height, game->unit,
+                                    &layout);
+  const h2_fruit_slice_card_rect_t* r = &layout.slots[slot];
+  const int x = (int)((r->x0 + r->x1) * 0.5f);
+  const int y = (int)((r->y0 + r->y1) * 0.5f);
+  script_tap(x, y);
+  h2_fruit_slice_game_pointer(game, H2_FRUIT_SLICE_POINTER_DOWN, x, y);
+  h2_fruit_slice_game_pointer(game, H2_FRUIT_SLICE_POINTER_UP, x, y);
+}
+
+static void background_loop(void) {
+  uint64_t now = 0u;
+  CHECK(h2_pal_time_get_monotonic_ms(h2_desktop_platform_time_api(), &now) ==
+        H2_PAL_OK);
+  CHECK(now - background.started_ms < 5000u);
+  const h2_pal_queue_api_t* queues = h2_desktop_platform_queue_api();
+  if (!background.observed) {
+    unsigned token = 0u;
+    if (h2_pal_queue_recv(queues, background.entered, &token, 0u) ==
+        H2_PAL_OK) {
+      background.observed = true;
+      background.held_frame = fx.frames;
+      background.held_presents = fx.display.presents;
+    }
+  }
+  if (!background.appended && (!background.block || background.observed)) {
+    h2_fruit_slice_game_t* game = &background.model;
+    script_control(game, H2_FRUIT_SLICE_BUTTON_BACK);
+    if (!strcmp(background.held_key, "cards_v1")) {
+      script_control(game, H2_FRUIT_SLICE_BUTTON_TASKS);
+      script_visit(game, H2_FRUIT_SLICE_BUTTON_CLAIM + 2u);
+      script_control(game, H2_FRUIT_SLICE_BUTTON_CLAIM + 2u);
+      script_control(game, H2_FRUIT_SLICE_BUTTON_BACK);
+    }
+    script_control(game, H2_FRUIT_SLICE_BUTTON_SHOP);
+    script_visit(game, H2_FRUIT_SLICE_BUTTON_WEAPON + 1u);
+    script_control(game, H2_FRUIT_SLICE_BUTTON_WEAPON + 1u);
+    script_control(game, H2_FRUIT_SLICE_BUTTON_BACK);
+    script_control(game, H2_FRUIT_SLICE_BUTTON_CARDS);
+    script_select_card(0u);
+    script_select_card(1u);
+    script_control(game, H2_FRUIT_SLICE_BUTTON_BACK);
+    background.appended = true;
+  }
+  if (background.appended && !background.released &&
+      fx.touch.script_next == fx.touch.script_count) {
+    if (background.block) {
+      CHECK(fx.frames > background.held_frame + 4u);
+      CHECK(fx.display.presents > background.held_presents);
+      const unsigned token = 1u;
+      CHECK(h2_pal_queue_send(queues, background.release, &token, 0u) ==
+            H2_PAL_OK);
+    }
+    background.released = true;
+    /* Exit immediately after the last input frame: its state must win even
+     * when the older writer has not yet reported completion. */
+    fx.exit_after = fx.frames;
+  }
+}
+
+static void test_background_sqlite_save(unsigned failure, bool hold_cards) {
+  const char* temporary = getenv("TEST_TMPDIR");
+  CHECK(temporary != NULL);
+  char database[512];
+  const int n =
+      snprintf(database, sizeof(database), "%s/background-%u-%u.sqlite",
+               temporary, failure, (unsigned)hold_cards);
+  CHECK(n > 0 && (size_t)n < sizeof(database));
+  h2_sqlite_t* storage = NULL;
+  const h2_sqlite_config_t config = {.path = database};
+  CHECK(h2_sqlite_create(&config, &storage) == H2_PAL_OK);
+  h2_pal_pref_namespace_t* ns = NULL;
+  CHECK(h2_pal_pref_open(h2_sqlite_pref_api(storage),
+                         H2_FRUIT_SLICE_PREF_NAMESPACE,
+                         H2_PAL_PREF_OPEN_READ_WRITE, &ns) == H2_PAL_OK);
+  const h2_fruit_slice_progress_t initial = {.score_task = 1u, .owned = 1u};
+  uint8_t progress[H2_FRUIT_SLICE_PROGRESS_BYTES];
+  h2_fruit_slice_progress_encode(&initial, progress);
+  CHECK(ns->set_blob(ns, "progress_v1", progress, sizeof(progress)) ==
+        H2_PAL_OK);
+  h2_fruit_slice_cards_t collection;
+  h2_fruit_slice_cards_init(&collection, 800, 480, 42u);
+  collection.counts[0] = 2u;
+  collection.counts[1] = 3u;
+  collection.unseen = 3u;
+  uint8_t cards[H2_FRUIT_SLICE_CARDS_BYTES];
+  h2_fruit_slice_cards_encode(&collection, cards);
+  CHECK(ns->set_blob(ns, "cards_v1", cards, sizeof(cards)) == H2_PAL_OK);
+  CHECK(ns->set_u32(ns, H2_FRUIT_SLICE_PREF_BEST_KEY, 266u) == H2_PAL_OK);
+  CHECK(ns->set_u32(ns, "audio_v1", 2u) == H2_PAL_OK);
+  CHECK(ns->commit(ns) == H2_PAL_OK && ns->close(ns) == H2_PAL_OK);
+
+  memset(&background, 0, sizeof(background));
+  background.real = h2_sqlite_pref_api(storage);
+  background.held_key = hold_cards ? "cards_v1" : "progress_v1";
+  background.block = failure != 3u;
+  background.fail_commit = failure == 1u;
+  background.fail_close = failure == 2u;
+  background.fail_start = failure == 3u;
+  background.fail_join = failure == 4u;
+  h2_pal_queue_config_t barrier = {
+      .name = "app-save-barrier",
+      .item_size = sizeof(unsigned),
+      .item_count = 1u,
+      .allocator = h2_desktop_platform_default_allocator()};
+  CHECK(h2_pal_queue_create(h2_desktop_platform_queue_api(), &barrier,
+                            &background.entered) == H2_PAL_OK);
+  CHECK(h2_pal_queue_create(h2_desktop_platform_queue_api(), &barrier,
+                            &background.release) == H2_PAL_OK);
+  reset(10000u);
+  fx.display.info.width = fx.touch.info.width = 800;
+  fx.display.info.height = fx.touch.info.height = 480;
+  fx.background_saves = true;
+  fx.pref_override = &held_preferences;
+  fx.task_override = &background_tasks;
+  fx.loop_hook = background_loop;
+  fx.touch_from_frame = 2u;
+  h2_fruit_slice_game_init(&background.model, 800, 480, 42u, 266u);
+  background.model.progress = initial;
+  background.model.cards = collection;
+  if (hold_cards) {
+    script_control(&background.model, H2_FRUIT_SLICE_BUTTON_CARDS);
+    script_select_card(0u);
+  } else {
+    script_control(&background.model, H2_FRUIT_SLICE_BUTTON_TASKS);
+    script_visit(&background.model, H2_FRUIT_SLICE_BUTTON_CLAIM + 2u);
+    script_control(&background.model, H2_FRUIT_SLICE_BUTTON_CLAIM + 2u);
+  }
+  CHECK(h2_pal_time_get_monotonic_ms(h2_desktop_platform_time_api(),
+                                     &background.started_ms) == H2_PAL_OK);
+  CHECK(run() == (failure == 4u ? H2_PAL_ERR_TASK : H2_PAL_OK));
+  CHECK(background.appended && background.released);
+  CHECK(background.block ? background.observed : background.starts == 1u);
+  CHECK(background.failed_joins == (failure == 4u ? 1u : 0u));
+  h2_pal_queue_destroy(h2_desktop_platform_queue_api(), background.entered);
+  h2_pal_queue_destroy(h2_desktop_platform_queue_api(), background.release);
+  h2_sqlite_destroy(storage);
+  CHECK(h2_sqlite_create(&config, &storage) == H2_PAL_OK);
+  CHECK(h2_pal_pref_open(h2_sqlite_pref_api(storage),
+                         H2_FRUIT_SLICE_PREF_NAMESPACE,
+                         H2_PAL_PREF_OPEN_READ_ONLY, &ns) == H2_PAL_OK);
+  void* data = NULL;
+  size_t size = 0u;
+  const h2_pal_mem_api_t* allocator = h2_desktop_platform_default_allocator();
+  CHECK(ns->get_blob(ns, allocator, "progress_v1", &data, &size) == H2_PAL_OK);
+  h2_fruit_slice_progress_t saved;
+  CHECK(h2_fruit_slice_progress_decode(&saved, data, size));
+  h2_pal_mem_free(allocator, data);
+  CHECK(saved.coins == 0u && saved.owned == 3u && saved.equipped == 1u &&
+        saved.score_task == 2u);
+  CHECK(ns->get_blob(ns, allocator, "cards_v1", &data, &size) == H2_PAL_OK);
+  CHECK(h2_fruit_slice_cards_decode(&collection, data, size));
+  h2_pal_mem_free(allocator, data);
+  CHECK(collection.counts[0] == 2u && collection.counts[1] == 3u &&
+        collection.unseen == 0u);
+  uint32_t value = 0u;
+  CHECK(ns->get_u32(ns, H2_FRUIT_SLICE_PREF_BEST_KEY, &value) == H2_PAL_OK &&
+        value == 266u);
+  CHECK(ns->get_u32(ns, "audio_v1", &value) == H2_PAL_OK && value == 2u);
+  CHECK(ns->close(ns) == H2_PAL_OK);
+  h2_sqlite_destroy(storage);
+}
+
+static void test_terminal_failure_markers(void) {
+  reset(10u);
+  fx.display.fail_from_frame = 5u;
+  fx.display.draw_result = H2_PAL_ERR_TIMEOUT;
+  CHECK(run() == H2_PAL_ERR_TIMEOUT);
+  CHECK(fx.failure_count == 1u && fx.failure_before_close);
+  CHECK(strstr(fx.failure_message, "op=display_draw rc=-6") != NULL);
+  CHECK(strstr(fx.failure_message, "phase=0 frames=4") != NULL);
+  CHECK(strstr(fx.failure_message, "size=480x480") != NULL);
+  CHECK(fx.display.close_calls == 1 && fx.touch.close_calls == 1);
+
+  reset(10u);
+  fx.display.fail_from_frame = 5u;
+  fx.display.present_result = H2_PAL_ERR_TIMEOUT;
+  CHECK(run() == H2_PAL_ERR_TIMEOUT);
+  CHECK(fx.failure_count == 1u && fx.failure_before_close);
+  CHECK(strstr(fx.failure_message, "op=display_present rc=-6") != NULL);
+  CHECK(strstr(fx.failure_message, "phase=0 frames=4") != NULL);
+  CHECK(fx.display.close_calls == 1 && fx.touch.close_calls == 1);
+
+  reset(40u);
+  fx.touch.poll_error = H2_PAL_ERR_TIMEOUT;
+  CHECK(run() == H2_PAL_ERR_TIMEOUT);
+  CHECK(fx.failure_count == 1u && fx.failure_before_close);
+  CHECK(strstr(fx.failure_message, "op=touch_poll rc=-6") != NULL);
+  CHECK(strstr(fx.failure_message, "touch_failures=30") != NULL);
+
+  reset(20u);
+  fx.paced_clock = true;
+  fx.clock_error = H2_PAL_ERR_TIMEOUT;
+  fx.clock_fail_after_ms = 100u;
+  CHECK(run() == H2_PAL_ERR_TIMEOUT);
+  CHECK(fx.failure_count == 1u && fx.failure_before_close);
+  CHECK(strstr(fx.failure_message, "op=clock_wait rc=-6") != NULL);
+
+  reset(10u);
+  fx.ready_result = H2_PAL_ERR_TIMEOUT;
+  CHECK(run() == H2_PAL_ERR_TIMEOUT);
+  CHECK(fx.failure_count == 1u && fx.failure_before_close);
+  CHECK(strstr(fx.failure_message, "op=ready rc=-6") != NULL);
+
+  /* Normal empty Runtime waits return TIMEOUT; they are not run failures. */
+  reset(8u);
+  fx.paced_clock = true;
+  CHECK(run() == H2_PAL_OK);
+  CHECK(fx.clock_ms >= 200u && fx.failure_count == 0u);
+}
+
 int main(void) {
+  test_terminal_failure_markers();
+  test_background_sqlite_save(0u, false);
+  test_background_sqlite_save(0u, true);
+  for (unsigned failure = 1u; failure <= 4u; ++failure)
+    test_background_sqlite_save(failure, false);
   test_paced_audio_through_public_entry(false);
   test_paced_audio_through_public_entry(true);
   test_bilingual_last_page_claim_and_purchase();
