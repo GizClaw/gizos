@@ -631,7 +631,7 @@ static h2_pal_result_t play(session_t* s) {
     h2_fruit_slice_game_step(&s->game, (uint32_t)dt);
     s->phase_mask |= 1u << (unsigned)s->game.phase;
     if (h2_fruit_slice_cards_reveal_active(&s->game.cards)) ++s->reveal_frames;
-    if (s->audio.mute != s->game.audio_mute) {
+    if (s->audio.mute != s->game.audio_mute || s->audio.pref_dirty) {
       const int saved =
           h2_fruit_slice_audio_set_mute(&s->audio, s->game.audio_mute);
       if (saved != H2_PAL_OK)
@@ -836,9 +836,11 @@ h2_pal_result_t h2_fruit_slice_run(h2_runtime_t* runtime,
   save_progress(s);
   save_cards(s);
 
-  /* Audio borrows Runtime until track/speaker teardown completes. */
+  /* Audio borrows Runtime until track/speaker teardown completes. The final
+   * UI intent may be newer than the last accepted playback queue command. */
   int audio_closed;
-  while ((audio_closed = h2_fruit_slice_audio_close(&s->audio)) != H2_PAL_OK) {
+  while ((audio_closed = h2_fruit_slice_audio_close_with_mute(
+              &s->audio, s->game.audio_mute)) != H2_PAL_OK) {
     if (rc == H2_PAL_OK) rc = audio_closed;
     log_line(s, H2_PAL_LOG_WARN, "H2_FRUIT_SLICE_AUDIO_CLOSE_RETRY");
     (void)h2_runtime_wait_notify(runtime, 50u);

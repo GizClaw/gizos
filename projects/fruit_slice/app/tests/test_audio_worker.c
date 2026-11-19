@@ -14,6 +14,7 @@
 #include <assert.h>
 #include <pthread.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static uint64_t now(void) {
@@ -26,12 +27,35 @@ static void delay(uint32_t ms) {
   assert(h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), ms) == 0);
 }
 
+static bool toggle_trial, tap_pending, all_muted_start;
+static unsigned exit_intent_trial, exit_trial_frame, exit_command_rejections;
+static pthread_t app_thread;
+static uint64_t tap_started, toggle_max_ms;
+static unsigned toggle_native_main_calls, toggle_pref_main_calls,
+    toggle_join_main_calls;
+static unsigned toggle_frames[] = {5u,  15u, 25u, 35u, 45u, 55u,
+                                   65u, 66u, 67u, 68u, 69u, 70u};
+static unsigned toggle_buttons[] = {
+    H2_FRUIT_SLICE_BUTTON_SFX,   H2_FRUIT_SLICE_BUTTON_SFX,
+    H2_FRUIT_SLICE_BUTTON_MUSIC, H2_FRUIT_SLICE_BUTTON_MUSIC,
+    H2_FRUIT_SLICE_BUTTON_SFX,   H2_FRUIT_SLICE_BUTTON_MUSIC,
+    H2_FRUIT_SLICE_BUTTON_SFX,   H2_FRUIT_SLICE_BUTTON_MUSIC,
+    H2_FRUIT_SLICE_BUTTON_MUSIC, H2_FRUIT_SLICE_BUTTON_MUSIC,
+    H2_FRUIT_SLICE_BUTTON_MUSIC, H2_FRUIT_SLICE_BUTTON_SFX};
+
+static void native_delay(unsigned ms) {
+  if (!toggle_trial) return;
+  if (pthread_equal(pthread_self(), app_thread) && tap_pending)
+    ++toggle_native_main_calls;
+  delay(ms);
+}
+
 typedef struct sink {
   pthread_mutex_t lock;
   h2_pal_audio_track_t track;
   uint64_t until, last, missing, max_gap, first_nonzero;
   unsigned writes, opens, closes, stops, blocks, fail_write;
-  int fail_create, fail_close;
+  int fail_create, fail_close, fail_stop;
   int16_t first_pcm[640];
 } sink_t;
 static sink_t sink = {.lock = PTHREAD_MUTEX_INITIALIZER};
@@ -48,11 +72,17 @@ static int start(void* user) {
   return 0;
 }
 static int stop(void* user) {
+  native_delay(20u);
   sink_t* s = user;
   pthread_mutex_lock(&s->lock);
   ++s->stops;
+  int rc = H2_PAL_OK;
+  if (s->fail_stop != 0) {
+    --s->fail_stop;
+    rc = H2_PAL_ERR_IO;
+  }
   pthread_mutex_unlock(&s->lock);
-  return 0;
+  return rc;
 }
 static int write_pcm(h2_pal_audio_track_t* track, const h2_audio_frame_t* frame,
                      uint32_t timeout) {
@@ -97,6 +127,7 @@ static int write_pcm(h2_pal_audio_track_t* track, const h2_audio_frame_t* frame,
   return 0;
 }
 static int close_pcm(h2_pal_audio_track_t* track) {
+  native_delay(20u);
   sink_t* s = track->user;
   pthread_mutex_lock(&s->lock);
   ++s->closes;
@@ -107,6 +138,7 @@ static int close_pcm(h2_pal_audio_track_t* track) {
 static int create(void* user, const h2_audio_track_config_t* cfg,
                   h2_pal_audio_track_t** out) {
   sink_t* s = user;
+  native_delay(500u); /* Formal decoder-start to DAC interval, simulated. */
   assert(cfg->buffer_frames == 2u);
   pthread_mutex_lock(&s->lock);
   if (s->fail_create) {
@@ -136,6 +168,8 @@ static void reset_sink(void) {
 
 static int join_failures, start_failures, queue_create_failures,
     queue_close_failures, queue_partial_close_failures;
+static bool command_receive_io;
+static unsigned producer_start_attempts;
 static unsigned live_queues, queue_close_calls, command_sends;
 static h2_pal_queue_t* worker_command_queue;
 static unsigned finite_command_waits, max_command_wait_ms;
@@ -178,12 +212,21 @@ static int queue_send(void* u, h2_pal_queue_t* q, const void* item,
                       uint32_t timeout_ms) {
   (void)u;
   ++command_sends;
+  if (exit_intent_trial != 0u && exit_trial_frame == 20u &&
+      q == worker_command_queue) {
+    ++exit_command_rejections;
+    return H2_PAL_ERR_FULL;
+  }
   return h2_pal_queue_send(h2_desktop_platform_queue_api(), q, item,
                            timeout_ms);
 }
 static int queue_recv(void* u, h2_pal_queue_t* q, void* item,
                       uint32_t timeout_ms) {
   (void)u;
+  pthread_mutex_lock(&sink.lock);
+  const bool failed = q == worker_command_queue && command_receive_io;
+  pthread_mutex_unlock(&sink.lock);
+  if (failed) return H2_PAL_ERR_IO;
   if (q == worker_command_queue && timeout_ms != 0u &&
       timeout_ms != H2_PAL_QUEUE_WAIT_FOREVER) {
     /* Nominal service waits must fit inside one 320-sample/16kHz PCM frame.
@@ -198,6 +241,7 @@ static int queue_recv(void* u, h2_pal_queue_t* q, void* item,
 static h2_pal_queue_vtable_t queue_vt;
 static h2_pal_queue_api_t queue_api;
 static void init_queue_api(void) {
+  app_thread = pthread_self();
   queue_vt = *h2_desktop_platform_queue_api()->vtable;
   queue_vt.create = queue_create;
   queue_vt.destroy = queue_destroy;
@@ -207,23 +251,53 @@ static void init_queue_api(void) {
   queue_api =
       (h2_pal_queue_api_t){h2_desktop_platform_queue_api()->user, &queue_vt};
 }
+static unsigned pref_start_failures, pref_join_failures;
+static h2_pal_task_t* pref_join_handle;
 static int task_start(void* u, const h2_pal_task_options_t* opt,
                       h2_pal_task_entry_t entry, void* ctx,
                       h2_pal_task_t** out) {
   (void)u;
+  if (strcmp(opt->name, "fruit-slice/audio") == 0) {
+    pthread_mutex_lock(&sink.lock);
+    ++producer_start_attempts;
+    pthread_mutex_unlock(&sink.lock);
+  }
   if (start_failures) {
     --start_failures;
     return H2_PAL_ERR_NO_MEMORY;
   }
-  return h2_pal_task_start(h2_desktop_platform_task_api(), opt, entry, ctx,
-                           out);
+  if (strcmp(opt->name, "fruit-slice/audio-pref") == 0 &&
+      pref_start_failures != 0u) {
+    --pref_start_failures;
+    return H2_PAL_ERR_NO_MEMORY;
+  }
+  const int rc =
+      h2_pal_task_start(h2_desktop_platform_task_api(), opt, entry, ctx, out);
+  if (rc == H2_PAL_OK && strcmp(opt->name, "fruit-slice/audio-pref") == 0) {
+    pthread_mutex_lock(&sink.lock);
+    pref_join_handle = *out;
+    pthread_mutex_unlock(&sink.lock);
+  }
+  return rc;
 }
 static int task_join(void* u, h2_pal_task_t* task) {
+  if (toggle_trial && pthread_equal(pthread_self(), app_thread) && tap_pending)
+    ++toggle_join_main_calls;
   (void)u;
-  if (join_failures) {
+  /* Producer-join faults belong to the App caller; a concurrent Pref join
+   * has its own fault counter and must not consume this injection. */
+  if (pthread_equal(pthread_self(), app_thread) && join_failures) {
     --join_failures;
     return H2_PAL_ERR_BUSY;
   }
+  pthread_mutex_lock(&sink.lock);
+  if (task == pref_join_handle && pref_join_failures != 0u) {
+    --pref_join_failures;
+    pthread_mutex_unlock(&sink.lock);
+    return H2_PAL_ERR_BUSY;
+  }
+  if (task == pref_join_handle) pref_join_handle = NULL;
+  pthread_mutex_unlock(&sink.lock);
   return h2_pal_task_join(h2_desktop_platform_task_api(), task);
 }
 static const h2_pal_task_vtable_t task_vt = {.start = task_start,
@@ -266,6 +340,7 @@ static void test_owner_lifecycle_and_latency(void) {
   h2_fruit_slice_audio_t a;
   assert(h2_fruit_slice_audio_init(&a, &rt) == 0);
   a.mute = H2_FRUIT_SLICE_MUTE_MUSIC;
+  a.music_gain = 0; /* Fixture starts with the persisted bus already muted. */
   a.worker_requested = true;
   assert(h2_fruit_slice_audio_prepare(&a) == 0);
   h2_pal_task_vtable_t unjoinable = task_vt;
@@ -320,9 +395,17 @@ static void test_owner_lifecycle_and_latency(void) {
   assert(h2_fruit_slice_audio_pump(&a, now()) == 0);
   delay(35);
   assert(a.worker);
-  assert(h2_fruit_slice_audio_set_mute(&a, 3u) == H2_PAL_ERR_UNSUPPORTED);
-  assert(a.mute == 3u && h2_fruit_slice_audio_pump(&a, now()) == 0 &&
-         !a.worker);
+  assert(h2_fruit_slice_audio_set_mute(&a, 3u) == H2_PAL_OK);
+  const uint64_t muted_deadline = now() + 5000u;
+  for (;;) {
+    pthread_mutex_lock(&sink.lock);
+    const bool closed = sink.closes == sink.opens;
+    pthread_mutex_unlock(&sink.lock);
+    if (closed) break;
+    assert(now() < muted_deadline);
+    delay(5u);
+  }
+  assert(a.mute == 3u && a.worker); /* Controller idle; hardware released. */
   assert(h2_fruit_slice_audio_close(&a) == 0);
   assert(sink.opens == sink.closes && live_queues == 0u);
 }
@@ -335,6 +418,8 @@ static void test_pcm_identity(void) {
       h2_fruit_slice_audio_t a;
       assert(h2_fruit_slice_audio_init(&a, &rt) == 0);
       a.mute = mute;
+      a.sfx_gain = (mute & H2_FRUIT_SLICE_MUTE_SFX) ? 0 : 65536;
+      a.music_gain = (mute & H2_FRUIT_SLICE_MUTE_MUSIC) ? 0 : 65536;
       h2_fruit_slice_audio_emit(&a, H2_FRUIT_SLICE_SOUND_SLICE, 1000u);
       h2_fruit_slice_audio_emit(&a, H2_FRUIT_SLICE_SOUND_CARD, 1000u);
       a.worker_requested = worker != 0u;
@@ -372,7 +457,7 @@ static void test_mute_shutdown_retry(void) {
     else
       queue_partial_close_failures = 1;
     const unsigned closes = queue_close_calls;
-    assert(h2_fruit_slice_audio_set_mute(&a, 3u) ==
+    assert(h2_fruit_slice_audio_suspend(&a) ==
            (failure == 1u ? H2_PAL_ERR_BUSY : H2_PAL_ERR_IO));
     assert(a.mute == 0u && a.worker && live_queues == 2u);
     /* Retained ownership is quiescent from the first stop request, even if
@@ -381,9 +466,11 @@ static void test_mute_shutdown_retry(void) {
     h2_fruit_slice_audio_emit(&a, H2_FRUIT_SLICE_SOUND_SLICE, now());
     assert(h2_fruit_slice_audio_pump(&a, now()) == H2_PAL_OK);
     assert(command_sends == sent);
-    assert(h2_fruit_slice_audio_set_mute(&a, 3u) == H2_PAL_ERR_UNSUPPORTED);
+    assert(h2_fruit_slice_audio_set_mute(&a, 3u) == H2_PAL_ERR_BUSY);
+    assert(a.mute == 0u);
+    assert(h2_fruit_slice_audio_suspend(&a) == H2_PAL_OK);
     assert(queue_close_calls - closes == (failure == 1u ? 1u : 2u));
-    assert(a.mute == 3u && !a.worker && !a.track && live_queues == 0u);
+    assert(a.mute == 0u && !a.worker && !a.track && live_queues == 0u);
     const unsigned written = sink.writes;
     delay(50u);
     assert(sink.writes == written && sink.opens == sink.closes);
@@ -439,7 +526,8 @@ static void test_backpressure_error_and_burst(void) {
  * synchronous display/Pref pressure. Touch transitions use production routing.
  */
 static unsigned frames, commits, touch_phase, display_pressure_ms;
-static unsigned mute_failure_mode, audio_setting_commits, mute_writes;
+static unsigned mute_failure_mode, audio_setting_commits, mute_writes,
+    pref_commit_failures;
 static bool mute_first_gesture, monitor_blocked_audio, first_album_progress;
 static unsigned display_progress_checks, pref_progress_checks;
 static uint64_t max_display_hold_ms, max_pref_hold_ms;
@@ -482,6 +570,11 @@ static uint64_t hold_main_callback(uint32_t ms, bool verify_progress) {
   return now() - started;
 }
 static int present(void* u) {
+  if (toggle_trial && tap_pending) {
+    const uint64_t elapsed = now() - tap_started;
+    if (elapsed > toggle_max_ms) toggle_max_ms = elapsed;
+    tap_pending = false;
+  }
   (void)u;
   const bool pressure = frames == 5u || frames % 20u == 0u;
   const bool monitor = monitor_blocked_audio && frames >= 5u && pressure;
@@ -512,6 +605,48 @@ static int touch_info(void* u, h2_pal_touch_info_t* i) {
 static int touch_poll(void* u, h2_pal_touch_event_t* e) {
   (void)u;
   const unsigned event = touch_phase / 2u;
+  if (all_muted_start) return H2_PAL_ERR_WOULD_BLOCK;
+  if (exit_intent_trial != 0u) {
+    if (event >= 2u) {
+      if (exit_intent_trial == 3u || (exit_intent_trial == 2u && frames > 20u))
+        return H2_PAL_ERR_BUSY; /* Also cover abort before set_mute is called.
+                                 */
+      return H2_PAL_ERR_WOULD_BLOCK;
+    }
+    if (frames < (event == 0u ? 5u : 20u)) return H2_PAL_ERR_WOULD_BLOCK;
+    h2_fruit_slice_game_t game;
+    h2_fruit_slice_game_init(&game, 480, 320, 42, 0);
+    h2_fruit_slice_rect_t rect;
+    assert(h2_fruit_slice_game_button_rect(
+        &game,
+        event == 0u ? H2_FRUIT_SLICE_BUTTON_SFX : H2_FRUIT_SLICE_BUTTON_MUSIC,
+        &rect));
+    *e = (h2_pal_touch_event_t){
+        touch_phase++ % 2u ? H2_PAL_TOUCH_EVENT_UP : H2_PAL_TOUCH_EVENT_DOWN,
+        (uint16_t)((rect.x0 + rect.x1) / 2),
+        (uint16_t)((rect.y0 + rect.y1) / 2)};
+    return H2_PAL_OK;
+  }
+  if (toggle_trial) {
+    if (event >= sizeof(toggle_frames) / sizeof(toggle_frames[0]) ||
+        frames < toggle_frames[event])
+      return H2_PAL_ERR_WOULD_BLOCK;
+    h2_fruit_slice_game_t game;
+    h2_fruit_slice_game_init(&game, 480, 320, 42, 0);
+    h2_fruit_slice_rect_t rect;
+    assert(
+        h2_fruit_slice_game_button_rect(&game, toggle_buttons[event], &rect));
+    const bool up = touch_phase++ % 2u != 0u;
+    if (up) {
+      tap_started = now();
+      tap_pending = true;
+    }
+    *e = (h2_pal_touch_event_t){
+        up ? H2_PAL_TOUCH_EVENT_UP : H2_PAL_TOUCH_EVENT_DOWN,
+        (uint16_t)((rect.x0 + rect.x1) / 2),
+        (uint16_t)((rect.y0 + rect.y1) / 2)};
+    return H2_PAL_OK;
+  }
   if (mute_failure_mode != 0u || mute_first_gesture) {
     const unsigned mute_frames[] = {5u, 20u, 40u, 70u};
     const unsigned first_frames[] = {5u, 70u};
@@ -530,14 +665,8 @@ static int touch_poll(void* u, h2_pal_touch_event_t* e) {
                                                  ? H2_FRUIT_SLICE_BUTTON_MUSIC
                                                  : H2_FRUIT_SLICE_BUTTON_SFX,
                                              &r));
-    if (event == full_mute_event && touch_phase % 2u != 0u) {
-      if (mute_failure_mode == 1u)
-        queue_close_failures = 1;
-      else if (mute_failure_mode == 2u)
-        join_failures = 1;
-      else if (mute_failure_mode == 3u)
-        queue_partial_close_failures = 1;
-    }
+    /* Queue-close/join faults are exercised by test_mute_shutdown_retry on
+     * actual suspension. Ordinary mute must never close this command queue. */
     *e = (h2_pal_touch_event_t){
         (touch_phase++ % 2u) ? H2_PAL_TOUCH_EVENT_UP : H2_PAL_TOUCH_EVENT_DOWN,
         (uint16_t)((r.x0 + r.x1) / 2), (uint16_t)((r.y0 + r.y1) / 2)};
@@ -562,19 +691,26 @@ static const h2_pal_touch_vtable_t tvt = {.open = touch_open,
                                           .poll_event = touch_poll,
                                           .close = touch_open};
 static const h2_pal_touch_api_t touch_api = {.vtable = &tvt};
+typedef struct pref_namespace {
+  h2_pal_pref_namespace_t pal;
+  uint32_t pending;
+} pref_namespace_t;
+
 static int pref_get(h2_pal_pref_namespace_t* n, const char* k, uint32_t* v) {
   (void)n;
-  if (strcmp(k, "audio_v1") == 0 && stored_audio_setting != 0u) {
-    *v = stored_audio_setting;
+  pthread_mutex_lock(&sink.lock);
+  const uint32_t stored = stored_audio_setting;
+  pthread_mutex_unlock(&sink.lock);
+  if (strcmp(k, "audio_v1") == 0 && stored != 0u) {
+    *v = stored;
     return H2_PAL_OK;
   }
   return H2_PAL_ERR_NOT_FOUND;
 }
 static int pref_set_u32(h2_pal_pref_namespace_t* n, const char* key,
                         uint32_t value) {
-  (void)n;
   assert(strcmp(key, "audio_v1") == 0);
-  pending_audio_setting = value;
+  ((pref_namespace_t*)n)->pending = value;
   return H2_PAL_OK;
 }
 static int pref_get_blob(h2_pal_pref_namespace_t* n, const h2_pal_mem_api_t* m,
@@ -597,20 +733,27 @@ static int pref_set_blob(h2_pal_pref_namespace_t* n, const char* k,
   return 0;
 }
 static int pref_commit(h2_pal_pref_namespace_t* n) {
-  (void)n;
+  if (toggle_trial && pthread_equal(pthread_self(), app_thread) && tap_pending)
+    ++toggle_pref_main_calls;
+  pthread_mutex_lock(&sink.lock);
   ++commits;
-  if (pending_audio_setting != 0u) {
-    stored_audio_setting = pending_audio_setting;
+  if (((pref_namespace_t*)n)->pending != 0u && pref_commit_failures != 0u) {
+    --pref_commit_failures;
+    pthread_mutex_unlock(&sink.lock);
+    return H2_PAL_ERR_IO;
+  }
+  if (((pref_namespace_t*)n)->pending != 0u) {
+    stored_audio_setting = ((pref_namespace_t*)n)->pending;
     ++audio_setting_commits;
   }
+  pthread_mutex_unlock(&sink.lock);
   const uint64_t elapsed = hold_main_callback(39u, monitor_blocked_audio);
   if (elapsed > max_pref_hold_ms) max_pref_hold_ms = elapsed;
   if (monitor_blocked_audio) ++pref_progress_checks;
   return 0;
 }
 static int pref_close(h2_pal_pref_namespace_t* n) {
-  (void)n;
-  pending_audio_setting = 0u;
+  free(n);
   return 0;
 }
 static h2_pal_pref_namespace_t ns = {.get_u32 = pref_get,
@@ -624,26 +767,33 @@ static int pref_open(void* u, const char* n, h2_pal_pref_open_mode_t mode,
   (void)u;
   (void)n;
   (void)mode;
-  *p = &ns;
+  pref_namespace_t* instance = calloc(1u, sizeof(*instance));
+  if (!instance) return H2_PAL_ERR_NO_MEMORY;
+  instance->pal = ns;
+  *p = &instance->pal;
   return 0;
 }
 static const h2_pal_pref_vtable_t pvt = {.open = pref_open};
 static const h2_pal_pref_api_t pref_api = {.vtable = &pvt};
 static bool exit_app(void* u) {
   (void)u;
+  if (exit_intent_trial != 0u) {
+    exit_trial_frame = ++frames;
+    return frames > (exit_intent_trial == 1u ? 20u : 22u);
+  }
   if ((mute_failure_mode != 0u || mute_first_gesture) &&
       (frames == 60u || frames == 69u || frames == 95u)) {
-    const unsigned stopped_tracks = mute_first_gesture ? 1u : 2u;
+    const unsigned stopped_tracks = 1u;
     if (frames == 95u) wait_for_pcm(mute_writes + 1u);
     pthread_mutex_lock(&sink.lock);
     if (frames == 95u) {
       assert(sink.opens == stopped_tracks + 1u && sink.writes > mute_writes);
       assert((stored_audio_setting & 3u) == H2_FRUIT_SLICE_MUTE_MUSIC);
-      assert(audio_setting_commits == stopped_tracks + 1u);
+      assert(audio_setting_commits == (mute_first_gesture ? 2u : 3u));
     } else {
       assert(sink.opens == stopped_tracks && sink.closes == stopped_tracks);
       assert((stored_audio_setting & 3u) == 3u &&
-             audio_setting_commits == stopped_tracks);
+             audio_setting_commits == (mute_first_gesture ? 1u : 2u));
       if (frames == 60u)
         mute_writes = sink.writes;
       else
@@ -657,15 +807,19 @@ static bool exit_app(void* u) {
 static uint64_t run_app(bool worker, unsigned pressure) {
   reset_sink();
   frames = commits = touch_phase = 0;
-  monitor_blocked_audio =
-      worker && mute_failure_mode == 0u && !mute_first_gesture;
+  exit_trial_frame = exit_command_rejections = 0u;
+  monitor_blocked_audio = worker && mute_failure_mode == 0u &&
+                          !mute_first_gesture && !toggle_trial &&
+                          !all_muted_start && exit_intent_trial == 0u;
   first_album_progress = false;
   display_progress_checks = pref_progress_checks = 0u;
   finite_command_waits = max_command_wait_ms = 0u;
   max_display_hold_ms = max_pref_hold_ms = 0u;
   pending_audio_setting = audio_setting_commits = 0u;
-  stored_audio_setting =
-      mute_first_gesture ? 0x41550101u : 0u; /* Saved SFX mute. */
+  stored_audio_setting = all_muted_start ? 0x41550103u
+                         : mute_first_gesture
+                             ? 0x41550101u
+                             : 0u; /* Existing audio_v1 format. */
   display_pressure_ms = pressure;
   h2_runtime_config_t c = {
       .board = "continuity", .chip = "host", .target = "desktop"};
@@ -719,14 +873,44 @@ static uint64_t run_app(bool worker, unsigned pressure) {
                                        .should_exit = exit_app,
                                        .prewarm_audio = true,
                                        .audio_worker = worker};
-  assert(h2_fruit_slice_run(rt, &cfg) == 0);
+  const int result = h2_fruit_slice_run(rt, &cfg);
+  assert(result == (exit_intent_trial >= 2u ? H2_PAL_ERR_BUSY : H2_PAL_OK));
   assert(h2_runtime_destroy(&rt) == 0);
-  assert(sink.opens == sink.closes && sink.writes > 0u && commits >= 2u);
+  assert(sink.opens == sink.closes);
+  if (all_muted_start) {
+    assert(sink.opens == 0u && sink.writes == 0u && sink.stops == 0u &&
+           live_queues == 0u);
+    puts("public-App initial saved full mute: no hardware or producer opened");
+    return 0u;
+  }
+  assert(sink.writes > 0u && (toggle_trial || commits >= 2u));
   assert(live_queues == 0u);
-  if (mute_failure_mode != 0u || mute_first_gesture) {
+  if (exit_intent_trial != 0u) {
+    assert(touch_phase == 4u && stored_audio_setting == 0x41550103u);
+    assert(exit_intent_trial == 3u || exit_command_rejections != 0u);
+    assert(pref_join_handle == NULL);
+    printf("public-App final UI intent mode=%u: rejected=%u exit=%d stored=3\n",
+           exit_intent_trial, exit_command_rejections, result);
+    return sink.missing;
+  }
+  if (toggle_trial) {
+    assert(touch_phase ==
+           2u * sizeof(toggle_frames) / sizeof(toggle_frames[0]));
+    printf(
+        "toggle public-App: tap_to_present_max=%llu ms, native_on_main=%u pref_on_main=%u join_on_main=%u opens=%u closes=%u saves=%u\n",
+        (unsigned long long)toggle_max_ms, toggle_native_main_calls,
+        toggle_pref_main_calls, toggle_join_main_calls, sink.opens, sink.closes,
+        audio_setting_commits);
+#ifndef H2_TOGGLE_BASELINE
+    assert(toggle_native_main_calls == 0u && toggle_pref_main_calls == 0u &&
+           toggle_join_main_calls == 0u);
+    assert(sink.opens <= 2u && sink.closes == sink.opens);
+    assert((stored_audio_setting & 3u) == 3u);
+#endif
+  } else if (mute_failure_mode != 0u || mute_first_gesture) {
     assert(touch_phase == (mute_first_gesture ? 4u : 8u));
-    assert(sink.opens == (mute_first_gesture ? 2u : 3u) &&
-           audio_setting_commits == sink.opens);
+    assert(sink.opens == 2u &&
+           audio_setting_commits == (mute_first_gesture ? 2u : 3u));
     printf(
         "public-App mute retry mode=%u first_gesture=%d: stopped, persisted and resumed\n",
         mute_failure_mode, mute_first_gesture);
@@ -746,8 +930,182 @@ static uint64_t run_app(bool worker, unsigned pressure) {
       (unsigned long long)max_pref_hold_ms, max_command_wait_ms);
   return sink.missing;
 }
+static void test_async_pref_and_full_mute_recovery(void) {
+  toggle_trial = false;
+  monitor_blocked_audio = false;
+  for (unsigned fault = 0u; fault < 4u; ++fault) {
+    reset_sink();
+    stored_audio_setting = 0x41550103u;
+    audio_setting_commits = 0u;
+    h2_runtime_t rt = direct_runtime();
+    rt.pref = &pref_api;
+    h2_fruit_slice_audio_t a;
+    assert(h2_fruit_slice_audio_init(&a, &rt) == H2_PAL_OK);
+    a.worker_requested = true;
+    assert(h2_fruit_slice_audio_pump(&a, now()) == H2_PAL_OK);
+    assert(sink.opens == 0u && a.worker == NULL); /* Initial full mute. */
+    pref_start_failures = fault == 0u ? 1u : 0u;
+    pref_join_failures = fault == 1u ? 1u : 0u;
+    pref_commit_failures = fault == 2u ? 2u : 0u;
+    assert(h2_fruit_slice_audio_set_mute(&a, 0u) == H2_PAL_OK);
+    assert(h2_fruit_slice_audio_pump(&a, now()) == H2_PAL_OK);
+    const uint64_t deadline = now() + 5000u;
+    for (;;) {
+      pthread_mutex_lock(&sink.lock);
+      const bool saved = stored_audio_setting == 0x41550100u;
+      pthread_mutex_unlock(&sink.lock);
+      if (saved) break;
+      assert(now() < deadline);
+      assert(h2_fruit_slice_audio_pump(&a, now()) == H2_PAL_OK);
+      delay(5u);
+    }
+    wait_for_pcm(3u);
+    pthread_mutex_lock(&sink.lock);
+    sink.fail_stop = fault == 3u ? 2 : 0;
+    pthread_mutex_unlock(&sink.lock);
+    assert(h2_fruit_slice_audio_set_mute(&a, 3u) == H2_PAL_OK);
+    if (fault == 3u) {
+      for (;;) {
+        pthread_mutex_lock(&sink.lock);
+        const bool stopped = sink.stops != 0u;
+        pthread_mutex_unlock(&sink.lock);
+        if (stopped) break;
+        assert(now() < deadline);
+        delay(1u);
+      }
+      pthread_mutex_lock(&sink.lock);
+      const unsigned before_resume = sink.writes;
+      pthread_mutex_unlock(&sink.lock);
+      assert(h2_fruit_slice_audio_set_mute(&a, 0u) == H2_PAL_OK);
+      assert(h2_fruit_slice_audio_pump(&a, now()) == H2_PAL_OK);
+      wait_for_pcm(before_resume + 2u);
+      assert(h2_fruit_slice_audio_set_mute(&a, 3u) == H2_PAL_OK);
+    }
+    for (;;) {
+      pthread_mutex_lock(&sink.lock);
+      const bool closed =
+          sink.closes == sink.opens && stored_audio_setting == 0x41550103u;
+      pthread_mutex_unlock(&sink.lock);
+      if (closed) break;
+      assert(now() < deadline);
+      assert(h2_fruit_slice_audio_pump(&a, now()) == H2_PAL_OK);
+      delay(5u);
+    }
+    assert(h2_fruit_slice_audio_close(&a) == H2_PAL_OK);
+    assert(live_queues == 0u && pref_join_handle == NULL);
+    assert(pref_start_failures == 0u && pref_join_failures == 0u &&
+           pref_commit_failures == 0u);
+  }
+}
+
+static void test_pending_controls_and_receive_failure(void) {
+  for (unsigned failure = 0u; failure < 2u; ++failure) {
+    reset_sink();
+    stored_audio_setting = 0x41550100u;
+    h2_runtime_t rt = direct_runtime();
+    rt.pref = &pref_api;
+    h2_fruit_slice_audio_t a;
+    assert(h2_fruit_slice_audio_init(&a, &rt) == 0);
+    a.worker_requested = true;
+    assert(h2_fruit_slice_audio_prepare(&a) == 0);
+    command_receive_io = failure != 0u;
+    assert(h2_fruit_slice_audio_set_mute(&a, 3u) == 0);
+    if (failure) assert(wait_for_audio_error(&a) == H2_PAL_ERR_IO);
+    /* One path interrupts a queued ramp; the other keeps every receive
+     * failing so the accepted command never reaches the mixer at all. */
+    assert(h2_fruit_slice_audio_suspend(&a) == 0);
+    assert(a.mute == 3u && a.ramp_left == 0u && a.track == NULL);
+    assert(stored_audio_setting == 0x41550103u && live_queues == 0u);
+    command_receive_io = false;
+    assert(h2_fruit_slice_audio_pump(&a, now()) == 0 && a.worker == NULL);
+    assert(h2_fruit_slice_audio_set_mute(&a, 0u) == 0);
+    assert(h2_fruit_slice_audio_pump(&a, now()) == 0);
+    wait_for_pcm(2u);
+    assert(h2_fruit_slice_audio_close(&a) == 0);
+    assert(sink.opens == sink.closes && live_queues == 0u);
+  }
+  reset_sink();
+  stored_audio_setting = 0x41550103u;
+  h2_runtime_t rt = direct_runtime();
+  rt.pref = &pref_api;
+  h2_fruit_slice_audio_t a;
+  assert(h2_fruit_slice_audio_init(&a, &rt) == 0);
+  a.worker_requested = true;
+  const unsigned attempts = producer_start_attempts;
+  start_failures = 1;
+  assert(h2_fruit_slice_audio_set_mute(&a, 1u) == 0);
+  assert(a.mute == 1u && !a.available && a.worker == NULL);
+  for (unsigned n = 0u; n < 65u; ++n)
+    assert(h2_fruit_slice_audio_set_mute(&a, 1u) == 0);
+  assert(producer_start_attempts == attempts + 1u &&
+         stored_audio_setting == 0x41550101u && live_queues == 0u);
+  pref_commit_failures = 1u;
+  assert(h2_fruit_slice_audio_set_mute(&a, 2u) == H2_PAL_ERR_IO);
+  assert(a.mute == 2u && a.pref_dirty);
+  const uint64_t retry_deadline = now() + 5000u;
+  while (a.pref_dirty) {
+    assert(now() < retry_deadline);
+    assert(h2_fruit_slice_audio_set_mute(&a, 2u) == H2_PAL_OK);
+    delay(5u);
+  }
+  assert(pref_commit_failures == 0u &&
+         producer_start_attempts == attempts + 1u);
+  pref_commit_failures = 1u;
+  assert(h2_fruit_slice_audio_set_mute(&a, 1u) == H2_PAL_ERR_IO);
+  /* Exit before the retry deadline still flushes the last accepted setting. */
+  assert(h2_fruit_slice_audio_close(&a) == 0);
+  assert(pref_commit_failures == 0u && !a.pref_dirty &&
+         stored_audio_setting == 0x41550101u);
+}
+
+static void test_final_ui_intent_after_writer_and_cleanup_retry(void) {
+  reset_sink();
+  stored_audio_setting = 0x41550100u;
+  h2_runtime_t rt = direct_runtime();
+  rt.pref = &pref_api;
+  h2_fruit_slice_audio_t a;
+  assert(h2_fruit_slice_audio_init(&a, &rt) == 0);
+  a.worker_requested = true;
+  assert(h2_fruit_slice_audio_prepare(&a) == 0);
+  assert(h2_fruit_slice_audio_set_mute(&a, 1u) == 0);
+  const uint64_t deadline = now() + 5000u;
+  for (;;) {
+    pthread_mutex_lock(&sink.lock);
+    const bool writer = pref_join_handle != NULL;
+    pthread_mutex_unlock(&sink.lock);
+    if (writer) break;
+    assert(now() < deadline);
+    delay(1u);
+  }
+  /* A final rejected playback request must not change the accepted mask,
+   * but the App exit variant still owns its newer UI persistence intent. */
+  exit_intent_trial = 1u;
+  exit_trial_frame = 20u;
+  assert(h2_fruit_slice_audio_set_mute(&a, 3u) == H2_PAL_ERR_FULL);
+  assert(a.mute == 1u);
+  exit_intent_trial = 0u;
+  queue_close_failures = 1;
+  assert(h2_fruit_slice_audio_close_with_mute(&a, 3u) == H2_PAL_ERR_IO);
+  assert(a.worker != NULL && a.mute == 1u);
+  join_failures = 1;
+  assert(h2_fruit_slice_audio_close_with_mute(&a, 3u) == H2_PAL_ERR_BUSY);
+  assert(a.worker != NULL && a.mute == 1u);
+  assert(h2_fruit_slice_audio_close_with_mute(&a, 3u) == 0);
+  assert(a.mute == 3u && a.worker == NULL && a.pcm == NULL &&
+         live_queues == 0u && pref_join_handle == NULL);
+  assert(stored_audio_setting == 0x41550103u);
+  delay(50u);
+  assert(stored_audio_setting == 0x41550103u); /* No late old writer. */
+}
+
 int main(void) {
   init_queue_api();
+  if (getenv("H2_TOGGLE_ONLY")) {
+    toggle_trial = true;
+    (void)run_app(true, 8u);
+    return 0;
+  }
+  test_pending_controls_and_receive_failure();
   test_pcm_identity();
   test_owner_lifecycle_and_latency();
   test_mute_shutdown_retry();
@@ -764,5 +1122,16 @@ int main(void) {
   mute_first_gesture = true;
   for (mute_failure_mode = 0u; mute_failure_mode <= 3u; ++mute_failure_mode)
     (void)run_app(true, 8u);
+  mute_failure_mode = 0u;
+  mute_first_gesture = false;
+  toggle_trial = true;
+  (void)run_app(true, 8u);
+  test_async_pref_and_full_mute_recovery();
+  test_final_ui_intent_after_writer_and_cleanup_retry();
+  for (exit_intent_trial = 1u; exit_intent_trial <= 3u; ++exit_intent_trial)
+    (void)run_app(true, 8u);
+  exit_intent_trial = 0u;
+  all_muted_start = true;
+  (void)run_app(true, 8u);
   puts("audio worker continuity tests passed");
 }

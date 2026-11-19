@@ -85,7 +85,10 @@ cc_library(
 
 h2_tasks(
     name = "audio_tasks",
-    tasks = ["fruit-slice/audio"],
+    tasks = [
+        "fruit-slice/audio",
+        "fruit-slice/audio-pref",
+    ],
 )
 
 cc_library(
@@ -111,6 +114,7 @@ cc_library(
         ":audio_tasks",
         ":fonts",
         "//libs/runtime",
+        "//libs/sync/atomic",
     ],
 )
 

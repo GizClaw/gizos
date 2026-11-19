@@ -57,8 +57,13 @@ typedef struct h2_fruit_slice_config {
    * Default false keeps browser/mobile gesture-based hardware startup. */
   bool prewarm_audio;
   /** Opt into an independent PCM producer using Runtime task/queue APIs.
-   * The worker owns audio state; pause/mute/exit join it before teardown.
-   * Hosts must declare fruit-slice/audio scheduling policy. Default false. */
+   * The worker owns audio state; pause/exit join it before teardown. Mute
+   * controls queue without waiting for hardware or persistence. A single
+   * short-lived Pref task saves coalesced settings without starving PCM.
+   * Hosts declare fruit-slice/audio and fruit-slice/audio-pref task policies.
+   * If optional producer startup fails, playback stays disabled and settings
+   * use the cooperative persistence path, including bounded retries.
+   * Default false. */
   bool audio_worker;
 } h2_fruit_slice_config_t;
 
