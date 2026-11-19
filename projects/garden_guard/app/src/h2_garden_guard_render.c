@@ -414,9 +414,11 @@ static uint32_t next_glyph(const char** text) {
              : (uint32_t)'?';
 }
 
-static int32_t han_size(int32_t scale) { return scale == 1 ? 10 : 7 * scale; }
+static int32_t han_size(int32_t scale) {
+  return scale == 1 ? HAN_SMALL_SIDE : 7 * scale;
+}
 
-static const uint32_t* han_bitmap(uint32_t code) {
+static const uint32_t* han_bitmap(uint32_t code, bool small) {
   size_t lo = 0, hi = sizeof(k_han) / sizeof(k_han[0]);
   while (lo < hi) {
     const size_t mid = lo + (hi - lo) / 2u;
@@ -426,7 +428,7 @@ static const uint32_t* han_bitmap(uint32_t code) {
       hi = mid;
   }
   return lo < sizeof(k_han) / sizeof(k_han[0]) && k_han[lo].code == code
-             ? k_han[lo].rows
+             ? (small ? k_han[lo].small : k_han[lo].rows)
              : NULL;
 }
 
@@ -451,9 +453,10 @@ static void text_layer(h2_garden_guard_canvas_t* canvas, const char* text,
                        int32_t x, int32_t y, int32_t scale, uint16_t color,
                        uint32_t alpha) {
   const int32_t line_height = label_height(text, scale);
+  const int32_t font_side = scale == 1 ? HAN_SMALL_SIDE : HAN_SIDE;
   while (*text != '\0') {
     const uint32_t code = next_glyph(&text);
-    const uint32_t* han = code >= 128u ? han_bitmap(code) : NULL;
+    const uint32_t* han = code >= 128u ? han_bitmap(code, scale == 1) : NULL;
     if (han != NULL) {
       const int32_t px = han_size(scale);
       region_t bounds;
@@ -462,9 +465,9 @@ static void text_layer(h2_garden_guard_canvas_t* canvas, const char* text,
         for (int32_t row = bounds.y0; row < bounds.y1; ++row) {
           uint16_t* dest = row_at(canvas, row);
           uint8_t* depth = depth_row(canvas, row);
-          const uint32_t bits = han[((row - y) * 2 + 1) * HAN_SIDE / (px * 2)];
+          const uint32_t bits = han[((row - y) * 2 + 1) * font_side / (px * 2)];
           for (int32_t col = bounds.x0; col < bounds.x1; ++col) {
-            const int32_t sx = ((col - x) * 2 + 1) * HAN_SIDE / (px * 2);
+            const int32_t sx = ((col - x) * 2 + 1) * font_side / (px * 2);
             const uint32_t coverage = (bits >> (2 * sx)) & 3u;
             if (coverage != 0u)
               plot(canvas, dest, depth, col, color, alpha * coverage / 3u);

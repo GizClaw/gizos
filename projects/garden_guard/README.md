@@ -51,14 +51,19 @@ The versioned `profile` blob in the `garden_guard` Pref namespace holds the jour
 
 The title and pause menus can switch between English and Simplified Chinese. The selection is a separate `language` preference in the `garden_guard` namespace. The title artwork is shared by both languages, and the software renderer draws the localized title and controls. The Web wrapper follows the game's current selection.
 
-The Chinese UI bitmap in `app/src/h2_garden_guard_zh.inc` uses the repository's shared [Noto Sans SC Bold](../../libs/ui/fonts/noto_sans_sc/) font under the [SIL Open Font License 1.1](tools/noto_sans_sc_bitmap_license.txt). The subset contains only the characters used by the canvas UI. Regenerate it from the repository root with a C compiler and FreeType development headers. The tool fails if the source font does not cover a character.
+The canvas uses a bitmap subset of Droid Sans Fallback Regular. The browser instructions use a small WOFF subset of the same face. Both use [the Android Open Source Project font](https://android.googlesource.com/platform/frameworks/base/+/63ade05d76785975fc3292ca030abbaa1dda8891/data/fonts/DroidSansFallback.ttf) from `android-4.4.4_r2` (`63ade05d76785975fc3292ca030abbaa1dda8891`). Its PostScript name is `DroidSansFallback`, version `2.55b`. The [Apache 2.0 license and attribution](targets/pkg_tar/web/droid-sans-fallback-notice.txt) accompany the derived assets. The original font is only needed to regenerate these files. The canvas generator checks each Chinese code point in the UI against the font's Unicode map and uses a common baseline for the 16-pixel master and the hinted 10-pixel small text.
+
+Use FreeType development headers, Python 3, and `fonttools==4.60.2` to regenerate the subsets from the repository root. The command verifies the source SHA-256 before writing either subset.
 
 ```sh
+scratch=$(mktemp -d)
+curl -fL 'https://android.googlesource.com/platform/frameworks/base/+/63ade05d76785975fc3292ca030abbaa1dda8891/data/fonts/DroidSansFallback.ttf?format=TEXT' \
+  | python3 -c 'import base64, sys; sys.stdout.buffer.write(base64.b64decode(sys.stdin.buffer.read()))' \
+  > "$scratch/DroidSansFallback.ttf"
 cc $(pkg-config --cflags freetype2) projects/garden_guard/tools/generate_han.c \
-  $(pkg-config --libs freetype2) -o /path/to/scratch/generate_han
-/path/to/scratch/generate_han libs/ui/fonts/noto_sans_sc/NotoSansSC-Bold.ttf \
-  projects/garden_guard/app/src/h2_garden_guard_render.c \
-  > projects/garden_guard/app/src/h2_garden_guard_zh.inc
+  $(pkg-config --libs freetype2) -o "$scratch/generate_han"
+python3 projects/garden_guard/tools/generate_droid.py \
+  "$scratch/DroidSansFallback.ttf" "$scratch/generate_han"
 ```
 
 The zombie sprites and journal portraits are generated from the original drawing paths. See the [sprite sources](tools/zombie_art/) for the format and regeneration command.
