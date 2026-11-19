@@ -224,7 +224,13 @@ int h2_alipay_client_post(const h2_alipay_client_config_t* config,
 }
 
 typedef union json_block {
+#if defined(_MSC_VER) && !defined(__clang__)
+  long double alignment;
+  long long integer_alignment;
+  void* pointer_alignment;
+#else
   max_align_t alignment;
+#endif
   size_t size;
 } json_block_t;
 
