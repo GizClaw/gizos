@@ -9,7 +9,7 @@
 static h2_runtime_t runtime;
 static unsigned configured;
 static int configure_result;
-static const h2_alipay_payment_api_t payment;
+static const h2_alipay_payment_api_t payment = {0};
 
 h2_pal_result_t h2_alipay_tiga_protocol_configure(h2_runtime_t* current,
                                                   uint32_t timestamp) {
