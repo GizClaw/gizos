@@ -631,7 +631,7 @@ static h2_pal_result_t play(session_t* s) {
     h2_fruit_slice_game_step(&s->game, (uint32_t)dt);
     s->phase_mask |= 1u << (unsigned)s->game.phase;
     if (h2_fruit_slice_cards_reveal_active(&s->game.cards)) ++s->reveal_frames;
-    if (s->audio.mute != s->game.audio_mute) {
+    if (s->audio.mute != s->game.audio_mute || s->audio.pref_dirty) {
       const int saved =
           h2_fruit_slice_audio_set_mute(&s->audio, s->game.audio_mute);
       if (saved != H2_PAL_OK)

@@ -61,6 +61,8 @@ typedef struct h2_fruit_slice_config {
    * controls queue without waiting for hardware or persistence. A single
    * short-lived Pref task saves coalesced settings without starving PCM.
    * Hosts declare fruit-slice/audio and fruit-slice/audio-pref task policies.
+   * If optional producer startup fails, playback stays disabled and settings
+   * use the cooperative persistence path, including bounded retries.
    * Default false. */
   bool audio_worker;
 } h2_fruit_slice_config_t;

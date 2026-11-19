@@ -41,6 +41,12 @@ typedef struct h2_fruit_slice_audio {
    */
   int32_t sfx_gain, music_gain, sfx_step, music_step;
   uint32_t ramp_left;
+  /* Muting waits for accepted PCM and then drain, each with a bounded budget
+   * derived from the advertised queue depth. Only the mixer owner uses these.
+   */
+  uint32_t mute_timeout_ms;
+  uint64_t mute_fade_after_ms, mute_drain_after_ms;
+  bool closing;
   bool pref_dirty;
   uint64_t pref_retry_ms;
   bool available, speaker_started;
@@ -66,10 +72,16 @@ void h2_fruit_slice_audio_emit(h2_fruit_slice_audio_t* audio,
  * ramp its digital bus over 10 ms. The worker releases hardware after a full
  * mute fade and retries failed control cleanup/settings writes. Queue pressure
  * leaves the previous accepted value so the App retries on its next frame.
- * Cooperative targets apply the same ramp and persist synchronously. */
+ * If optional producer start fails, playback stays disabled and settings use
+ * the cooperative save path rather than retrying task allocation each frame.
+ * Cooperative/disabled targets persist synchronously, retry dirty settings
+ * after 500 ms and make one final best-effort attempt on close. */
 int h2_fruit_slice_audio_set_mute(h2_fruit_slice_audio_t* audio, uint8_t mute);
 /* At most three native frames per call, at most 20 ms of lookahead, write
- * timeout zero, no backlog replay. Service at frame boundaries/during waits. */
+ * timeout zero. Rejected frames commit no voice/music/gain progress; subsequent
+ * controls regenerate from the last accepted state. Full mute retries the fade
+ * and nonblocking drain within separate finite budgets, then releases hardware
+ * even if its consumer never progresses. Service at frame boundaries/waits. */
 int h2_fruit_slice_audio_pump(h2_fruit_slice_audio_t* audio, uint64_t now_ms);
 /* Close track and stop speaker, discard voices. Safe to resume by pumping.
  * Runtime consumes a valid close handle even on error; speaker stop is still

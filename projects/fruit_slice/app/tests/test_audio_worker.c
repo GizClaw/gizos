@@ -167,6 +167,8 @@ static void reset_sink(void) {
 
 static int join_failures, start_failures, queue_create_failures,
     queue_close_failures, queue_partial_close_failures;
+static bool command_receive_io;
+static unsigned producer_start_attempts;
 static unsigned live_queues, queue_close_calls, command_sends;
 static h2_pal_queue_t* worker_command_queue;
 static unsigned finite_command_waits, max_command_wait_ms;
@@ -215,6 +217,10 @@ static int queue_send(void* u, h2_pal_queue_t* q, const void* item,
 static int queue_recv(void* u, h2_pal_queue_t* q, void* item,
                       uint32_t timeout_ms) {
   (void)u;
+  pthread_mutex_lock(&sink.lock);
+  const bool failed = q == worker_command_queue && command_receive_io;
+  pthread_mutex_unlock(&sink.lock);
+  if (failed) return H2_PAL_ERR_IO;
   if (q == worker_command_queue && timeout_ms != 0u &&
       timeout_ms != H2_PAL_QUEUE_WAIT_FOREVER) {
     /* Nominal service waits must fit inside one 320-sample/16kHz PCM frame.
@@ -244,6 +250,11 @@ static int task_start(void* u, const h2_pal_task_options_t* opt,
                       h2_pal_task_entry_t entry, void* ctx,
                       h2_pal_task_t** out) {
   (void)u;
+  if (strcmp(opt->name, "fruit-slice/audio") == 0) {
+    pthread_mutex_lock(&sink.lock);
+    ++producer_start_attempts;
+    pthread_mutex_unlock(&sink.lock);
+  }
   if (start_failures) {
     --start_failures;
     return H2_PAL_ERR_NO_MEMORY;
@@ -944,6 +955,66 @@ static void test_async_pref_and_full_mute_recovery(void) {
   }
 }
 
+static void test_pending_controls_and_receive_failure(void) {
+  for (unsigned failure = 0u; failure < 2u; ++failure) {
+    reset_sink();
+    stored_audio_setting = 0x41550100u;
+    h2_runtime_t rt = direct_runtime();
+    rt.pref = &pref_api;
+    h2_fruit_slice_audio_t a;
+    assert(h2_fruit_slice_audio_init(&a, &rt) == 0);
+    a.worker_requested = true;
+    assert(h2_fruit_slice_audio_prepare(&a) == 0);
+    command_receive_io = failure != 0u;
+    assert(h2_fruit_slice_audio_set_mute(&a, 3u) == 0);
+    if (failure) assert(wait_for_audio_error(&a) == H2_PAL_ERR_IO);
+    /* One path interrupts a queued ramp; the other keeps every receive
+     * failing so the accepted command never reaches the mixer at all. */
+    assert(h2_fruit_slice_audio_suspend(&a) == 0);
+    assert(a.mute == 3u && a.ramp_left == 0u && a.track == NULL);
+    assert(stored_audio_setting == 0x41550103u && live_queues == 0u);
+    command_receive_io = false;
+    assert(h2_fruit_slice_audio_pump(&a, now()) == 0 && a.worker == NULL);
+    assert(h2_fruit_slice_audio_set_mute(&a, 0u) == 0);
+    assert(h2_fruit_slice_audio_pump(&a, now()) == 0);
+    wait_for_pcm(2u);
+    assert(h2_fruit_slice_audio_close(&a) == 0);
+    assert(sink.opens == sink.closes && live_queues == 0u);
+  }
+  reset_sink();
+  stored_audio_setting = 0x41550103u;
+  h2_runtime_t rt = direct_runtime();
+  rt.pref = &pref_api;
+  h2_fruit_slice_audio_t a;
+  assert(h2_fruit_slice_audio_init(&a, &rt) == 0);
+  a.worker_requested = true;
+  const unsigned attempts = producer_start_attempts;
+  start_failures = 1;
+  assert(h2_fruit_slice_audio_set_mute(&a, 1u) == 0);
+  assert(a.mute == 1u && !a.available && a.worker == NULL);
+  for (unsigned n = 0u; n < 65u; ++n)
+    assert(h2_fruit_slice_audio_set_mute(&a, 1u) == 0);
+  assert(producer_start_attempts == attempts + 1u &&
+         stored_audio_setting == 0x41550101u && live_queues == 0u);
+  pref_commit_failures = 1u;
+  assert(h2_fruit_slice_audio_set_mute(&a, 2u) == H2_PAL_ERR_IO);
+  assert(a.mute == 2u && a.pref_dirty);
+  const uint64_t retry_deadline = now() + 5000u;
+  while (a.pref_dirty) {
+    assert(now() < retry_deadline);
+    assert(h2_fruit_slice_audio_set_mute(&a, 2u) == H2_PAL_OK);
+    delay(5u);
+  }
+  assert(pref_commit_failures == 0u &&
+         producer_start_attempts == attempts + 1u);
+  pref_commit_failures = 1u;
+  assert(h2_fruit_slice_audio_set_mute(&a, 1u) == H2_PAL_ERR_IO);
+  /* Exit before the retry deadline still flushes the last accepted setting. */
+  assert(h2_fruit_slice_audio_close(&a) == 0);
+  assert(pref_commit_failures == 0u && !a.pref_dirty &&
+         stored_audio_setting == 0x41550101u);
+}
+
 int main(void) {
   init_queue_api();
   if (getenv("H2_TOGGLE_ONLY")) {
@@ -951,6 +1022,7 @@ int main(void) {
     (void)run_app(true, 8u);
     return 0;
   }
+  test_pending_controls_and_receive_failure();
   test_pcm_identity();
   test_owner_lifecycle_and_latency();
   test_mute_shutdown_retry();

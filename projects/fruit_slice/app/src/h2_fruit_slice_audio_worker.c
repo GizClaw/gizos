@@ -26,15 +26,20 @@ struct h2_fruit_slice_audio_worker {
   h2_pal_queue_t* snapshots;
   h2_pal_task_t* task;
   audio_snapshot_t seen; /* Only the main thread accesses these fields. */
-  bool enabled, stop_requested, close_confirmed;
+  bool enabled, close_confirmed;
+  /* Published only after a successful send. Shutdown's acquire of stop also
+   * observes the last accepted UI value, even if receive fails before consume.
+   */
+  h2_atomic_bool_t stop_requested;
+  h2_atomic_u8_t accepted_mute;
   /* A single short-lived Pref task prevents storage I/O from starving PCM.
    * Arguments are immutable until join; done publishes its result. */
   h2_pal_task_t* pref_task;
   h2_atomic_bool_t pref_done;
   uint8_t saving_mute;
   int pref_result;
-  uint64_t pref_after_ms, drain_after_ms;
-  bool pref_dirty, pref_completed, closing;
+  uint64_t pref_after_ms;
+  bool pref_dirty, pref_completed;
 };
 
 static audio_snapshot_t snapshot(const h2_fruit_slice_audio_t* audio,
@@ -117,10 +122,12 @@ static void worker_run(void* user) {
   bool enabled = false;
   int result = H2_PAL_OK;
   for (;;) {
+    if (h2_atomic_bool_load(&w->stop_requested, H2_ATOMIC_ACQUIRE)) break;
     audio_command_t command;
     const bool service =
-        enabled && (audio->mute != 3u || audio->track != NULL ||
-                    audio->speaker_started || w->pref_dirty || w->pref_task);
+        audio->closing || w->pref_dirty || w->pref_task != NULL ||
+        (enabled &&
+         (audio->mute != 3u || audio->track != NULL || audio->speaker_started));
     int received = h2_pal_queue_recv(queue, w->commands, &command,
                                      service ? SERVICE_MS : UINT32_MAX);
     bool changed_mute = false;
@@ -130,7 +137,6 @@ static void worker_run(void* user) {
         w->pref_dirty = true;
         w->pref_completed = false;
         changed_mute = true;
-        w->drain_after_ms = 0u;
       } else if (result == H2_PAL_OK) {
         if (command.enable)
           enabled = true;
@@ -143,64 +149,47 @@ static void worker_run(void* user) {
     uint64_t now = 0u;
     const int timed = h2_pal_time_get_monotonic_ms(audio->runtime->time, &now);
     if (changed_mute) w->pref_after_ms = now + 100u; /* Coalesce rapid taps. */
-    if (received == H2_PAL_ERR_CLOSED) {
-      /* Flush the latest accepted setting once, and retain its context until
-       * any started Pref task has really joined. Persistence errors are logged
-       * without trapping App exit in an endless save retry. */
-      w->pref_completed = false;
-      do {
-        service_preferences(w, now, true);
-        if (w->pref_task != NULL)
-          (void)h2_pal_time_sleep_ms(audio->runtime->time, SERVICE_MS);
-      } while (w->pref_task != NULL);
-      break;
-    }
+    if (received == H2_PAL_ERR_CLOSED) break;
     const bool receive_failed = received != H2_PAL_OK &&
                                 received != H2_PAL_ERR_WOULD_BLOCK &&
                                 received != H2_PAL_ERR_TIMEOUT;
     if (receive_failed) result = received;
     if (timed != H2_PAL_OK) result = timed;
-    /* Full mute keeps only the existing bounded controller task idle. Its
-     * track/speaker are released after a zero-ending fade, including retries.
-     * A quick unmute can reverse the fade without a DAC close/open cycle. */
-    if (w->closing) {
+    /* The common pump owns accepted-frame fades and nonblocking drain. Before
+     * the gesture gate there are no submitted samples to fade or drain. */
+    if (audio->closing || (!enabled && audio->mute == 3u &&
+                           (audio->track != NULL || audio->speaker_started))) {
       const int closed = h2_fruit_slice_audio_suspend(audio);
       if (closed != H2_PAL_OK)
         report_control(audio, "MUTE_CLOSE_RETRY", closed);
-      w->closing = audio->track != NULL || audio->speaker_started;
     }
-    if (!w->closing && audio->mute == 3u &&
-        (!enabled || audio->ramp_left == 0u)) {
-      if (audio->track != NULL && enabled && w->drain_after_ms == 0u)
-        w->drain_after_ms = now + 100u;
-      int drained = audio->track != NULL && enabled
-                        ? h2_pal_audio_track_drain(audio->track, 0u)
-                        : H2_PAL_OK;
-      const bool waiting = (drained == H2_PAL_ERR_WOULD_BLOCK ||
-                            drained == H2_PAL_ERR_TIMEOUT) &&
-                           now < w->drain_after_ms;
-      if (!waiting && (audio->track || audio->speaker_started)) {
-        const int closed = h2_fruit_slice_audio_suspend(audio);
-        if (closed != H2_PAL_OK)
-          report_control(audio, "MUTE_CLOSE_RETRY", closed);
-        w->closing = audio->track != NULL || audio->speaker_started;
-      }
-    } else if (!w->closing && enabled && result == H2_PAL_OK) {
+    if (!audio->closing && enabled && result == H2_PAL_OK)
       result = h2_fruit_slice_audio_pump(audio, now);
-    }
     service_preferences(w, now, false);
     const audio_snapshot_t current = snapshot(audio, result);
     (void)h2_pal_queue_send_latest(queue, w->snapshots, &current);
-    if (receive_failed) {
-      while (w->pref_task != NULL) {
-        service_preferences(w, now, true);
-        if (w->pref_task)
-          (void)h2_pal_time_sleep_ms(audio->runtime->time, SERVICE_MS);
-      }
-      return;
-    }
     if (result != H2_PAL_OK) enabled = false;
+    /* Retain the owner after receive errors until main requests stop. The
+     * queue can contain accepted but unconsumed controls. Never busy-spin on
+     * an immediately failing receive, or bypass the shared shutdown flush. */
+    if (receive_failed)
+      (void)h2_pal_time_sleep_ms(audio->runtime->time, SERVICE_MS);
   }
+  const uint8_t latest =
+      h2_atomic_u8_load(&w->accepted_mute, H2_ATOMIC_ACQUIRE);
+  if (latest != audio->mute) {
+    h2_fruit_slice_audio_apply_mute(audio, latest);
+    w->pref_dirty = true;
+  }
+  /* Every exit path flushes the latest accepted value once. Immutable writer
+   * arguments remain owned until successful join, including join retries. */
+  w->pref_completed = false;
+  do {
+    service_preferences(w, 0u, true);
+    if (w->pref_task != NULL)
+      (void)h2_pal_time_sleep_ms(audio->runtime->time, SERVICE_MS);
+  } while (w->pref_task != NULL);
+  audio->pref_dirty = w->pref_dirty;
 }
 
 int h2_fruit_slice_audio_worker_start(h2_fruit_slice_audio_t* audio) {
@@ -220,13 +209,21 @@ int h2_fruit_slice_audio_worker_start(h2_fruit_slice_audio_t* audio) {
   memset(w, 0, sizeof(*w));
   w->mixer = *audio;
   w->mixer.worker_requested = false;
+  w->pref_dirty = audio->pref_dirty;
+  w->mixer.pref_dirty = false; /* Only the separate Pref task performs I/O. */
   w->seen = snapshot(audio, H2_PAL_OK);
   h2_pal_queue_config_t config = {.name = "fruit-audio-commands",
                                   .item_size = sizeof(audio_command_t),
                                   .item_count = COMMANDS,
                                   .allocator = audio->runtime->mem};
   int rc = h2_atomic_bool_init(&w->pref_done, false);
+  if (rc == H2_ATOMIC_OK) rc = h2_atomic_bool_init(&w->stop_requested, false);
+  if (rc == H2_ATOMIC_OK)
+    rc = h2_atomic_u8_init(&w->accepted_mute, audio->mute);
   if (rc != H2_ATOMIC_OK) {
+    h2_atomic_bool_destroy(&w->pref_done);
+    h2_atomic_bool_destroy(&w->stop_requested);
+    h2_atomic_u8_destroy(&w->accepted_mute);
     h2_pal_mem_free(audio->runtime->mem, w);
     return H2_PAL_ERR_NO_MEMORY;
   }
@@ -247,12 +244,16 @@ int h2_fruit_slice_audio_worker_start(h2_fruit_slice_audio_t* audio) {
     h2_pal_queue_destroy(queue, w->snapshots);
     h2_pal_queue_destroy(queue, w->commands);
     h2_atomic_bool_destroy(&w->pref_done);
+    h2_atomic_bool_destroy(&w->stop_requested);
+    h2_atomic_u8_destroy(&w->accepted_mute);
     h2_pal_mem_free(audio->runtime->mem, w);
     return rc;
   }
   /* The task starts idle. Ownership transfers only after successful start;
    * every later provider call, including close, waits for ownership return. */
   audio->worker = w;
+  audio->pref_dirty =
+      false; /* Pending persistence now belongs to the worker. */
   audio->pcm = NULL;
   audio->track = NULL;
   audio->speaker_started = false;
@@ -262,11 +263,15 @@ int h2_fruit_slice_audio_worker_start(h2_fruit_slice_audio_t* audio) {
 int h2_fruit_slice_audio_worker_mute(h2_fruit_slice_audio_t* audio,
                                      uint8_t mute) {
   struct h2_fruit_slice_audio_worker* w = audio->worker;
-  if (w->stop_requested) return H2_PAL_ERR_BUSY;
+  if (h2_atomic_bool_load(&w->stop_requested, H2_ATOMIC_ACQUIRE))
+    return H2_PAL_ERR_BUSY;
   const audio_command_t command = {.set_mute = true, .mute = mute};
   const int rc =
       h2_pal_queue_send(audio->runtime->queue, w->commands, &command, 0u);
-  if (rc == H2_PAL_OK) audio->mute = mute;
+  if (rc == H2_PAL_OK) {
+    h2_atomic_u8_store(&w->accepted_mute, mute, H2_ATOMIC_RELEASE);
+    audio->mute = mute;
+  }
   return rc;
 }
 
@@ -274,7 +279,7 @@ void h2_fruit_slice_audio_worker_emit(h2_fruit_slice_audio_t* audio,
                                       h2_fruit_slice_sound_t sound,
                                       uint64_t now_ms) {
   struct h2_fruit_slice_audio_worker* w = audio->worker;
-  if (w->stop_requested) {
+  if (h2_atomic_bool_load(&w->stop_requested, H2_ATOMIC_ACQUIRE)) {
     ++audio->dropped_commands;
     return;
   }
@@ -289,7 +294,8 @@ int h2_fruit_slice_audio_worker_poll(h2_fruit_slice_audio_t* audio) {
   /* Close can fail after changing the queue predicate but before waking its
    * receiver. Suppress activation and polling from the first stop request;
    * the caller must retry close/join without permanently disabling audio. */
-  if (w->stop_requested) return H2_PAL_OK;
+  if (h2_atomic_bool_load(&w->stop_requested, H2_ATOMIC_ACQUIRE))
+    return H2_PAL_OK;
   if (!w->enabled) {
     const audio_command_t command = {.enable = true};
     int rc =
@@ -313,7 +319,7 @@ int h2_fruit_slice_audio_worker_poll(h2_fruit_slice_audio_t* audio) {
 int h2_fruit_slice_audio_worker_stop(h2_fruit_slice_audio_t* audio) {
   struct h2_fruit_slice_audio_worker* w = audio->worker;
   if (w == NULL) return H2_PAL_OK;
-  w->stop_requested = true;
+  h2_atomic_bool_store(&w->stop_requested, true, H2_ATOMIC_RELEASE);
   if (!w->close_confirmed) {
     int rc = h2_pal_queue_close(audio->runtime->queue, w->commands);
     if (rc != H2_PAL_OK) return rc;
@@ -339,6 +345,8 @@ int h2_fruit_slice_audio_worker_stop(h2_fruit_slice_audio_t* audio) {
   h2_pal_queue_destroy(audio->runtime->queue, w->snapshots);
   h2_pal_queue_destroy(audio->runtime->queue, w->commands);
   h2_atomic_bool_destroy(&w->pref_done);
+  h2_atomic_bool_destroy(&w->stop_requested);
+  h2_atomic_u8_destroy(&w->accepted_mute);
   h2_pal_mem_free(audio->runtime->mem, w);
   return H2_PAL_OK;
 }
