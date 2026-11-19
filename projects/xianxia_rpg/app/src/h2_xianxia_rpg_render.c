@@ -3891,13 +3891,15 @@ static void draw_battle_static(canvas_t* canvas, const game_t* game) {
     const char* companion = h2_xianxia_rpg_actor_name(
         h2_xianxia_rpg_c10_wenzhou(game) ? H2_XIANXIA_RPG_ACTOR_WENZHOU
                                          : H2_XIANXIA_RPG_ACTOR_JIANGLI);
-    if (b->finale)
+    const bool can_switch =
+        b->finale && b->state == H2_XIANXIA_RPG_BATTLE_COMMAND;
+    if (can_switch)
       (void)snprintf(line, sizeof(line),
                      h2_xianxia_rpg_c10_text[H2_XIANXIA_RPG_C10_SWITCH],
                      companion);
-    text_centered(canvas, false, b->finale ? line : info->name,
+    text_centered(canvas, false, can_switch ? line : info->name,
                   (float)(foe->x + foe->w / 2), foe->y,
-                  b->finale && h2_xianxia_rpg_c10_instruction(game) == 5u
+                  can_switch && h2_xianxia_rpg_c10_instruction(game) == 5u
                       ? C_GOLD
                       : C_TEXT,
                   256u);
@@ -3915,7 +3917,10 @@ static void draw_battle_static(canvas_t* canvas, const game_t* game) {
     if (b->finale) {
       const uint32_t phase =
           (uint32_t)(b->enemy - H2_XIANXIA_RPG_ENEMY_HOME_DRAGON);
-      if (h2_xianxia_rpg_c10_instruction(game) == 5u)
+      if (b->state == H2_XIANXIA_RPG_BATTLE_VICTORY)
+        (void)snprintf(line, sizeof(line), "%s",
+                       h2_xianxia_rpg_c10_text[H2_XIANXIA_RPG_C10_WON]);
+      else if (h2_xianxia_rpg_c10_instruction(game) == 5u)
         (void)snprintf(
             line, sizeof(line),
             h2_xianxia_rpg_c10_text[H2_XIANXIA_RPG_C10_SWITCH_HINT],
