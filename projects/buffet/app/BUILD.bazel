@@ -1,0 +1,133 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("@rules_python//python:defs.bzl", "py_binary")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
+load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/lvgl/font_conv:font_conv.bzl", "lvgl_font")
+
+package(default_visibility = ["//visibility:private"])
+
+_DISH_NAMES = [
+    "salmon",
+    "tamago",
+    "tuna",
+    "shrimp",
+    "maki",
+    "inari",
+    "empty",
+]
+
+_PLATES = ["plates/" + n + ".png" for n in [
+    "room",
+    "counter",
+    "cloth",
+    "cast",
+    "otter",
+    "rest",
+    "mark",
+] + _DISH_NAMES + [n + "_belt" for n in _DISH_NAMES] + [n + "_cleared" for n in _DISH_NAMES[:-1]]]
+
+_STRIKES = {
+    "small": 15,
+    "body": 20,
+    "head": 28,
+    "title": 42,
+}
+
+_TRANSLATIONS = [
+    "src/buffet_game.c",
+    "src/buffet_render.c",
+]
+
+filegroup(
+    name = "font_licenses",
+    srcs = [
+        "fonts/barlow_ofl.txt",
+        "fonts/noto_ofl.txt",
+    ],
+    visibility = ["//projects/buffet/targets:__subpackages__"],
+)
+
+py_binary(
+    name = "pack",
+    srcs = ["art/pack.py"],
+    main = "art/pack.py",
+)
+
+genrule(
+    name = "sprite_data",
+    srcs = _PLATES,
+    outs = ["buffet_plates.c"],
+    cmd = "$(location :pack) $@ $(SRCS)",
+    tools = [":pack"],
+)
+
+[lvgl_font(
+    name = "bf_" + lang + "_" + strike,
+    size = _STRIKES[strike],
+    out = "bf_" + lang + "_" + strike + ".c",
+    bpp = 4,
+    font = "//libs/ui/fonts/noto_sans_sc:NotoSansSC-Bold.ttf" if lang == "zh" else "fonts/BarlowSemiCondensed-SemiBold.ttf",
+    font_name = "bf_" + lang + "_" + strike,
+    lv_include = "buffet_font_format.h",
+    ranges = ["0x20-0x7E"],
+    symbol_sources = _TRANSLATIONS if lang == "zh" else [],
+) for lang in [
+    "en",
+    "zh",
+] for strike in _STRIKES]
+
+cc_library(
+    name = "art",
+    srcs = [":sprite_data"] + [":bf_" + lang + "_" + strike for lang in [
+        "en",
+        "zh",
+    ] for strike in _STRIKES],
+    hdrs = [
+        "src/buffet_font_format.h",
+        "src/buffet_sprite.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    strip_include_prefix = "src",
+)
+
+_PRIVATE = [
+    "src/buffet_game.h",
+    "src/buffet_draw.h",
+    "src/buffet_render.h",
+]
+
+cc_library(
+    name = "buffet",
+    srcs = _PRIVATE + [
+        "src/buffet_draw.c",
+        "src/buffet_game.c",
+        "src/buffet_render.c",
+        "src/h2_buffet.c",
+    ],
+    hdrs = ["include/h2_buffet.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    linkopts = select({
+        "@platforms//os:linux": ["-lm"],
+        "//conditions:default": [],
+    }),
+    visibility = ["//visibility:public"],
+    deps = [
+        ":art",
+        "//libs/runtime",
+    ],
+)
+
+cc_test(
+    name = "game_test",
+    srcs = _PRIVATE + ["tests/test_game.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        ":art",
+        ":buffet",
+    ],
+)
