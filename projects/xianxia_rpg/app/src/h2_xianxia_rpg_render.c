@@ -2366,13 +2366,22 @@ static void map_background(canvas_t* canvas, const game_t* game) {
         const char* label = game->chapter == 10u  ? c10_label(game, tile)
                             : game->chapter == 9u ? c9_label(game, tile)
                                                   : c8_label(tile);
-        if (label == NULL) continue;
+        if (label == NULL ||
+            (game->chapter == 10u && l->tile < 32 && tile == 'R'))
+          continue;
         const float cx = (float)l->map_x + ((float)col + .5f) * (float)l->tile;
         const bool helper = game->chapter == 10u && tile >= 'a' && tile <= 'd';
-        const int y =
+        int y =
             l->map_y + row * l->tile +
             (helper ? l->tile
                     : (l->tile >= 32 ? l->tile / 2 : (l->tile - LINE_PX) / 2));
+        if (game->chapter == 10u && l->tile < 32) {
+          /* Stagger long names above/below the four portraits. The bottom
+           * rest button already labels rest, leaving the narrow map clear. */
+          if (helper && ((tile - 'a') % 2 == 0))
+            y = l->map_y + (row - 1) * l->tile - LINE_PX / 2;
+          if (tile == 'E') y = l->map_y + (row + 1) * l->tile;
+        }
         const float tw = (float)h2_xianxia_rpg_text_width(false, label);
         fill_rect(canvas, cx - tw * .5f - 2, (float)y, tw + 4, LINE_PX,
                   RGB(20, 33, 43), 256u);
