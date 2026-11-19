@@ -19,6 +19,7 @@ esp_target_task_policy(
         "fruit-slice/game 4 any 32768 psram",
         "fruit-slice/audio default",
         "fruit-slice/audio-pref default",
+        "fruit-slice/save default",
         "h2loader/appcmd 8 0 4096 psram",
         "h2loader/blecmd 8 0 4096 psram",
         "$h2loader/return 8 0 4096 psram",

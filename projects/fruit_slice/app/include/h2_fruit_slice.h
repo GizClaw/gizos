@@ -65,6 +65,14 @@ typedef struct h2_fruit_slice_config {
    * use the cooperative persistence path, including bounded retries.
    * Default false. */
   bool audio_worker;
+  /** Opt into copied progress/card/best checkpoints on one short-lived PAL
+   * task, fruit-slice/save (8 KiB minimum stack). Later state remains dirty
+   * until its own successful write; exit joins and flushes the latest state.
+   * Initial reads and failed-read recovery keep their synchronous protection
+   * rules. Unsupported or failed worker startup falls back to synchronous
+   * saving. No additional task is created while a prior writer is unjoined.
+   * Default false. */
+  bool background_saves;
 } h2_fruit_slice_config_t;
 
 /**
@@ -83,8 +91,8 @@ typedef struct h2_fruit_slice_config {
  * and play continues. Title controls toggle SFX/BGM independently; audio starts
  * on a user gesture. is_paused must be nonblocking so audio can stop before
  * the host waits. Game state, three RGB565 frame-sized buffers and the fruit
- * texture cache come from Runtime mem before the first frame; frames never
- * allocate.
+ * texture cache come from Runtime mem before the first frame; rendering
+ * never allocates. Optional background services own bounded task resources.
  * Diagnostics use Runtime log. Every allocation, provider session and
  * callback ends before return. The config is borrowed for the call; NULL
  * selects defaults.

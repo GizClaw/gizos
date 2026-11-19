@@ -62,7 +62,9 @@ static h2_pal_result_t confirm(void* user) {
 static void game(void* unused) {
   (void)unused;
   const h2_fruit_slice_config_t config = {.brightness_percent = 100u,
-                                          .ready = confirm};
+                                          .ready = confirm,
+                                          .audio_worker = true,
+                                          .background_saves = true};
   const int rc = h2_fruit_slice_run(runtime, &config);
   /* The run only ends on failure; keep App commands up for recovery. */
   fail("game", rc);

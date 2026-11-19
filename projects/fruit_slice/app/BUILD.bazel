@@ -18,6 +18,7 @@ _PRIVATE_HEADERS = [
     "src/h2_fruit_slice_game.h",
     "src/h2_fruit_slice_shape.h",
     "src/h2_fruit_slice_render.h",
+    "src/h2_fruit_slice_save.h",
 ]
 
 _LIBM = select({
@@ -93,6 +94,11 @@ h2_tasks(
     ],
 )
 
+h2_tasks(
+    name = "save_tasks",
+    tasks = ["fruit-slice/save"],
+)
+
 cc_library(
     name = "fruit_slice",
     srcs = _PRIVATE_HEADERS + [
@@ -105,6 +111,7 @@ cc_library(
         "src/h2_fruit_slice_font.c",
         "src/h2_fruit_slice_game.c",
         "src/h2_fruit_slice_render.c",
+        "src/h2_fruit_slice_save.c",
         "src/h2_fruit_slice_text.c",
     ],
     hdrs = ["include/h2_fruit_slice.h"],
@@ -115,8 +122,23 @@ cc_library(
     deps = [
         ":audio_tasks",
         ":fonts",
+        ":save_tasks",
         "//libs/runtime",
         "//libs/sync/atomic",
+    ],
+)
+
+cc_test(
+    name = "save_worker_test",
+    srcs = _PRIVATE_HEADERS + ["tests/test_save_worker.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        ":fruit_slice",
+        "//libs/sync/atomic/providers/c11",
+        "//pal/providers/platforms/desktop/pal_core",
     ],
 )
 

@@ -4,6 +4,7 @@
 #include "h2_fruit_slice_audio_worker.h"
 #include "h2_fruit_slice_game.h"
 #include "h2_fruit_slice_render.h"
+#include "h2_fruit_slice_save.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -15,8 +16,8 @@
 #define DT_MAX_MS 50u
 #define STATS_PERIOD_MS 10000u
 #define PROGRESS_RETRY_MS 2000u
-#define PROGRESS_KEY "progress_v1"
-#define CARDS_KEY "cards_v1"
+#define PROGRESS_KEY H2_FRUIT_SLICE_PROGRESS_KEY
+#define CARDS_KEY H2_FRUIT_SLICE_CARDS_KEY
 #define INTERVAL_BUCKET_MS 5u
 #define INTERVAL_BUCKETS 128u
 
@@ -53,6 +54,10 @@ typedef struct session {
   uint32_t save_max_ms;
   uint32_t phase_mask, reveal_frames, audio_max_ms, audio_open_max_ms;
   uint64_t progress_save_after_ms, cards_save_after_ms;
+  h2_fruit_slice_save_worker_t save_worker;
+  bool background_saves, best_pending;
+  uint32_t pending_best, save_jobs, save_worker_max_ms;
+  uint64_t save_join_after_ms;
   h2_fruit_slice_game_t game;
   h2_fruit_slice_audio_t audio;
   bool audio_unlocked, audio_paused;
@@ -83,25 +88,16 @@ static uint32_t load_best(session_t* s) {
   return best;
 }
 
-/* Optional persistence: a failure keeps the in-memory best only. */
-static void save_best(session_t* s, uint32_t best) {
-  h2_pal_pref_namespace_t* ns = NULL;
-  int rc = h2_pal_pref_open(s->runtime->pref, H2_FRUIT_SLICE_PREF_NAMESPACE,
-                            H2_PAL_PREF_OPEN_READ_WRITE, &ns);
-  if (rc == H2_PAL_OK && ns != NULL) {
-    rc = ns->set_u32 != NULL
-             ? ns->set_u32(ns, H2_FRUIT_SLICE_PREF_BEST_KEY, best)
-             : H2_PAL_ERR_UNSUPPORTED;
-    if (rc == H2_PAL_OK && ns->commit != NULL) rc = ns->commit(ns);
-    if (ns->close != NULL) {
-      const int closed = ns->close(ns);
-      if (rc == H2_PAL_OK) rc = closed;
-    }
-  }
+static void best_saved(session_t* s, uint32_t best, int rc) {
   char message[80];
   (void)snprintf(message, sizeof(message),
                  "H2_FRUIT_SLICE_BEST_SAVE best=%u rc=%d", (unsigned)best, rc);
   log_line(s, rc == H2_PAL_OK ? H2_PAL_LOG_INFO : H2_PAL_LOG_WARN, message);
+}
+
+/* Optional persistence: a failure keeps the in-memory best only. */
+static void save_best(session_t* s, uint32_t best) {
+  best_saved(s, best, h2_fruit_slice_save_best(s->runtime, best));
 }
 
 static void load_progress(session_t* s) {
@@ -136,37 +132,34 @@ static void load_progress(session_t* s) {
   log_line(s, H2_PAL_LOG_INFO, message);
 }
 
+static void progress_saved(session_t* s, const uint8_t* written, int rc) {
+  s->game.save_status = rc == H2_PAL_OK                ? 0u
+                        : rc == H2_PAL_ERR_UNSUPPORTED ? 1u
+                                                       : 2u;
+  if (rc == H2_PAL_OK) {
+    uint8_t latest[H2_FRUIT_SLICE_PROGRESS_BYTES];
+    h2_fruit_slice_progress_encode(&s->game.progress, latest);
+    if (memcmp(latest, written, sizeof(latest)) == 0)
+      s->game.progress_dirty = false;
+  }
+  char message[80];
+  (void)snprintf(message, sizeof(message), "H2_FRUIT_SLICE_PROGRESS_SAVE rc=%d",
+                 rc);
+  log_line(s, rc == H2_PAL_OK ? H2_PAL_LOG_INFO : H2_PAL_LOG_WARN, message);
+}
+
 /* A single blob keeps currency, consumed task credits and ownership together.
  * Retain dirty state after I/O failure and retry at a bounded interval. */
 static void save_progress(session_t* s) {
   if (!s->game.progress_dirty || s->game.save_status == 1u ||
       s->game.save_status == 3u)
     return;
-  h2_pal_pref_namespace_t* ns = NULL;
   uint8_t data[H2_FRUIT_SLICE_PROGRESS_BYTES];
   h2_fruit_slice_progress_encode(&s->game.progress, data);
-  int rc = h2_pal_pref_open(s->runtime->pref, H2_FRUIT_SLICE_PREF_NAMESPACE,
-                            H2_PAL_PREF_OPEN_READ_WRITE, &ns);
-  if (rc == H2_PAL_OK && ns == NULL) rc = H2_PAL_ERR_INVALID_STATE;
-  if (rc == H2_PAL_OK) {
-    rc = ns->set_blob != NULL
-             ? ns->set_blob(ns, PROGRESS_KEY, data, sizeof(data))
-             : H2_PAL_ERR_UNSUPPORTED;
-    if (rc == H2_PAL_OK && ns->commit != NULL) rc = ns->commit(ns);
-    if (ns->close != NULL) {
-      const int closed = ns->close(ns);
-      if (rc == H2_PAL_OK) rc = closed;
-    }
-  }
+  const int rc =
+      h2_fruit_slice_save_blob(s->runtime, PROGRESS_KEY, data, sizeof(data));
   s->game.progress_urgent = false;
-  s->game.save_status = rc == H2_PAL_OK                ? 0u
-                        : rc == H2_PAL_ERR_UNSUPPORTED ? 1u
-                                                       : 2u;
-  if (rc == H2_PAL_OK) s->game.progress_dirty = false;
-  char message[80];
-  (void)snprintf(message, sizeof(message), "H2_FRUIT_SLICE_PROGRESS_SAVE rc=%d",
-                 rc);
-  log_line(s, rc == H2_PAL_OK ? H2_PAL_LOG_INFO : H2_PAL_LOG_WARN, message);
+  progress_saved(s, data, rc);
 }
 
 static void load_cards(session_t* s) {
@@ -206,36 +199,139 @@ static void load_cards(session_t* s) {
   log_line(s, H2_PAL_LOG_INFO, message);
 }
 
-static void save_cards(session_t* s) {
+static void cards_saved(session_t* s, const uint8_t* written, int rc) {
   h2_fruit_slice_cards_t* cards = &s->game.cards;
-  if (cards->save_status == 1u || cards->save_status == 3u) return;
-  if (!cards->loaded && cards->save_status == 2u) load_cards(s);
-  if (!cards->loaded || !cards->dirty) return;
-  h2_pal_pref_namespace_t* ns = NULL;
-  uint8_t data[H2_FRUIT_SLICE_CARDS_BYTES];
-  h2_fruit_slice_cards_encode(cards, data);
-  int rc = h2_pal_pref_open(s->runtime->pref, H2_FRUIT_SLICE_PREF_NAMESPACE,
-                            H2_PAL_PREF_OPEN_READ_WRITE, &ns);
-  if (rc == H2_PAL_OK && ns == NULL) rc = H2_PAL_ERR_INVALID_STATE;
-  if (rc == H2_PAL_OK) {
-    rc = ns->set_blob != NULL ? ns->set_blob(ns, CARDS_KEY, data, sizeof(data))
-                              : H2_PAL_ERR_UNSUPPORTED;
-    if (rc == H2_PAL_OK && ns->commit != NULL) rc = ns->commit(ns);
-    if (ns->close != NULL) {
-      const int closed = ns->close(ns);
-      if (rc == H2_PAL_OK) rc = closed;
-    }
-  }
   const uint32_t status = rc == H2_PAL_OK                ? 0u
                           : rc == H2_PAL_ERR_UNSUPPORTED ? 1u
                                                          : 2u;
   if (cards->save_status != status) ++cards->revision;
   cards->save_status = status;
-  if (rc == H2_PAL_OK) cards->dirty = false;
+  if (rc == H2_PAL_OK) {
+    uint8_t latest[H2_FRUIT_SLICE_CARDS_BYTES];
+    h2_fruit_slice_cards_encode(cards, latest);
+    if (memcmp(latest, written, sizeof(latest)) == 0) cards->dirty = false;
+  }
   char message[80];
   (void)snprintf(message, sizeof(message), "H2_FRUIT_SLICE_CARDS_SAVE rc=%d",
                  rc);
   log_line(s, rc == H2_PAL_OK ? H2_PAL_LOG_INFO : H2_PAL_LOG_WARN, message);
+}
+
+static void save_cards(session_t* s) {
+  h2_fruit_slice_cards_t* cards = &s->game.cards;
+  if (cards->save_status == 1u || cards->save_status == 3u) return;
+  if (!cards->loaded && cards->save_status == 2u) load_cards(s);
+  if (!cards->loaded || !cards->dirty) return;
+  uint8_t data[H2_FRUIT_SLICE_CARDS_BYTES];
+  h2_fruit_slice_cards_encode(cards, data);
+  cards_saved(
+      s, data,
+      h2_fruit_slice_save_blob(s->runtime, CARDS_KEY, data, sizeof(data)));
+}
+
+/* Apply only completed snapshots. Later play can change the same blob while
+ * its previous checkpoint is being written; that newer dirty state survives. */
+static int collect_saves(session_t* s, uint64_t now, bool wait) {
+  if (!wait && now < s->save_join_after_ms) return H2_PAL_OK;
+  h2_fruit_slice_save_completion_t result;
+  bool completed = false;
+  const int rc = h2_fruit_slice_save_worker_poll(&s->save_worker, wait, &result,
+                                                 &completed);
+  if (rc != H2_PAL_OK) {
+    s->save_join_after_ms = now + 500u;
+    return rc;
+  }
+  if (!completed) return H2_PAL_OK;
+  s->save_join_after_ms = 0u;
+  if (result.work_ms > s->save_worker_max_ms)
+    s->save_worker_max_ms = result.work_ms;
+  if (result.snapshot.fields & H2_FRUIT_SLICE_SAVE_BEST) {
+    best_saved(s, result.snapshot.best, result.best_result);
+    if (s->pending_best == result.snapshot.best) s->best_pending = false;
+  }
+  if (result.snapshot.fields & H2_FRUIT_SLICE_SAVE_PROGRESS)
+    progress_saved(s, result.snapshot.progress, result.progress_result);
+  if (result.snapshot.fields & H2_FRUIT_SLICE_SAVE_CARDS)
+    cards_saved(s, result.snapshot.cards, result.cards_result);
+  return H2_PAL_OK;
+}
+
+static void synchronous_saves(session_t* s, uint64_t now) {
+  if (s->best_pending) {
+    save_best(s, s->pending_best);
+    s->best_pending = false;
+  }
+  if (s->game.progress_dirty && s->game.save_status != 1u &&
+      s->game.save_status != 3u &&
+      (s->game.progress_urgent || now >= s->progress_save_after_ms)) {
+    save_progress(s);
+    s->progress_save_after_ms = now + PROGRESS_RETRY_MS;
+  }
+  if ((s->game.cards.dirty ||
+       (!s->game.cards.loaded && s->game.cards.save_status == 2u)) &&
+      now >= s->cards_save_after_ms) {
+    save_cards(s);
+    s->cards_save_after_ms = now + PROGRESS_RETRY_MS;
+  }
+}
+
+static void service_saves(session_t* s, uint64_t now) {
+  uint32_t best = 0u;
+  if (h2_fruit_slice_game_take_best(&s->game, &best)) {
+    s->pending_best = best;
+    s->best_pending = true;
+  }
+  if (collect_saves(s, now, false) != H2_PAL_OK)
+    log_line(s, H2_PAL_LOG_WARN, "H2_FRUIT_SLICE_SAVE_JOIN_RETRY");
+  if (s->save_worker.task != NULL) return;
+  if (!s->background_saves) {
+    synchronous_saves(s, now);
+    return;
+  }
+
+  h2_fruit_slice_save_snapshot_t snapshot = {0};
+  if (s->best_pending) {
+    snapshot.fields |= H2_FRUIT_SLICE_SAVE_BEST;
+    snapshot.best = s->pending_best;
+  }
+  if (s->game.progress_dirty && s->game.save_status != 1u &&
+      s->game.save_status != 3u &&
+      (s->game.progress_urgent || now >= s->progress_save_after_ms)) {
+    snapshot.fields |= H2_FRUIT_SLICE_SAVE_PROGRESS;
+    h2_fruit_slice_progress_encode(&s->game.progress, snapshot.progress);
+  }
+  h2_fruit_slice_cards_t* cards = &s->game.cards;
+  if ((cards->dirty || (!cards->loaded && cards->save_status == 2u)) &&
+      cards->save_status != 1u && cards->save_status != 3u &&
+      now >= s->cards_save_after_ms) {
+    /* Recover an unread baseline with the existing merge/protection rules,
+     * only while no writer is active. Ordinary loaded checkpoints do no
+     * storage I/O on the run thread. */
+    if (!cards->loaded) load_cards(s);
+    if (cards->loaded && cards->dirty) {
+      snapshot.fields |= H2_FRUIT_SLICE_SAVE_CARDS;
+      h2_fruit_slice_cards_encode(cards, snapshot.cards);
+    } else {
+      s->cards_save_after_ms = now + PROGRESS_RETRY_MS;
+    }
+  }
+  if (snapshot.fields == 0u) return;
+  const int rc = h2_fruit_slice_save_worker_start(&s->save_worker, &snapshot);
+  if (rc != H2_PAL_OK) {
+    /* Optional scheduling must never discard a save or spin on task creation.
+     * A host that cannot start this worker retains the synchronous behavior. */
+    s->background_saves = false;
+    log_line(s, H2_PAL_LOG_WARN, "H2_FRUIT_SLICE_SAVE_WORKER_FAILED");
+    synchronous_saves(s, now);
+    return;
+  }
+  ++s->save_jobs;
+  if (snapshot.fields & H2_FRUIT_SLICE_SAVE_PROGRESS) {
+    s->game.progress_urgent = false;
+    s->progress_save_after_ms = now + PROGRESS_RETRY_MS;
+  }
+  if (snapshot.fields & H2_FRUIT_SLICE_SAVE_CARDS)
+    s->cards_save_after_ms = now + PROGRESS_RETRY_MS;
 }
 
 static h2_pal_result_t drain_events(session_t* s) {
@@ -549,6 +645,16 @@ static void report_stats(session_t* s, uint64_t now) {
       (unsigned)s->save_ms, (unsigned)s->save_max_ms, (unsigned)s->phase_mask,
       (unsigned)s->reveal_frames);
   log_line(s, H2_PAL_LOG_INFO, message);
+  if (s->config.background_saves) {
+    (void)snprintf(message, sizeof(message),
+                   "H2_FRUIT_SLICE_SAVE_TIMING worker=%u pending=%u jobs=%u "
+                   "worker_max_ms=%u",
+                   (unsigned)s->background_saves,
+                   (unsigned)(s->save_worker.task != NULL),
+                   (unsigned)s->save_jobs, (unsigned)s->save_worker_max_ms);
+    log_line(s, H2_PAL_LOG_INFO, message);
+    s->save_jobs = s->save_worker_max_ms = 0u;
+  }
   (void)snprintf(message, sizeof(message),
                  "H2_FRUIT_SLICE_AUDIO_TIMING gap_ms=%u writes=%u blocked=%u "
                  "rebases=%u max_ms=%u open_max_ms=%u command_drops=%u "
@@ -674,20 +780,7 @@ static h2_pal_result_t play(session_t* s) {
     }
 
     const uint64_t save_started = clock_ms(s);
-    uint32_t best = 0;
-    if (h2_fruit_slice_game_take_best(&s->game, &best)) save_best(s, best);
-    if (s->game.progress_dirty && s->game.save_status != 1u &&
-        s->game.save_status != 3u &&
-        (s->game.progress_urgent || now >= s->progress_save_after_ms)) {
-      save_progress(s);
-      s->progress_save_after_ms = now + PROGRESS_RETRY_MS;
-    }
-    if ((s->game.cards.dirty ||
-         (!s->game.cards.loaded && s->game.cards.save_status == 2u)) &&
-        now >= s->cards_save_after_ms) {
-      save_cards(s);
-      s->cards_save_after_ms = now + PROGRESS_RETRY_MS;
-    }
+    service_saves(s, now);
     const uint64_t saved = clock_ms(s);
     const uint64_t saving = saved >= save_started ? saved - save_started : 0u;
     s->save_ms += saving;
@@ -766,7 +859,14 @@ static h2_pal_result_t prepare(session_t* s) {
   load_cards(s);
   if (s->game.cards.save_status == 2u)
     s->cards_save_after_ms = clock_ms(s) + PROGRESS_RETRY_MS;
-  /* Build every fixed-size texture now so frames never allocate. */
+  if (s->config.background_saves) {
+    const int saved =
+        h2_fruit_slice_save_worker_init(&s->save_worker, s->runtime);
+    s->background_saves = saved == H2_PAL_OK;
+    if (!s->background_saves)
+      log_line(s, H2_PAL_LOG_WARN, "H2_FRUIT_SLICE_SAVE_WORKER_UNAVAILABLE");
+  }
+  /* Build every fixed-size texture now so rendering never allocates. */
   if (!h2_fruit_slice_sprites_prepare(s->sprites, &s->game)) {
     log_line(s, H2_PAL_LOG_ERROR, "H2_FRUIT_SLICE_ALLOC_FAIL what=textures");
     return H2_PAL_ERR_NO_MEMORY;
@@ -833,8 +933,19 @@ h2_pal_result_t h2_fruit_slice_run(h2_runtime_t* runtime,
     rc = prepare(s);
   }
   if (rc == H2_PAL_OK) rc = play(s);
+  /* The final write cannot race an older in-flight checkpoint. Retain the
+   * Runtime and copied arguments through failed joins before flushing newer
+   * state once, using the same optional-storage failure behavior as before. */
+  int save_closed;
+  while ((save_closed = collect_saves(s, clock_ms(s), true)) != H2_PAL_OK) {
+    if (rc == H2_PAL_OK) rc = save_closed;
+    log_line(s, H2_PAL_LOG_WARN, "H2_FRUIT_SLICE_SAVE_JOIN_RETRY");
+    (void)h2_runtime_wait_notify(runtime, 50u);
+  }
+  if (s->best_pending) save_best(s, s->pending_best);
   save_progress(s);
   save_cards(s);
+  h2_fruit_slice_save_worker_destroy(&s->save_worker);
 
   /* Audio borrows Runtime until track/speaker teardown completes. The final
    * UI intent may be newer than the last accepted playback queue command. */
