@@ -21,6 +21,7 @@ cc_library(
         "src/h2_garden_guard_game.c",
         "src/h2_garden_guard_render.c",
         "src/h2_garden_guard_title.inc",
+        "src/h2_garden_guard_web_labels.c",
         "src/h2_garden_guard_zh.inc",
         "src/h2_garden_guard_zombies.inc",
     ],

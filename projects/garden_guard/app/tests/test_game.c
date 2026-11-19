@@ -97,6 +97,47 @@ static void start(h2_garden_guard_game_t* g, int32_t width, int32_t height,
   CHECK(g->sun == H2_GARDEN_GUARD_START_SUN);
 }
 
+static void test_cover_controls(void) {
+  const int32_t extents[][2] = {{480, 320}, {368, 448}};
+  for (unsigned i = 0; i < sizeof(extents) / sizeof(extents[0]); ++i) {
+    h2_garden_guard_game_init(&game, extents[i][0], extents[i][1], 1u, 0u);
+    const h2_garden_guard_layout_t* l = &game.layout;
+    const h2_garden_guard_rect_t journal =
+        h2_garden_guard_menu_tab(l, false, 0u);
+    const h2_garden_guard_rect_t shop = h2_garden_guard_menu_tab(l, false, 1u);
+    const h2_garden_guard_rect_t start_rect =
+        h2_garden_guard_action_rect(l, H2_GARDEN_GUARD_ACTION_START);
+    const h2_garden_guard_rect_t language =
+        h2_garden_guard_action_rect(l, H2_GARDEN_GUARD_ACTION_LANGUAGE);
+    CHECK(journal.x + journal.w < start_rect.x &&
+          start_rect.x + start_rect.w < shop.x);
+    CHECK(start_rect.w > journal.w && start_rect.h > shop.h);
+    CHECK(language.y + language.h < shop.y);
+    const h2_garden_guard_rect_t controls[] = {journal, start_rect, shop,
+                                               language};
+    for (unsigned j = 0; j < sizeof(controls) / sizeof(controls[0]); ++j) {
+      const h2_garden_guard_rect_t r = controls[j];
+      CHECK(r.x >= 0.0f && r.x + r.w <= (float)l->width);
+      CHECK(r.y >= 0.0f && r.y + r.h <= (float)l->height);
+    }
+    tap(&game, (journal.x + journal.w + start_rect.x) * 0.5f,
+        start_rect.y + 4.0f);
+    CHECK(game.phase == H2_GARDEN_GUARD_PHASE_TITLE &&
+          game.menu == H2_GARDEN_GUARD_MENU_NONE);
+    tap(&game, journal.x + 1.0f, journal.y + 1.0f);
+    CHECK(game.menu == H2_GARDEN_GUARD_MENU_JOURNAL);
+    CHECK(h2_garden_guard_game_back(&game));
+    tap(&game, shop.x + shop.w - 1.0f, shop.y + shop.h - 1.0f);
+    CHECK(game.menu == H2_GARDEN_GUARD_MENU_SHOP);
+    CHECK(h2_garden_guard_game_back(&game));
+    const h2_garden_guard_language_t before = game.language;
+    tap(&game, language.x + language.w - 1.0f, language.y + 1.0f);
+    CHECK(game.language != before);
+    tap_action(&game, H2_GARDEN_GUARD_ACTION_START);
+    CHECK(game.phase == H2_GARDEN_GUARD_PHASE_PLAYING);
+  }
+}
+
 static void test_layouts(void) {
   const int32_t extents[][2] = {{480, 320}, {480, 480}, {480, 800},
                                 {368, 448}, {160, 160}, {1024, 600}};
@@ -709,6 +750,7 @@ int main(void) {
   test_pause_and_language();
   test_profile_and_collection();
   test_shop_and_earned_coins();
+  test_cover_controls();
   test_layouts();
   test_perspective_gestures();
   test_title_starts_and_plants();

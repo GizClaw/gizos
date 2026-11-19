@@ -28,12 +28,38 @@ extern "C" {
 /** One bit per band: supports heights up to 64 * 16 = 1024 rows. */
 #define H2_GARDEN_GUARD_MAX_BANDS 64
 
+#ifdef __EMSCRIPTEN__
+#define H2_GARDEN_GUARD_MAX_MENU_LABELS 28u
+
+typedef struct h2_garden_guard_menu_label {
+  float x, y, width, height;
+  uint32_t rgb565, opacity, centered;
+  char text[80];
+} h2_garden_guard_menu_label_t;
+
+typedef struct h2_garden_guard_menu_labels {
+  unsigned count, foreground;
+  float card[4], shade;
+  h2_garden_guard_menu_label_t labels[H2_GARDEN_GUARD_MAX_MENU_LABELS];
+} h2_garden_guard_menu_labels_t;
+
+void h2_garden_guard_collect_menu_labels(h2_garden_guard_menu_labels_t* labels,
+                                         const h2_garden_guard_game_t* game);
+void h2_garden_guard_web_present_menu_labels(
+    const h2_garden_guard_menu_labels_t* labels);
+#endif
+
 typedef struct h2_garden_guard_canvas {
   uint16_t* pixels; /**< Borrowed RGB565 rows; NULL while measuring only. */
   int32_t width, height;
   size_t stride_pixels;
   /** True records coverage without writing pixels. */
   bool measure;
+  bool external_cover_labels;
+#ifdef __EMSCRIPTEN__
+  bool external_menu_labels;
+  h2_garden_guard_menu_labels_t* menu_labels;
+#endif
   /** Covered bands, and per covered band its half-open column range. */
   uint64_t bands;
   int16_t band_x0[H2_GARDEN_GUARD_MAX_BANDS];

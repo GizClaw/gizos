@@ -21,6 +21,18 @@ extern "C" {
 #define H2_GARDEN_GUARD_PREF_NAMESPACE "garden_guard"
 #define H2_GARDEN_GUARD_PREF_BEST_KEY "best"
 
+typedef enum h2_garden_guard_cover_action {
+  H2_GARDEN_GUARD_COVER_START = 1,
+  H2_GARDEN_GUARD_COVER_JOURNAL,
+  H2_GARDEN_GUARD_COVER_SHOP,
+  H2_GARDEN_GUARD_COVER_LANGUAGE,
+  H2_GARDEN_GUARD_COVER_ACTION_COUNT,
+} h2_garden_guard_cover_action_t;
+
+typedef struct h2_garden_guard_cover_rect {
+  float x, y, width, height; /**< Fractions of the display rectangle. */
+} h2_garden_guard_cover_rect_t;
+
 typedef struct h2_garden_guard_config {
   /** Nonzero fixes the random seed; zero derives one from the clock. */
   uint32_t seed;
@@ -46,6 +58,14 @@ typedef struct h2_garden_guard_config {
   /** Optional platform preference. If true, show the journal detail
    * immediately. */
   bool (*reduce_motion)(void* user);
+  /** Optional platform cover label layer. When present the App paints art
+   * only on the cover. Controls are borrowed for this callback on the run
+   * thread. A NULL controls pointer hides the layer. Entries begin at 1. */
+  void (*cover_changed)(void* user,
+                        const h2_garden_guard_cover_rect_t* controls,
+                        bool session_language);
+  /** Optional one-shot input from the cover layer, zero when idle. */
+  h2_garden_guard_cover_action_t (*cover_action)(void* user);
   /** Borrowed user value passed to the configured callbacks. */
   void* user;
 } h2_garden_guard_config_t;

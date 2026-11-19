@@ -4,6 +4,8 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
 <title>Garden Guard</title>
 <style>
+  @font-face { font-family: "Garden Latin"; src: url("droid-sans.woff") format("woff");
+    font-weight: 400; font-style: normal; font-display: swap; }
   @font-face { font-family: "Garden Droid"; src: url("droid-sans-fallback.woff") format("woff");
     font-weight: 400; font-style: normal; font-display: swap; }
   html[lang="zh-CN"] #game-status { font-family: "Garden Droid", sans-serif; }
@@ -12,32 +14,118 @@
   body { display: grid; place-items: center; overscroll-behavior: none; }
   main { box-sizing: border-box; width: 100%; display: grid; gap: 12px;
     justify-items: center; padding: 12px min(3vw, 16px); }
-  canvas { display: block; width: min(100%, calc((100svh - 24px) * 1.5), 1120px); aspect-ratio: 3 / 2; border-radius: 10px;
+  #garden { position: relative; container-type: inline-size;
+    width: min(100%, calc((100svh - 24px) * 1.5), 1120px); }
+  #canvas { display: block; width: 100%; aspect-ratio: 3 / 2; border-radius: 10px;
     box-shadow: 0 18px 50px #000a; touch-action: none; cursor: pointer;
     image-rendering: auto; background: #2c4a1c; }
+  #menu-labels { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  #cover { position: absolute; inset: 0; pointer-events: none;
+    font-family: "Garden Latin", "Garden Droid", sans-serif; }
+  #cover-title { position: absolute; inset: 0 17% auto; height: 16.25%; margin: 0;
+    display: grid; place-items: center; color: #ffe7b4; text-align: center;
+    font-size: 7.15cqw; line-height: 1; font-weight: 400; letter-spacing: .025em; }
+  html[lang="zh-CN"] #cover-title { font-size: 7.5cqw; letter-spacing: .06em; }
+  .cover-control { position: absolute; pointer-events: auto; cursor: pointer; padding: 0;
+    border: 0; border-radius: 1.15cqw; background: transparent; color: #fff0c3;
+    font: inherit; touch-action: manipulation; }
+  .cover-control span { position: absolute; left: 3%; right: 3%; top: 82%;
+    transform: translateY(-50%); font-size: 3.65cqw; line-height: 1;
+    letter-spacing: .015em; white-space: nowrap; }
+  #cover-start span { top: 83.3%; font-size: 4.1cqw; color: #33291a; }
+  html[lang="zh-CN"] #cover-start span { font-size: 4.3cqw; }
+  #cover-language span { top: 60%; font-size: 2.52cqw; color: #33291a; }
+  .cover-control:hover { background: #ffe7b41a; }
+  #cover-language:hover span { color: #181308; }
+  .cover-control:focus-visible { outline: 2px solid #fff0b9; outline-offset: 2px; }
+  .cover-control:active { box-shadow: inset 0 4px 7px #221709c0; background: #24190f27; }
+  .cover-control:active span { transform: translateY(calc(-50% + 1px)); }
+  #cover-note { position: absolute; top: 14%; width: 100%; text-align: center;
+    font-size: 2.45cqw; color: #ffe7b4; }
   p { margin: 0; opacity: .8; }
   #game-status[data-ready="true"] { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 </style>
 <main>
-  <canvas id="canvas" width="480" height="320"></canvas>
+  <div id="garden">
+    <canvas id="canvas" width="480" height="320"></canvas>
+    <canvas id="menu-labels" hidden aria-hidden="true"></canvas>
+    <div id="cover" hidden>
+      <h1 id="cover-title"></h1>
+      <button id="cover-start" class="cover-control" type="button"><span></span></button>
+      <button id="cover-journal" class="cover-control" type="button"><span></span></button>
+      <button id="cover-shop" class="cover-control" type="button"><span></span></button>
+      <button id="cover-language" class="cover-control" type="button"><span></span></button>
+      <p id="cover-note" hidden></p>
+    </div>
+  </div>
   <p id="game-status" role="status">Loading…</p>
 </main>
 <script>
   const gameStatus = document.getElementById('game-status');
   const messages = {
     en: {
-      title: 'Garden Guard', loading: 'Loading the garden…',
+      title: 'Garden Guard', start: 'Start game', journal: 'Journal', shop: 'Shop',
+      language: '中文', session: 'Language for this session', loading: 'Loading the garden…',
       wait: 'Close the other Garden Guard tab on this address to continue.',
       ready: 'Collect sun, choose a card, then plant on the lawn.',
       error: 'The garden could not start. Reload to try again.',
     },
     'zh-CN': {
-      title: '植物守卫', loading: '正在加载庭院…',
+      title: '植物守卫', start: '开始游戏', journal: '图鉴', shop: '商店',
+      language: 'English', session: '语言仅本次有效', loading: '正在加载庭院…',
       wait: '请关闭此地址的另一个植物守卫标签页，再继续。',
       ready: '收集阳光，选择植物卡，再点草坪种植。',
       error: '庭院启动失败，请刷新重试。',
     },
   };
+  const menuCanvas = document.getElementById('menu-labels');
+  const menuContext = menuCanvas.getContext('2d');
+  let menu = null;
+  function paintMenuLabels() {
+    menuCanvas.hidden = !menu;
+    if (!menu) return;
+    const artwork = document.getElementById('canvas');
+    const bounds = artwork.getBoundingClientRect();
+    const width = Math.round(bounds.width * devicePixelRatio);
+    const height = Math.round(bounds.height * devicePixelRatio);
+    if (menuCanvas.width !== width) menuCanvas.width = width;
+    if (menuCanvas.height !== height) menuCanvas.height = height;
+    menuContext.setTransform(width / artwork.width, 0, 0, height / artwork.height, 0, 0);
+    menuContext.clearRect(0, 0, artwork.width, artwork.height);
+    for (const [i, label] of menu.labels.entries()) {
+      if (i === menu.foreground && menu.card[2] > 0) {
+        menuContext.globalCompositeOperation = 'destination-out';
+        menuContext.globalAlpha = menu.shade;
+        menuContext.fillRect(0, 0, artwork.width, artwork.height);
+        menuContext.globalCompositeOperation = 'source-over';
+        menuContext.clearRect(...menu.card);
+      }
+      const size = label.height * (/[^\x00-\x7f]/.test(label.text) ? 1.04 : 1.34);
+      menuContext.font = `${size}px "Garden Latin", "Garden Droid", sans-serif`;
+      menuContext.textBaseline = 'alphabetic';
+      menuContext.textAlign = label.centered ? 'center' : 'left';
+      const metrics = menuContext.measureText(label.text);
+      const inkHeight = metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent;
+      const baseline = label.y + (label.height - inkHeight) * 0.5 + metrics.actualBoundingBoxAscent;
+      menuContext.globalAlpha = label.alpha;
+      menuContext.fillStyle = label.color;
+      menuContext.fillText(label.text, label.x, baseline, label.width);
+    }
+    menuContext.globalAlpha = 1;
+  }
+  new ResizeObserver(paintMenuLabels).observe(document.getElementById('garden'));
+  window.addEventListener('resize', paintMenuLabels);
+  document.fonts.addEventListener('loadingdone', paintMenuLabels);
+  const cover = document.getElementById('cover');
+  const coverTitle = document.getElementById('cover-title');
+  const coverNote = document.getElementById('cover-note');
+  const actions = ['start', 'journal', 'shop', 'language'];
+  const controls = actions.map(action => document.getElementById('cover-' + action));
+  for (const [i, control] of controls.entries()) {
+    control.addEventListener('click', () => {
+      if (!cover.hidden) Module['_h2_garden_guard_web_cover_action'](i + 1);
+    });
+  }
   let language = 'en';
   let state = 'loading';
   try {
@@ -46,7 +134,13 @@
   } catch (_) { /* The App can still run without storage. */ }
   const showStatus = () => {
     document.documentElement.lang = language;
-    document.title = messages[language].title;
+    const labels = messages[language];
+    document.title = labels.title;
+    coverTitle.textContent = labels.title;
+    coverNote.textContent = labels.session;
+    for (const [i, button] of controls.entries())
+      button.firstElementChild.textContent = labels[actions[i]];
+    controls[3].lang = language === 'en' ? 'zh-CN' : 'en';
     gameStatus.textContent = messages[language][state];
     gameStatus.dataset.ready = String(state === 'ready');
     document.getElementById('canvas').setAttribute('aria-label', messages[language].title);
@@ -70,6 +164,15 @@
       language = tag === 'zh-CN' ? tag : 'en';
       showStatus();
     },
+    h2GardenCover: (rects, sessionLanguage) => {
+      cover.hidden = rects.length !== controls.length;
+      coverNote.hidden = !sessionLanguage;
+      for (const [i, rect] of rects.entries()) {
+        const [left, top, width, height] = rect.map(fraction => `${fraction * 100}%`);
+        Object.assign(controls[i].style, {left, top, width, height});
+      }
+    },
+    h2GardenMenuLabels: labels => { menu = labels; paintMenuLabels(); },
     print: text => console.log(text),
     printErr: text => console.error(text),
     onRuntimeInitialized: () => {
@@ -84,7 +187,7 @@
           Module['_h2_garden_guard_web_back']();
       });
     },
-    onAbort: () => { state = 'error'; showStatus(); },
+    onAbort: () => { cover.hidden = true; menu = null; paintMenuLabels(); state = 'error'; showStatus(); },
   };
 </script>
 {{{ SCRIPT }}}

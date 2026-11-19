@@ -449,9 +449,36 @@ static int32_t label_height(const char* label, int32_t scale) {
   return 7 * scale;
 }
 
+#ifdef __EMSCRIPTEN__
+static void collect_menu_label(h2_garden_guard_canvas_t* canvas,
+                               const char* text, float x, float y,
+                               int32_t scale, uint16_t color, uint32_t alpha,
+                               bool centered) {
+  h2_garden_guard_menu_labels_t* menu = canvas->menu_labels;
+  if (menu == NULL || menu->count >= H2_GARDEN_GUARD_MAX_MENU_LABELS) return;
+  h2_garden_guard_menu_label_t* label = &menu->labels[menu->count++];
+  *label = (h2_garden_guard_menu_label_t){
+      .x = x,
+      .y = y,
+      .width = (float)h2_garden_guard_text_width(text, scale),
+      .height = (float)label_height(text, scale),
+      .rgb565 = color,
+      .opacity = alpha,
+      .centered = centered};
+  (void)snprintf(label->text, sizeof(label->text), "%s", text);
+}
+#endif
+
 static void text_layer(h2_garden_guard_canvas_t* canvas, const char* text,
                        int32_t x, int32_t y, int32_t scale, uint16_t color,
                        uint32_t alpha) {
+#ifdef __EMSCRIPTEN__
+  if (canvas->external_menu_labels) {
+    collect_menu_label(canvas, text, (float)x, (float)y, scale, color, alpha,
+                       false);
+    return;
+  }
+#endif
   const int32_t line_height = label_height(text, scale);
   const int32_t font_side = scale == 1 ? HAN_SMALL_SIDE : HAN_SIDE;
   while (*text != '\0') {
@@ -495,8 +522,17 @@ static void text_layer(h2_garden_guard_canvas_t* canvas, const char* text,
 /* Text with a soft drop shadow; (x, y) is the top-left corner. */
 static void text(h2_garden_guard_canvas_t* canvas, const char* value, int32_t x,
                  int32_t y, int32_t scale, uint16_t color, uint32_t alpha) {
+#ifdef __EMSCRIPTEN__
+  if (canvas->external_menu_labels) {
+    collect_menu_label(canvas, value, (float)x, (float)y, scale, color, alpha,
+                       false);
+    return;
+  }
+#endif
   const int32_t offset = scale / 2 > 0 ? scale / 2 : 1;
-  if (label_height(value, scale) == 7 * scale && (uint8_t)value[0] < 128u)
+  const char* ascii = value;
+  while (*ascii != '\0' && (uint8_t)*ascii < 128u) ++ascii;
+  if (*ascii == '\0')
     text_layer(canvas, value, x + offset, y + offset, scale, RGB(20, 16, 8),
                alpha * 3u / 4u);
   text_layer(canvas, value, x, y, scale, color, alpha);
@@ -505,6 +541,12 @@ static void text(h2_garden_guard_canvas_t* canvas, const char* value, int32_t x,
 static void text_centered(h2_garden_guard_canvas_t* canvas, const char* value,
                           float cx, float y, int32_t scale, uint16_t color,
                           uint32_t alpha) {
+#ifdef __EMSCRIPTEN__
+  if (canvas->external_menu_labels) {
+    collect_menu_label(canvas, value, cx, y, scale, color, alpha, true);
+    return;
+  }
+#endif
   const int32_t width = h2_garden_guard_text_width(value, scale);
   text(canvas, value, (int32_t)(cx - (float)width * 0.5f), (int32_t)y, scale,
        color, alpha);
@@ -1868,6 +1910,14 @@ static void menu_button(h2_garden_guard_canvas_t* canvas,
                         uint16_t fill, uint16_t ink) {
   rounded_rect(canvas, r.x, r.y, r.x + r.w, r.y + r.h, r.h * 0.23f, fill, 256u);
   const int32_t scale = fit_scale(label, r.w * 0.93f, r.h >= 25.0f ? 2 : 1);
+#ifdef __EMSCRIPTEN__
+  if (canvas->external_menu_labels) {
+    collect_menu_label(canvas, label, r.x + r.w * 0.5f,
+                       r.y + (r.h - (float)label_height(label, scale)) * 0.5f,
+                       scale, ink, 256u, true);
+    return;
+  }
+#endif
   const int32_t width = h2_garden_guard_text_width(label, scale);
   text_layer(canvas, label, (int32_t)(r.x + (r.w - (float)width) * 0.5f),
              (int32_t)(r.y + (r.h - (float)label_height(label, scale)) * 0.5f),
@@ -1931,11 +1981,16 @@ static void journal_card_face(h2_garden_guard_canvas_t* canvas,
   const int32_t name_scale =
       fit_scale(name, r.w - 16.0f * k, text_scale(k, detail ? 2.2f : 2.0f));
   const float name_y = picture_bottom + 8.0f * k;
-  text_layer(
-      canvas, name,
-      (int32_t)(cx -
-                (float)h2_garden_guard_text_width(name, name_scale) * 0.5f),
-      (int32_t)name_y, name_scale, ink, 256u);
+#ifdef __EMSCRIPTEN__
+  if (canvas->external_menu_labels)
+    collect_menu_label(canvas, name, cx, name_y, name_scale, ink, 256u, true);
+  else
+#endif
+    text_layer(
+        canvas, name,
+        (int32_t)(cx -
+                  (float)h2_garden_guard_text_width(name, name_scale) * 0.5f),
+        (int32_t)name_y, name_scale, ink, 256u);
   if (!detail) {
     const char* action = known          ? L("VIEW", "查看")
                          : r.w >= 80.0f ? L("MEET IN PLAY", "对局中遇见")
@@ -2027,6 +2082,17 @@ static void draw_journal_focus(h2_garden_guard_canvas_t* canvas,
   h2_garden_guard_rect_t paint = {
       from.x + (to.x - from.x) * eased, from.y + (to.y - from.y) * eased,
       from.w + (to.w - from.w) * eased, from.h + (to.h - from.h) * eased};
+#ifdef __EMSCRIPTEN__
+  if (canvas->menu_labels != NULL) {
+    h2_garden_guard_menu_labels_t* menu = canvas->menu_labels;
+    menu->foreground = menu->count;
+    menu->card[0] = paint.x;
+    menu->card[1] = paint.y;
+    menu->card[2] = paint.w;
+    menu->card[3] = paint.h;
+    menu->shade = eased * (180.0f / 256.0f);
+  }
+#endif
   if (eased > 0.0f)
     fill_rect(canvas, 0.0f, 0.0f, (float)l->width, (float)l->height,
               RGB(13, 26, 21), (uint32_t)(eased * 180.0f));
@@ -2166,6 +2232,159 @@ static void cover_type(h2_garden_guard_canvas_t* canvas, const uint8_t* glyphs,
   }
 }
 
+static void cover_panel(h2_garden_guard_canvas_t* canvas,
+                        h2_garden_guard_rect_t r, uint16_t color) {
+  const float s = r.w / 133.0f, x1 = r.x + r.w, y1 = r.y + r.h;
+  const float bevel = fmaxf(1.0f, 3.0f * s);
+  rounded_rect(canvas, r.x, r.y + 4.0f * s, x1, y1 + 4.0f * s, 4.0f * s,
+               RGB(11, 24, 18), 235u);
+  rounded_rect(canvas, r.x, r.y, x1, y1, 5.0f * s, RGB(77, 43, 29), 256u);
+  rounded_rect(canvas, r.x + bevel, r.y + bevel, x1 - bevel, y1 - bevel,
+               3.0f * s, color, 256u);
+  fill_rect(canvas, r.x + bevel, r.y + bevel, x1 - bevel, r.y + 5.0f * s,
+            RGB(238, 203, 122), 170u);
+  for (int side = 0; side < 2; ++side) {
+    const float x = side == 0 ? r.x + 8.0f * s : x1 - 8.0f * s;
+    disc(canvas, x, r.y + 8.0f * s, 1.45f * s, RGB(239, 211, 133), 256u);
+  }
+}
+
+static void cover_gate(h2_garden_guard_canvas_t* canvas, float x, float y,
+                       float s) {
+  ellipse(canvas, x, y + 20.0f * s, 48.0f * s, 7.0f * s, RGB(52, 58, 30), 133u);
+  ellipse(canvas, x, y - 3.0f * s, 30.0f * s, 28.0f * s, RGB(251, 221, 130),
+          219u);
+  disc(canvas, x + 9.0f * s, y - 10.0f * s, 8.0f * s, RGB(255, 241, 179), 256u);
+  trapezoid(canvas, y + 3.0f * s, x - 24.0f * s, x + 24.0f * s, y + 16.0f * s,
+            x - 24.0f * s, x + 24.0f * s, RGB(147, 159, 81), 256u);
+  trapezoid(canvas, y + 8.0f * s, x - 8.0f * s, x + 9.0f * s, y + 24.0f * s,
+            x - 24.0f * s, x + 25.0f * s, RGB(226, 193, 113), 256u);
+  ocapsule(canvas, x - 25.0f * s, y + 20.0f * s, x - 25.0f * s, y - 14.0f * s,
+           3.4f * s, 1.0f * s, RGB(205, 142, 78), RGB(74, 64, 38));
+  ocapsule(canvas, x + 25.0f * s, y + 20.0f * s, x + 25.0f * s, y - 14.0f * s,
+           3.4f * s, 1.0f * s, RGB(205, 142, 78), RGB(74, 64, 38));
+  for (int side = -1; side <= 1; side += 2) {
+    const float post = x + (float)side * 26.0f * s;
+    capsule(canvas, post, y - 14.0f * s, x + (float)side * 14.0f * s,
+            y - 23.0f * s, 3.5f * s, RGB(87, 66, 36), 256u);
+    capsule(canvas, post, y - 15.0f * s, x + (float)side * 14.0f * s,
+            y - 24.0f * s, 1.8f * s, RGB(225, 166, 88), 256u);
+  }
+  capsule(canvas, x - 14.0f * s, y - 23.0f * s, x + 14.0f * s, y - 23.0f * s,
+          3.1f * s, RGB(188, 132, 69), 256u);
+  for (int side = -1; side <= 1; side += 2) {
+    const float edge = x + (float)side * 26.0f * s;
+    trapezoid(canvas, y - 7.0f * s, edge - 11.0f * s, edge + 11.0f * s,
+              y + 17.0f * s, edge - 10.0f * s, edge + 10.0f * s,
+              RGB(150, 95, 54), 256u);
+    for (int n = -1; n <= 1; ++n) {
+      const float plank = edge + (float)n * 6.0f * s;
+      capsule(canvas, plank, y - 6.0f * s, plank, y + 16.0f * s, 1.9f * s,
+              RGB(221, 163, 90), 256u);
+    }
+  }
+  for (int i = -1; i <= 1; ++i) {
+    const float xx = x + (float)i * 14.0f * s;
+    ellipse(canvas, xx + 20.0f * s, y + 13.0f * s, 13.0f * s, 6.0f * s,
+            RGB(78, 126, 62), 256u);
+    ellipse(canvas, xx - 22.0f * s, y + 15.0f * s, 12.0f * s, 5.0f * s,
+            RGB(98, 148, 72), 256u);
+  }
+}
+
+static void cover_book(h2_garden_guard_canvas_t* canvas, float x, float y,
+                       float s) {
+  ellipse(canvas, x, y + 19.0f * s, 44.0f * s, 7.0f * s, RGB(22, 46, 36), 160u);
+  for (int i = 0; i < 2; ++i) {
+    const float side = (float)i * 24.0f * s;
+    trapezoid(canvas, y - 19.0f * s, x - 29.0f * s + side, x - 2.0f * s + side,
+              y + 10.0f * s, x - 23.0f * s + side, x + 4.0f * s + side,
+              RGB(222, 185, 103), 256u);
+    trapezoid(canvas, y - 16.0f * s, x - 26.0f * s + side, x - 5.0f * s + side,
+              y + 7.0f * s, x - 21.0f * s + side, x + 1.0f * s + side,
+              RGB(92, 114, 77), 256u);
+  }
+  trapezoid(canvas, y - 7.0f * s, x - 29.0f * s, x + 25.0f * s, y + 23.0f * s,
+            x - 26.0f * s, x + 28.0f * s, RGB(70, 46, 33), 256u);
+  trapezoid(canvas, y - 8.0f * s, x - 31.0f * s, x + 20.0f * s, y + 16.0f * s,
+            x - 24.0f * s, x + 28.0f * s, RGB(169, 119, 66), 256u);
+  capsule(canvas, x - 24.0f * s, y + 18.0f * s, x + 23.0f * s, y + 18.0f * s,
+          1.8f * s, RGB(248, 219, 161), 256u);
+  capsule(canvas, x - 26.0f * s, y - 7.0f * s, x - 19.0f * s, y + 14.0f * s,
+          1.4f * s, RGB(228, 179, 103), 245u);
+  capsule(canvas, x + 15.0f * s, y - 7.0f * s, x + 22.0f * s, y + 14.0f * s,
+          1.1f * s, RGB(123, 81, 48), 240u);
+  oellipse(canvas, x, y + 4.0f * s, 9.0f * s, 7.0f * s, s, RGB(217, 167, 75),
+           RGB(111, 73, 37));
+  disc(canvas, x, y + 3.0f * s, 1.7f * s, RGB(96, 60, 31), 256u);
+  fill_rect(canvas, x - s, y + 4.0f * s, x + s, y + 7.0f * s, RGB(96, 60, 31),
+            256u);
+}
+
+static void cover_market(h2_garden_guard_canvas_t* canvas, float x, float y,
+                         float s) {
+  ellipse(canvas, x, y + 19.0f * s, 46.0f * s, 6.0f * s, RGB(43, 47, 28), 180u);
+  fill_rect(canvas, x - 30.0f * s, y - 6.0f * s, x - 27.0f * s, y + 21.0f * s,
+            RGB(225, 169, 102), 256u);
+  fill_rect(canvas, x + 27.0f * s, y - 6.0f * s, x + 30.0f * s, y + 21.0f * s,
+            RGB(225, 169, 102), 256u);
+  for (int i = -3; i < 3; ++i) {
+    const float u = (float)i * 10.0f * s;
+    trapezoid(canvas, y - 20.0f * s, x + 0.8f * u, x + 0.8f * u + 8.0f * s,
+              y - 7.0f * s, x + u, x + u + 10.0f * s,
+              (i & 1) ? RGB(230, 182, 107) : RGB(168, 93, 67), 256u);
+  }
+  capsule(canvas, x - 31.0f * s, y + 15.0f * s, x + 30.0f * s, y + 15.0f * s,
+          2.4f * s, RGB(117, 73, 46), 256u);
+  capsule(canvas, x - 30.0f * s, y + 14.0f * s, x + 29.0f * s, y + 14.0f * s,
+          .8f * s, RGB(225, 169, 102), 256u);
+  trapezoid(canvas, y + 5.0f * s, x - 18.0f * s, x + 4.0f * s, y + 22.0f * s,
+            x - 14.0f * s, x, RGB(176, 98, 65), 256u);
+  ellipse(canvas, x - 7.0f * s, y + 5.0f * s, 11.0f * s, 3.2f * s,
+          RGB(233, 150, 94), 256u);
+  capsule(canvas, x - 7.0f * s, y + 4.0f * s, x - 6.0f * s, y - 4.0f * s,
+          1.0f * s, RGB(93, 129, 50), 256u);
+  ellipse(canvas, x - 10.0f * s, y - 2.0f * s, 5.0f * s, 2.4f * s,
+          RGB(114, 155, 58), 256u);
+  ellipse(canvas, x - 2.0f * s, y - 4.0f * s, 5.0f * s, 2.6f * s,
+          RGB(151, 174, 80), 256u);
+  for (int i = 0; i < 3; ++i)
+    oellipse(canvas, x + 16.0f * s, y + (19.5f - (float)i * 3.0f) * s, 8.0f * s,
+             2.5f * s, s, RGB(246, 195, 78), RGB(154, 105, 44));
+}
+
+static void cover_card(h2_garden_guard_canvas_t* canvas,
+                       h2_garden_guard_rect_t r, unsigned card) {
+  static const uint16_t colors[] = {RGB(85, 126, 103), RGB(165, 132, 73),
+                                    RGB(129, 105, 72)};
+  const float s = r.w / (card == 1u ? 144.0f : 133.0f);
+  const float mid = r.x + r.w * 0.5f, y1 = r.y + r.h;
+  cover_panel(canvas, r, colors[card]);
+  if (card == 0u)
+    cover_book(canvas, mid, r.y + 34.0f * s, s);
+  else if (card == 1u)
+    cover_gate(canvas, mid, r.y + 40.0f * s, s);
+  else
+    cover_market(canvas, mid, r.y + 34.0f * s, s);
+  const uint16_t band = card == 1u ? RGB(247, 202, 109) : RGB(56, 72, 53);
+  trapezoid(canvas, y1 - 29.0f * s, r.x + 4.0f * s, r.x + r.w - 4.0f * s,
+            y1 - 4.0f * s, r.x + 7.0f * s, r.x + r.w - 7.0f * s, band, 256u);
+  fill_rect(canvas, r.x + 9.0f * s, y1 - 28.0f * s, r.x + r.w - 9.0f * s,
+            y1 - 27.0f * s, RGB(255, 227, 149), 120u);
+}
+
+static void cover_native_label(h2_garden_guard_canvas_t* canvas,
+                               const char* text, h2_garden_guard_rect_t r,
+                               float center_y, uint16_t color) {
+  const int32_t scale = fit_scale(text, r.w * 0.88f, r.w >= 86.0f ? 2 : 1);
+  text_layer(
+      canvas, text,
+      (int32_t)(r.x +
+                (r.w - (float)h2_garden_guard_text_width(text, scale)) * 0.5f),
+      (int32_t)(center_y - (float)label_height(text, scale) * 0.5f), scale,
+      color, 256u);
+}
+
 static void draw_title(h2_garden_guard_canvas_t* canvas,
                        const h2_garden_guard_game_t* game) {
   const h2_garden_guard_layout_t* l = &game->layout;
@@ -2173,74 +2392,62 @@ static void draw_title(h2_garden_guard_canvas_t* canvas,
   const float cx = (float)l->width * 0.5f;
   const float y = ((float)l->height - 320.0f * s) * 0.5f;
   const float left = cx - 240.0f * s;
-  const uint16_t dark = RGB(19, 37, 31), cream = RGB(255, 229, 165);
+  const uint16_t dark = RGB(21, 41, 32), cream = RGB(255, 231, 180);
   fill_rect(canvas, 0.0f, 0.0f, (float)l->width, (float)l->height, dark, 256u);
-  // These narrow tonal fades bridge the cover crop into the surrounding garden.
-  draw_title_art(canvas, left, y + 19.0f * s, s);
-  for (int i = 0; i < 32; ++i) {
-    const float py = y + (19.0f + (float)i) * s;
+  draw_title_art(canvas, left, y + 8.0f * s, s);
+  for (int i = 0; i < 31; ++i) {
+    const float py = y + (8.0f + (float)i) * s;
     fill_rect(canvas, left, py, left + 480.0f * s, py + s, dark,
-              (uint32_t)(32 - i) * 8u);
+              (uint32_t)(31 - i) * 8u);
   }
-  for (int i = 0; i < 26; ++i) {
-    const float py = y + (222.0f + (float)i) * s;
+  for (int i = 0; i < 37; ++i) {
+    const float py = y + (200.0f + (float)i) * s;
     fill_rect(canvas, left, py, left + 480.0f * s, py + s, dark,
-              (uint32_t)(i + 1) * 256u / 26u);
+              (uint32_t)(i + 1) * 256u / 37u);
   }
+  const h2_garden_guard_rect_t journal = h2_garden_guard_menu_tab(l, false, 0u);
   const h2_garden_guard_rect_t start =
       h2_garden_guard_action_rect(l, H2_GARDEN_GUARD_ACTION_START);
-  rounded_rect(canvas, start.x, start.y + 2.0f * s, start.x + start.w,
-               start.y + start.h + 2.0f * s, 8.0f * s, RGB(12, 27, 22), 256u);
-  rounded_rect(canvas, start.x, start.y, start.x + start.w, start.y + start.h,
-               8.0f * s, RGB(243, 194, 95), 256u);
-  rounded_rect(canvas, start.x + 2.0f * s, start.y + 2.0f * s,
-               start.x + start.w - 2.0f * s, start.y + start.h - 3.0f * s,
-               6.0f * s, RGB(255, 221, 140), 256u);
+  const h2_garden_guard_rect_t shop = h2_garden_guard_menu_tab(l, false, 1u);
+  cover_card(canvas, journal, 0u);
+  cover_card(canvas, start, 1u);
+  cover_card(canvas, shop, 2u);
+  const h2_garden_guard_rect_t language =
+      h2_garden_guard_action_rect(l, H2_GARDEN_GUARD_ACTION_LANGUAGE);
+  const float lx = language.x, ly = language.y, lw = language.w,
+              lh = language.h;
+  capsule(canvas, lx + lw * 0.25f, y, lx + lw * 0.18f, ly + lh * 0.42f,
+          .75f * s, RGB(214, 185, 125), 256u);
+  capsule(canvas, lx + lw * 0.75f, y, lx + lw * 0.82f, ly + lh * 0.42f,
+          .75f * s, RGB(214, 185, 125), 256u);
+  trapezoid(canvas, ly + 6.0f * s, lx + 3.0f * s, lx + lw - 3.0f * s,
+            ly + lh - 2.0f * s, lx + 6.0f * s, lx + lw - 6.0f * s,
+            RGB(136, 94, 56), 256u);
+  trapezoid(canvas, ly + 7.0f * s, lx + 5.0f * s, lx + lw - 5.0f * s,
+            ly + lh - 4.0f * s, lx + 8.0f * s, lx + lw - 8.0f * s,
+            RGB(226, 185, 114), 256u);
+  if (canvas->external_cover_labels) return;
   if (game->language == H2_GARDEN_GUARD_LANG_ZH) {
-    cover_type(canvas, &k_cover_title[0][0], 32u, cx, y + 28.0f * s, s, cream);
-    cover_type(canvas, &k_cover_start[0][0], 18u, cx, start.y + start.h * 0.5f,
-               s, dark);
+    cover_type(canvas, &k_cover_title[0][0], 32u, cx, y + 26.0f * s, s, cream);
+    cover_type(canvas, &k_cover_start[0][0], 18u, cx, y + 295.5f * s, s, dark);
   } else {
     const char* title = "GARDEN GUARD";
     const int32_t scale = fit_scale(title, 308.0f * s, text_scale(s, 4.0f));
     text_layer(
         canvas, title,
         (int32_t)(cx - 0.5f * (float)h2_garden_guard_text_width(title, scale)),
-        (int32_t)(y + 28.0f * s - 3.5f * (float)scale), scale, cream, 256u);
-    const char* action = "START GAME";
-    const int32_t button_scale =
-        fit_scale(action, start.w * 0.9f, text_scale(s, 2.0f));
-    text_layer(
-        canvas, action,
-        (int32_t)(cx - 0.5f * (float)h2_garden_guard_text_width(action,
-                                                                button_scale)),
-        (int32_t)(start.y + (start.h - 7.0f * (float)button_scale) * 0.5f),
-        button_scale, dark, 256u);
+        (int32_t)(y + 26.0f * s - 3.5f * (float)scale), scale, cream, 256u);
+    cover_native_label(canvas, "START GAME", start, y + 295.5f * s, dark);
   }
-  for (unsigned i = 0; i < 2u; ++i) {
-    const h2_garden_guard_rect_t r = h2_garden_guard_menu_tab(l, false, i);
-    const char* label =
-        i == 0u ? (r.w < 42.0f ? L("LOG", "图鉴") : L("JOURNAL", "图鉴"))
-                : L("SHOP", "商店");
-    const int32_t scale = fit_scale(label, r.w, text_scale(s, 2.0f));
-    text_layer(
-        canvas, label,
-        (int32_t)(r.x +
-                  (r.w - (float)h2_garden_guard_text_width(label, scale)) *
-                      0.5f),
-        (int32_t)(r.y + (r.h - (float)label_height(label, scale)) * 0.5f),
-        scale, RGB(209, 219, 179), 256u);
-  }
-  disc(canvas, cx, y + 304.0f * s, fmaxf(1.0f, 1.5f * s), RGB(151, 140, 88),
-       256u);
-  const h2_garden_guard_rect_t language =
-      h2_garden_guard_action_rect(l, H2_GARDEN_GUARD_ACTION_LANGUAGE);
-  menu_button(canvas, language,
-              language.w < 44.0f ? L("中文", "EN") : L("中文", "ENGLISH"),
-              RGB(31, 61, 51), cream);
+  cover_native_label(canvas, L("JOURNAL", "图鉴"), journal, y + 295.5f * s,
+                     cream);
+  cover_native_label(canvas, L("SHOP", "商店"), shop, y + 295.5f * s, cream);
+  cover_native_label(
+      canvas, language.w < 44.0f ? L("中文", "EN") : L("中文", "ENGLISH"),
+      language, ly + lh * 0.57f, dark);
   if (game->language_unsaved)
     text_centered(canvas, L("LANGUAGE FOR THIS SESSION", "语言仅本次有效"), cx,
-                  y + 235.0f * s, 1, cream, 256u);
+                  y + 43.0f * s, 1, cream, 256u);
 }
 
 static void draw_result(h2_garden_guard_canvas_t* canvas,
@@ -2358,6 +2565,23 @@ static void draw_pause(h2_garden_guard_canvas_t* canvas,
     text_centered(canvas, L("LANGUAGE FOR THIS SESSION", "语言仅本次有效"), cx,
                   y + 253.0f * s, 1, cream, 256u);
 }
+
+#ifdef __EMSCRIPTEN__
+void h2_garden_guard_collect_menu_labels(h2_garden_guard_menu_labels_t* menu,
+                                         const h2_garden_guard_game_t* game) {
+  h2_garden_guard_canvas_t canvas = {.width = game->layout.width,
+                                     .height = game->layout.height,
+                                     .measure = true,
+                                     .external_menu_labels = true,
+                                     .menu_labels = menu};
+  if (game->menu == H2_GARDEN_GUARD_MENU_JOURNAL) {
+    draw_journal(&canvas, game);
+    if (game->journal_card != 0u) draw_journal_focus(&canvas, game);
+  } else if (game->menu == H2_GARDEN_GUARD_MENU_SHOP) {
+    draw_shop(&canvas, game);
+  }
+}
+#endif
 
 static void draw_frozen_scene(h2_garden_guard_canvas_t* canvas,
                               const h2_garden_guard_game_t* game);

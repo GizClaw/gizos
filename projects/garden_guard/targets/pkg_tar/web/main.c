@@ -82,6 +82,60 @@ static void language_changed(void* user, const char* language_tag) {
 }
 
 /* The page delivers input while the game's state stays on the run thread. */
+/* clang-format off */
+EM_JS(void, apply_cover_js, (const h2_garden_guard_cover_rect_t* controls,
+                             int session_language), {
+  if (!Module['h2GardenCover']) return;
+  const rects = [];
+  if (controls) {
+    const first = controls >> 2;
+    for (let i = 1; i <= 4; ++i) {
+      const base = first + i * 4;
+      rects.push([HEAPF32[base], HEAPF32[base + 1], HEAPF32[base + 2], HEAPF32[base + 3]]);
+    }
+  }
+  Module['h2GardenCover'](rects, !!session_language);
+});
+/* clang-format on */
+
+_Static_assert(sizeof(h2_garden_guard_cover_rect_t) == 4u * sizeof(float),
+               "Web cover expects four packed coordinates");
+_Static_assert(H2_GARDEN_GUARD_COVER_ACTION_COUNT == 5,
+               "Update Web cover controls");
+
+typedef struct web_cover {
+  const h2_garden_guard_cover_rect_t* controls;
+  bool session_language;
+} web_cover_t;
+
+static void apply_cover(void* data) {
+  const web_cover_t* cover = data;
+  apply_cover_js(cover->controls, cover->session_language);
+}
+
+static void cover_changed(void* user,
+                          const h2_garden_guard_cover_rect_t* controls,
+                          bool session_language) {
+  (void)user;
+  web_cover_t cover = {controls, session_language};
+  (void)emscripten_proxy_sync(emscripten_proxy_get_system_queue(),
+                              emscripten_main_runtime_thread_id(), apply_cover,
+                              &cover);
+}
+
+static atomic_int web_cover_action;
+
+EMSCRIPTEN_KEEPALIVE void h2_garden_guard_web_cover_action(int action) {
+  int idle = 0;
+  if (action > 0 && action < H2_GARDEN_GUARD_COVER_ACTION_COUNT)
+    (void)atomic_compare_exchange_strong(&web_cover_action, &idle, action);
+}
+
+static h2_garden_guard_cover_action_t take_cover_action(void* user) {
+  (void)user;
+  return (h2_garden_guard_cover_action_t)atomic_exchange(&web_cover_action, 0);
+}
+
 static atomic_bool web_back;
 static atomic_bool web_reduce_motion;
 
@@ -117,7 +171,9 @@ int main(void) {
   int rc = h2_runtime_init(&config, &runtime);
   const h2_garden_guard_config_t game = {.language_changed = language_changed,
                                          .back_pressed = back_pressed,
-                                         .reduce_motion = reduce_motion};
+                                         .reduce_motion = reduce_motion,
+                                         .cover_changed = cover_changed,
+                                         .cover_action = take_cover_action};
   if (rc == H2_PAL_OK) rc = h2_garden_guard_run(runtime, &game);
   printf("H2_GARDEN_GUARD_WEB_EXIT rc=%d\n", rc);
   const int destroyed = runtime != NULL ? h2_runtime_destroy(&runtime) : 0;

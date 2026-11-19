@@ -54,6 +54,7 @@ pkg_tar(
     name = "garden_guard",
     srcs = [
         "_headers",
+        "droid-sans.woff",
         "droid-sans-fallback.woff",
         "droid-sans-fallback-notice.txt",
         ":garden_guard_wasm",

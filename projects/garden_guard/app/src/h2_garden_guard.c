@@ -42,6 +42,10 @@ typedef struct session {
   uint32_t plant_revision;
   bool previous_transient;
   bool first_frame;
+  bool cover_visible, cover_session_language;
+#ifdef __EMSCRIPTEN__
+  bool web_menu_visible;
+#endif
   unsigned touch_failures;
   uint32_t frames, frames_since_stats;
   uint64_t stats_started_ms;
@@ -338,12 +342,18 @@ static void copy_dirty(const session_t* s, uint16_t* destination,
 
 static h2_garden_guard_canvas_t layer_canvas(const session_t* s,
                                              uint16_t* pixels, bool measure) {
-  return (h2_garden_guard_canvas_t){.pixels = pixels,
-                                    .width = s->display.width,
-                                    .height = s->display.height,
-                                    .stride_pixels = (size_t)s->display.width,
-                                    .measure = measure,
-                                    .depth = s->depth};
+  return (h2_garden_guard_canvas_t){
+      .pixels = pixels,
+      .width = s->display.width,
+      .height = s->display.height,
+      .stride_pixels = (size_t)s->display.width,
+      .measure = measure,
+      .external_cover_labels = s->config.cover_changed != NULL,
+#ifdef __EMSCRIPTEN__
+      .external_menu_labels = s->game.menu == H2_GARDEN_GUARD_MENU_JOURNAL ||
+                              s->game.menu == H2_GARDEN_GUARD_MENU_SHOP,
+#endif
+      .depth = s->depth};
 }
 
 /* Rebuild the static parts whose key changed, adding what changed. A part
@@ -482,6 +492,18 @@ static h2_pal_result_t render_frame(session_t* s) {
   s->compose_ms += composed - started;
   s->push_ms += pushed - composed;
   if (rc == H2_PAL_OK) {
+#ifdef __EMSCRIPTEN__
+    const bool menu = s->game.menu == H2_GARDEN_GUARD_MENU_JOURNAL ||
+                      s->game.menu == H2_GARDEN_GUARD_MENU_SHOP;
+    if (menu) {
+      h2_garden_guard_menu_labels_t labels = {0};
+      h2_garden_guard_collect_menu_labels(&labels, &s->game);
+      h2_garden_guard_web_present_menu_labels(&labels);
+    } else if (s->web_menu_visible) {
+      h2_garden_guard_web_present_menu_labels(NULL);
+    }
+    s->web_menu_visible = menu;
+#endif
     s->previous = current;
     s->previous_transient = transient;
     s->idle_pose_tick = tick;
@@ -561,6 +583,68 @@ static h2_pal_result_t on_first_frame(session_t* s) {
   return s->config.ready != NULL ? s->config.ready(s->config.user) : H2_PAL_OK;
 }
 
+static bool cover_active(const session_t* s) {
+  return s->game.phase == H2_GARDEN_GUARD_PHASE_TITLE &&
+         s->game.menu == H2_GARDEN_GUARD_MENU_NONE;
+}
+
+static h2_garden_guard_rect_t cover_rect(
+    const session_t* s, h2_garden_guard_cover_action_t action) {
+  const h2_garden_guard_layout_t* l = &s->game.layout;
+  switch (action) {
+    case H2_GARDEN_GUARD_COVER_START:
+      return h2_garden_guard_action_rect(l, H2_GARDEN_GUARD_ACTION_START);
+    case H2_GARDEN_GUARD_COVER_LANGUAGE:
+      return h2_garden_guard_action_rect(l, H2_GARDEN_GUARD_ACTION_LANGUAGE);
+    case H2_GARDEN_GUARD_COVER_JOURNAL:
+    case H2_GARDEN_GUARD_COVER_SHOP:
+      return h2_garden_guard_menu_tab(l, false,
+                                      action == H2_GARDEN_GUARD_COVER_SHOP);
+    default:
+      return (h2_garden_guard_rect_t){0};
+  }
+}
+
+static void cover_input(session_t* s) {
+  if (s->config.cover_action == NULL) return;
+  const h2_garden_guard_cover_action_t action =
+      s->config.cover_action(s->config.user);
+  if (!cover_active(s) || action < H2_GARDEN_GUARD_COVER_START ||
+      action >= H2_GARDEN_GUARD_COVER_ACTION_COUNT)
+    return;
+  const h2_garden_guard_rect_t r = cover_rect(s, action);
+  const float x = r.x + 0.5f * r.w, y = r.y + 0.5f * r.h;
+  h2_garden_guard_game_pointer(&s->game, H2_GARDEN_GUARD_POINTER_DOWN, x, y);
+  h2_garden_guard_game_pointer(&s->game, H2_GARDEN_GUARD_POINTER_UP, x, y);
+}
+
+static void sync_cover(session_t* s) {
+  if (s->config.cover_changed == NULL) return;
+  const bool active = cover_active(s);
+  const bool session_language = s->game.language_unsaved;
+  if (active == s->cover_visible &&
+      (!active || session_language == s->cover_session_language))
+    return;
+  s->cover_visible = active;
+  s->cover_session_language = session_language;
+  if (!active) {
+    s->config.cover_changed(s->config.user, NULL, false);
+    return;
+  }
+  h2_garden_guard_cover_rect_t controls[H2_GARDEN_GUARD_COVER_ACTION_COUNT] = {
+      0};
+  const float width = (float)s->display.width,
+              height = (float)s->display.height;
+  for (int i = H2_GARDEN_GUARD_COVER_START;
+       i < H2_GARDEN_GUARD_COVER_ACTION_COUNT; ++i) {
+    const h2_garden_guard_rect_t r =
+        cover_rect(s, (h2_garden_guard_cover_action_t)i);
+    controls[i] = (h2_garden_guard_cover_rect_t){r.x / width, r.y / height,
+                                                 r.w / width, r.h / height};
+  }
+  s->config.cover_changed(s->config.user, controls, session_language);
+}
+
 static h2_pal_result_t play(session_t* s) {
   const uint32_t period = s->config.frame_period_ms != 0u
                               ? s->config.frame_period_ms
@@ -586,6 +670,7 @@ static h2_pal_result_t play(session_t* s) {
     const bool was_paused = h2_garden_guard_paused(&s->game);
     rc = poll_touch(s);
     if (rc != H2_PAL_OK) return rc;
+    cover_input(s);
     if (s->config.back_pressed != NULL &&
         s->config.back_pressed(s->config.user) &&
         !h2_garden_guard_game_back(&s->game) &&
@@ -596,6 +681,7 @@ static h2_pal_result_t play(session_t* s) {
     save_profile(s, now);
     rc = render_frame(s);
     if (rc != H2_PAL_OK) return rc;
+    sync_cover(s);
     ++s->frames;
     ++s->frames_since_stats;
     const uint64_t finished = clock_ms(s);

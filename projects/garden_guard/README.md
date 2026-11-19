@@ -51,7 +51,7 @@ The versioned `profile` blob in the `garden_guard` Pref namespace holds the jour
 
 The title and pause menus can switch between English and Simplified Chinese. The selection is a separate `language` preference in the `garden_guard` namespace. The title artwork is shared by both languages, and the software renderer draws the localized title and controls. The Web wrapper follows the game's current selection.
 
-The canvas uses a bitmap subset of Droid Sans Fallback Regular. The browser instructions use a small WOFF subset of the same face. Both use [the Android Open Source Project font](https://android.googlesource.com/platform/frameworks/base/+/63ade05d76785975fc3292ca030abbaa1dda8891/data/fonts/DroidSansFallback.ttf) from `android-4.4.4_r2` (`63ade05d76785975fc3292ca030abbaa1dda8891`). Its PostScript name is `DroidSansFallback`, version `2.55b`. The [Apache 2.0 license and attribution](targets/pkg_tar/web/droid-sans-fallback-notice.txt) accompany the derived assets. The original font is only needed to regenerate these files. The canvas generator checks each Chinese code point in the UI against the font's Unicode map and uses a common baseline for the 16-pixel master and the hinted 10-pixel small text.
+The canvas uses a bitmap subset of Droid Sans Fallback Regular. The browser renders cover, journal, and shop text using Droid Sans Fallback and Droid Sans WOFF subsets at the display resolution. The browser shares the game’s cover artwork and control bounds and reads journal and shop labels from the game renderer. Native targets paint bitmap labels directly into RGB565. The Chinese subsets use [the Android Open Source Project font](https://android.googlesource.com/platform/frameworks/base/+/63ade05d76785975fc3292ca030abbaa1dda8891/data/fonts/DroidSansFallback.ttf) from `android-4.4.4_r2` (`63ade05d76785975fc3292ca030abbaa1dda8891`). Its PostScript name is `DroidSansFallback`, version `2.55b`. The [Apache 2.0 license and attribution](targets/pkg_tar/web/droid-sans-fallback-notice.txt) accompany the derived assets. The original font is only needed to regenerate these files. The canvas generator checks each Chinese code point in the UI against the font's Unicode map and uses a common baseline for the 16-pixel master and the hinted 10-pixel small text.
 
 Use FreeType development headers, Python 3, and `fonttools==4.60.2` to regenerate the subsets from the repository root. The command verifies the source SHA-256 before writing either subset.
 
@@ -60,10 +60,13 @@ scratch=$(mktemp -d)
 curl -fL 'https://android.googlesource.com/platform/frameworks/base/+/63ade05d76785975fc3292ca030abbaa1dda8891/data/fonts/DroidSansFallback.ttf?format=TEXT' \
   | python3 -c 'import base64, sys; sys.stdout.buffer.write(base64.b64decode(sys.stdin.buffer.read()))' \
   > "$scratch/DroidSansFallback.ttf"
+curl -fL 'https://android.googlesource.com/platform/frameworks/base/+/63ade05d76785975fc3292ca030abbaa1dda8891/data/fonts/DroidSans.ttf?format=TEXT' \
+  | python3 -c 'import base64, sys; sys.stdout.buffer.write(base64.b64decode(sys.stdin.buffer.read()))' \
+  > "$scratch/DroidSans.ttf"
 cc $(pkg-config --cflags freetype2) projects/garden_guard/tools/generate_han.c \
   $(pkg-config --libs freetype2) -o "$scratch/generate_han"
 python3 projects/garden_guard/tools/generate_droid.py \
-  "$scratch/DroidSansFallback.ttf" "$scratch/generate_han"
+  "$scratch/DroidSansFallback.ttf" "$scratch/generate_han" "$scratch/DroidSans.ttf"
 ```
 
 The cover retains its original RGB565 palette and per-row runs. The decode table reduces its flash footprint while the renderer still uses one row of scratch storage. To reproduce the conversion, pass the original row-RLE table from commit `8c48db3a899fe6ee367dd58f253c2188d4540ea0` to `tools/compress_cover.py ORIGINAL_INCLUDE app/src/h2_garden_guard_title.inc`. The tool round-trips every row against the input.
