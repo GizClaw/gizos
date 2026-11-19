@@ -1,5 +1,4 @@
 #include "h2_alipay_payment_page.h"
-#include "h2_alipay_nfc.h"
 #include "h2_desktop_platform.h"
 #include "h2_smoke_host_runtime.h"
 #include "h2_lvgl_platform.h"
@@ -17,6 +16,7 @@ typedef struct fixture {
   pthread_t ui;
   unsigned phase, cycles, touch_opens, touch_closes, host_starts;
   atomic_uint codes, queries, starts, stops, scans, scan_stops, unbinds;
+  atomic_bool exit_during_start;
   bool scanning, hardware_buttons, production_input, payer_only;
   unsigned navigation_phase;
   atomic_uint pressed_button, group_reads;
@@ -26,7 +26,7 @@ typedef struct fixture {
   uint16_t pixels[240 * 240];
   unsigned flow, flow_phase, reads, writes, frames, confirmations;
   unsigned results, advertising_starts, advertising_stops;
-  unsigned received_frames, reply_encodes, accepted_writes;
+  unsigned received_frames, reply_encodes, accepted_writes, cancel_calls;
   bool advertising;
   h2_alipay_tap_transport_t transport;
   h2_pal_ble_scan_result_fn scan_callback;
@@ -132,13 +132,17 @@ static int tap_start(void* user, const h2_alipay_tap_transport_t* transport,
   assert(transport->write_reply != NULL && atomic_load(&f->scans) == 0u);
   f->transport = *transport;
   atomic_fetch_add(&f->starts, 1u);
+  if (f->flow == 27u)
+    while (!atomic_load(&f->exit_during_start))
+      assert(h2_pal_time_sleep_ms(f->runtime->time, 1u) == H2_PAL_OK);
   *out = (h2_alipay_payment_result_t){0};
   return 0;
 }
 static int stop(void* user) {
   fixture_t* f = user;
   worker(f);
-  atomic_fetch_add(&f->stops, 1u);
+  unsigned stops = atomic_fetch_add(&f->stops, 1u);
+  if (f->flow == 27u && stops == 0u) return H2_PAL_ERR_BUSY;
   return 0;
 }
 static int unbind(void* user, int* sdk_rc) {
@@ -211,9 +215,6 @@ static int encode_reply(void* user, const uint8_t* data, size_t length,
   assert(length == 4u && memcmp(data, "TEST", 4u) == 0 && capacity >= 8u);
   ++fixture->reply_encodes;
   assert(fixture->received_frames == 1u && fixture->reply_encodes == 1u);
-  if (fixture->flow == 6u)
-    return h2_alipay_nfc_copy_raw_reply(NULL, data, length, out, capacity,
-                                        size);
   const uint8_t record[] = {0xd1u, 1u, 4u, 'T', 0u, 'O', 'K', '!'};
   memcpy(out, record, sizeof(record));
   *size = sizeof(record);
@@ -228,10 +229,7 @@ static int write_nfc(void* user, h2_pal_periph_id_t id, const uint8_t* uid,
   assert(id == 101u && uid_length == 4u && uid[0] == 0x42u &&
          type == H2_PAL_NFC_DATA_NDEF);
   const uint8_t record[] = {0xd1u, 1u, 4u, 'T', 0u, 'O', 'K', '!'};
-  if (fixture->flow == 6u)
-    assert(length == 4u && memcmp(data, "TEST", length) == 0);
-  else
-    assert(length == sizeof(record) && memcmp(data, record, length) == 0);
+  assert(length == sizeof(record) && memcmp(data, record, length) == 0);
   assert(fixture->accepted_writes == 0u);
   ++fixture->writes;
   if ((fixture->flow == 18u && fixture->writes <= 3u) || fixture->flow == 19u ||
@@ -255,6 +253,13 @@ static int prepare_ndef_write(void* user, h2_pal_periph_id_t id,
   return rc;
 }
 
+static int scan_nfc(void* user, h2_pal_periph_id_t id,
+                    h2_pal_nfc_scan_t* scan) {
+  (void)user;
+  *scan = (h2_pal_nfc_scan_t){.id = id, .stage = H2_PAL_NFC_STAGE_ABSENT};
+  return H2_PAL_OK;
+}
+
 static int finish_ndef_write(void* user, h2_pal_periph_id_t id,
                              const h2_pal_nfc_data_read_t* prepared,
                              const uint8_t* data, size_t length) {
@@ -264,6 +269,9 @@ static int finish_ndef_write(void* user, h2_pal_periph_id_t id,
     fixture_t* fixture = user;
     worker(fixture);
     assert(length == 0u && fixture->accepted_writes == 0u);
+    ++fixture->cancel_calls;
+    if (fixture->flow == 19u && fixture->cancel_calls == 1u)
+      return H2_PAL_ERR_BUSY;
     return H2_PAL_OK;
   }
   return write_nfc(user, id, prepared->uid, prepared->uid_len,
@@ -438,7 +446,7 @@ static int mapping_list(void* user, h2_runtime_component_t kind,
                         h2_runtime_component_mapping_cb_t callback,
                         void* callback_user) {
   fixture_t* fixture = user;
-  if (fixture->flow != 0u && kind == H2_RUNTIME_COMPONENT_NFC_READER) {
+  if (!fixture->payer_only && kind == H2_RUNTIME_COMPONENT_NFC_READER) {
     const h2_runtime_component_mapping_entry_t entry = {1u, 101u};
     return callback(callback_user, &entry);
   }
@@ -453,7 +461,7 @@ static int mapping_list(void* user, h2_runtime_component_t kind,
 static int periph_get(void* user, h2_pal_periph_id_t id,
                       h2_pal_periph_info_t* out) {
   fixture_t* f = user;
-  if (id == 101u && f->flow != 0u) {
+  if (id == 101u && !f->payer_only) {
     *out = (h2_pal_periph_info_t){
         .id = id, .type = H2_PAL_PERIPH_TYPE_NFC_READER, .name = "test nfc"};
     return 0;
@@ -475,8 +483,8 @@ static int periph_get(void* user, h2_pal_periph_id_t id,
 static int periph_list(void* user, h2_pal_periph_type_t kind,
                        h2_pal_periph_cb_t callback, void* callback_user) {
   fixture_t* f = user;
-  if (f->flow != 0u && (kind == H2_PAL_PERIPH_TYPE_ANY ||
-                        kind == H2_PAL_PERIPH_TYPE_NFC_READER)) {
+  if (!f->payer_only && (kind == H2_PAL_PERIPH_TYPE_ANY ||
+                         kind == H2_PAL_PERIPH_TYPE_NFC_READER)) {
     h2_pal_periph_info_t info;
     assert(periph_get(user, 101u, &info) == 0);
     int rc = callback(callback_user, &info);
@@ -694,6 +702,12 @@ static bool exit_requested(void* user) {
   fixture_t* f = user;
   assert(pthread_equal(f->ui, pthread_self()));
   assert(++f->cycles < 2000u);
+  if (f->flow == 27u) {
+    if (f->flow_phase == 0u && click("Tap to pay")) f->flow_phase = 1u;
+    if (atomic_load(&f->starts) == 0u) return false;
+    atomic_store(&f->exit_during_start, true);
+    return true;
+  }
   if (f->flow >= 23u) return unbind_exit(f);
   if (f->flow != 0u) return flow_exit(f);
   if (f->hardware_buttons && !f->payer_only && f->navigation_phase < 3u) {
@@ -797,6 +811,7 @@ static void run(bool buttons, bool production, bool payer_only, int touch_rc,
   config.sync = h2_desktop_platform_sync_api();
   config.task = h2_desktop_platform_task_api();
   const h2_pal_nfc_vtable_t nfc_vtable = {
+      .scan_nfc_reader = scan_nfc,
       .prepare_ndef_write = prepare_ndef_write,
       .finish_ndef_write = finish_ndef_write,
   };
@@ -843,7 +858,7 @@ static void run(bool buttons, bool production, bool payer_only, int touch_rc,
       .query_tap = query_tap,
       .start_tap = payer_only ? NULL : tap_start,
       .stop_tap = stop,
-      .unbind = flow >= 23u ? unbind : NULL};
+      .unbind = flow >= 23u && flow <= 26u ? unbind : NULL};
   const h2_alipay_payment_api_t payment = {&f, &pvt};
   const h2_alipay_e2e_config_t app = {
       .payment = &payment,
@@ -853,9 +868,33 @@ static void run(bool buttons, bool production, bool payer_only, int touch_rc,
       .should_exit = exit_requested,
       .payment_buttons = buttons ? (h2_alipay_payment_buttons_t){2u, 3u, 4u, 5u}
                                  : (h2_alipay_payment_buttons_t){0}};
+  h2_pal_result_t validation = h2_alipay_e2e_validate_payment(rt, &app);
+  assert(validation == (buttons ? H2_PAL_OK : H2_PAL_ERR_INVALID_ARG));
+  if (buttons && !payer_only) {
+    h2_alipay_e2e_config_t invalid = app;
+    invalid.payment_buttons.next = invalid.payment_buttons.previous;
+    assert(h2_alipay_e2e_validate_payment(rt, &invalid) ==
+           H2_PAL_ERR_INVALID_ARG);
+    invalid = app;
+    invalid.payment_nfc_component_id = 2u;
+    assert(h2_alipay_e2e_validate_payment(rt, &invalid) ==
+           H2_PAL_ERR_INVALID_ARG);
+    invalid.payment_nfc_component_id = 99u;
+    assert(h2_alipay_e2e_validate_payment(rt, &invalid) ==
+           H2_PAL_ERR_NOT_FOUND);
+    const h2_pal_nfc_vtable_t read_only_vtable = {.scan_nfc_reader = scan_nfc};
+    const h2_pal_nfc_api_t read_only = {.vtable = &read_only_vtable};
+    h2_runtime_t read_only_runtime = *rt;
+    read_only_runtime.nfc = &read_only;
+    assert(h2_alipay_e2e_validate_payment(&read_only_runtime, &app) ==
+           H2_PAL_ERR_UNSUPPORTED);
+  }
   assert(h2_alipay_payment_page_run(rt, &app, h2_lvgl_display_lvgl(view), 240,
                                     240, NULL, NULL) == expected);
-  if (flow >= 23u) {
+  if (flow == 27u) {
+    assert(atomic_load(&f.starts) == 1u && atomic_load(&f.stops) == 2u &&
+           f.received_frames == 0u && f.results == 0u);
+  } else if (flow >= 23u) {
     assert(f.flow_phase == (flow == 24u ? 11u : 6u));
     assert(atomic_load(&f.unbinds) == (flow == 23u || flow == 26u ? 0u : 1u));
     assert(f.reads == 0u && f.writes == 0u && atomic_load(&f.codes) == 0u);
@@ -881,6 +920,7 @@ static void run(bool buttons, bool production, bool payer_only, int touch_rc,
     assert(f.flow_phase == 6u && f.reads == expected_reads &&
            f.writes == expected_writes &&
            f.accepted_writes == (read_failed || flow == 19u ? 0u : 1u) &&
+           f.cancel_calls == (flow == 19u ? 2u : 0u) &&
            f.received_frames == (read_failed ? 0u : 1u) &&
            f.reply_encodes == (read_failed ? 0u : 1u) &&
            f.results == (flow == 22u ? 3u
@@ -941,5 +981,6 @@ int main(void) {
   run(true, true, false, 0, H2_ALIPAY_PAYMENT_PAGE_UNBOUND, 24u);
   run(true, true, false, 0, 0, 25u);
   run(true, true, false, 0, 0, 26u);
+  run(true, false, false, 0, 0, 27u);
   return 0;
 }

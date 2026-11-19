@@ -136,9 +136,14 @@ h2_pal_result_t h2_alipay_e2e_refresh_binding(
     h2_runtime_t* runtime, const h2_alipay_e2e_config_t* config,
     bool (*cancel)(void*), void* cancel_user, h2_alipay_e2e_result_t* result);
 
-/** Standalone App. Owns LVGL/display lifetime and at most one SDK
- * worker at a time;
- * Runtime lifetime belongs to the launcher. No required component mappings.
+/** Validate the launcher's payment mappings before App entry. A payment menu
+ * requires four distinct Buttons. Enabled tap also requires an NFC Reader,
+ * the reply encoder, and the NFC scan and prepared-write operations. */
+h2_pal_result_t h2_alipay_e2e_validate_payment(
+    const h2_runtime_t* runtime, const h2_alipay_e2e_config_t* config);
+
+/** Standalone App. Owns LVGL/display lifetime and at most one SDK worker.
+ * Runtime lifetime and component mappings belong to the launcher.
  * All UI state stays on the calling thread. A supported payment-menu unbind
  * requires user confirmation, joins its worker and shows a phone-side reminder
  * before returning to binding without resetting the SDK or rebooting.

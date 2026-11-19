@@ -56,6 +56,7 @@ typedef struct h2_pal_nfc_data_read {
 } h2_pal_nfc_data_read_t;
 
 typedef struct h2_pal_nfc_vtable {
+  /** BUSY indicates temporary contention and provides no discovery result. */
   h2_pal_result_t (*scan_nfc_reader)(void* user, h2_pal_periph_id_t id,
                                      h2_pal_nfc_scan_t* out_scan);
 

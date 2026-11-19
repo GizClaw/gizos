@@ -88,7 +88,6 @@ cc_library(
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     deps = [
-        ":nfc",
         ":tasks",
         ":workflow",
         "//libs/crypto/sha256",
@@ -160,7 +159,6 @@ cc_test(
     target_compatible_with = POSIX_HOST_TOOL_COMPATIBILITY,
     deps = [
         ":alipay_e2e",
-        ":nfc",
         "//libs/image/qrcode",
         "//libs/sync/atomic/providers/c11",
         "//libs/ui/lvgl",

@@ -30,22 +30,6 @@ typedef struct h2_alipay_payment_result {
   int nfc_write_rc;
   bool processing_notified, write_attempted, response_sent;
   char amount[32];
-  /** Optional observations from the completed query, excluding private data.
-   * action is the client's bounded numeric classification. False valid means
-   * the backend did not expose a query snapshot, not a successful request. */
-  bool query_diagnostics_valid, query_attempted, query_token_present;
-  size_t query_code_length, query_tid_length, query_uid_length;
-  int query_result, query_request_result, query_http_status, query_rpc_status;
-  int query_ack_result;
-  unsigned query_action;
-  size_t query_body_length, query_action_length;
-  uint64_t query_elapsed_ms;
-  bool query_action_hash_valid, query_action_identifier;
-  uint8_t query_action_sha256[32];
-  unsigned query_response_fields, query_business_type;
-  size_t query_business_length;
-  bool query_response_code_valid;
-  int query_response_code;
 } h2_alipay_payment_result_t;
 
 /** Borrowed synchronous NFC transport, called on the business worker.

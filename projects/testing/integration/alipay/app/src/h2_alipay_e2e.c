@@ -225,10 +225,12 @@ h2_pal_result_t h2_alipay_e2e_run(h2_runtime_t* runtime,
   if (runtime == NULL || config == NULL || config->prepare == NULL ||
       config->alipay == NULL || config->alipay->vtable == NULL)
     return H2_PAL_ERR_INVALID_ARG;
+  int rc = h2_alipay_e2e_validate_payment(runtime, config);
+  if (rc != H2_PAL_OK) return rc;
   alipay_page_t page = {.runtime = runtime, .config = config};
   bool platform_open = false, lvgl_open = false, atomic_open = false;
   bool cancel_open = false;
-  int rc = h2_pal_display_open(runtime->display);
+  rc = h2_pal_display_open(runtime->display);
   if (rc != H2_PAL_OK) return rc;
   h2_display_info_t info = {0};
   rc = h2_pal_display_get_info(runtime->display, &info);

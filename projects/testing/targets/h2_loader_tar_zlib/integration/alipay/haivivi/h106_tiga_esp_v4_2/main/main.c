@@ -446,6 +446,8 @@ static void run(void* user) {
       .binding_progress = binding_progress,
       .report = report,
   };
+  rc = h2_alipay_e2e_validate_payment(runtime, &config);
+  if (rc != H2_PAL_OK) fail("payment-mappings", rc);
   rc = h2_alipay_e2e_run(runtime, &config);
   (void)h2_alipay_e2e_target_capture(NULL, NULL);
   h2_pal_mem_free(runtime->mem, transferred);

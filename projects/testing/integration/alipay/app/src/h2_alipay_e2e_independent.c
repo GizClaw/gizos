@@ -364,40 +364,8 @@ static int payment_query_tap(void* user, h2_alipay_payment_result_t* out) {
   alipay_payment_status_e status = ALIPAY_PAYMENT_STATUS_UNKNOWN;
   char ext[256];
   uint32_t ext_length = sizeof(ext);
-  uint64_t started = 0u, ended = 0u;
-  bool timed = h2_pal_time_get_monotonic_ms(s_time, &started) == H2_PAL_OK;
   out->sdk_rc =
       alipay_query_last_nfc_pay_result(&status, out->amount, ext, &ext_length);
-  if (timed && h2_pal_time_get_monotonic_ms(s_time, &ended) == H2_PAL_OK &&
-      ended >= started)
-    out->query_elapsed_ms = ended - started;
-  h2_alipay_client_payment_t diagnostics;
-  if (h2_alipay_independent_last_payment_result(&diagnostics) == H2_PAL_OK) {
-    out->query_diagnostics_valid = true;
-    out->query_attempted = diagnostics.query.attempted;
-    out->query_token_present = diagnostics.query.nfc_token_present;
-    out->query_code_length = diagnostics.query.code_length;
-    out->query_tid_length = diagnostics.query.tid_length;
-    out->query_uid_length = diagnostics.query.uid_length;
-    out->query_result = diagnostics.result;
-    out->query_request_result = diagnostics.query.request_result;
-    out->query_http_status = diagnostics.query.http_status;
-    out->query_rpc_status = diagnostics.query.rpc_status;
-    out->query_ack_result = diagnostics.ack_result;
-    out->query_action = (unsigned)diagnostics.query.action;
-    out->query_body_length = diagnostics.query.body_length;
-    out->query_action_length = diagnostics.query.action_length;
-    out->query_action_hash_valid = diagnostics.query.action_hash_valid;
-    out->query_action_identifier = diagnostics.query.action_identifier;
-    memcpy(out->query_action_sha256, diagnostics.query.action_sha256,
-           sizeof(out->query_action_sha256));
-    out->query_response_fields = diagnostics.query.response_fields;
-    out->query_business_type = diagnostics.query.business_type;
-    out->query_business_length = diagnostics.query.business_length;
-    out->query_response_code_valid = diagnostics.query.response_code_valid;
-    out->query_response_code = diagnostics.query.response_code;
-    payment_wipe(&diagnostics, sizeof(diagnostics));
-  }
   out->sdk_status = (int)status;
   out->response_sent = true;
   out->amount[sizeof(out->amount) - 1u] = '\0';

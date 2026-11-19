@@ -1,6 +1,5 @@
 #include "h2_alipay_payment_page.h"
 #include "h2_alipay_payment_model.h"
-#include "h2_alipay_nfc.h"
 #include "h2_atomic.h"
 #include "h2_qrcode.h"
 #include "h2_sha256.h"
@@ -320,30 +319,6 @@ static int write_reply(void* user, const uint8_t* data, size_t length) {
       page->config->user, data, length, message, sizeof(message), &size);
   if (rc == H2_PAL_OK && (size == 0u || size > sizeof(message)))
     rc = H2_PAL_ERR_FORMAT;
-  if (rc == H2_PAL_OK) {
-    log_payment(
-        page,
-        "H2_ALIPAY_NFC_HANDOFF sdk_bytes=%zu sent_bytes=%zu "
-        "raw_equal=%u extra_bytes=%zu",
-        length, size,
-        (unsigned)(size == length && memcmp(message, data, length) == 0),
-        size >= length ? size - length : 0u);
-    h2_alipay_nfc_text_diagnostics_t layout;
-    int inspected =
-        h2_alipay_nfc_inspect_text_reply(data, length, message, size, &layout);
-    log_payment(
-        page,
-        "H2_ALIPAY_NDEF_LAYOUT inspect_rc=%d sdk_bytes=%zu ndef_bytes=%zu "
-        "tnf=%u single=%u short=%u type_text=%u utf8=%u language_en=%u "
-        "payload_offset=%zu payload_bytes=%zu language_bytes=%zu "
-        "text_offset=%zu text_bytes=%zu exact_length=%u text_equal=%u",
-        inspected, length, size, layout.tnf, (unsigned)layout.single_record,
-        (unsigned)layout.short_record, (unsigned)layout.type_text,
-        (unsigned)layout.utf8, (unsigned)layout.language_en,
-        layout.payload_offset, layout.payload_length, layout.language_length,
-        layout.text_offset, layout.text_length, (unsigned)layout.exact_length,
-        (unsigned)layout.text_matches);
-  }
   h2_pal_periph_id_t id;
   if (rc == H2_PAL_OK)
     rc = h2_runtime_periph_id(page->rt, page->config->payment_nfc_component_id,
@@ -436,11 +411,9 @@ static void work(void* user) {
         p->call_rc = H2_PAL_ERR_UNSUPPORTED;
         break;
       }
-      p->nfc_received = false;
       const h2_alipay_tap_transport_t transport = {.user = p,
                                                    .write_reply = write_reply};
       p->call_rc = api->start_tap(p->api->user, &transport, &p->result);
-      p->tap_active = p->call_rc == 0;
       break;
     }
     case J_FRAME: {
@@ -460,8 +433,13 @@ static void work(void* user) {
         p->call_rc =
             api->receive_ndef(p->api->user, data.bytes, data.len, &p->result);
         if (p->nfc_prepared != NULL) {
-          (void)h2_pal_nfc_finish_ndef_write(p->rt->nfc, id, p->nfc_prepared,
-                                             NULL, 0u);
+          int canceled;
+          do {
+            canceled = h2_pal_nfc_finish_ndef_write(p->rt->nfc, id,
+                                                    p->nfc_prepared, NULL, 0u);
+            if (canceled == H2_PAL_ERR_BUSY)
+              (void)h2_pal_time_sleep_ms(p->rt->time, 20u);
+          } while (canceled == H2_PAL_ERR_BUSY);
           p->nfc_prepared = NULL;
         }
         log_payment(
@@ -486,22 +464,17 @@ static void work(void* user) {
         wipe(data.bytes, data.len);
         h2_pal_mem_free(p->rt->mem, data.bytes);
       }
-      p->nfc_received = p->call_rc == 0 || p->result.response_sent;
       break;
     }
     case J_TAP_QUERY:
       p->call_rc = api->query_tap(p->api->user, &p->result);
       break;
     case J_UNBIND:
-      p->call_rc = !p->tap_active && api->unbind != NULL
-                       ? api->unbind(p->api->user, &p->sdk_rc)
-                       : H2_PAL_ERR_INVALID_STATE;
+      p->call_rc = api->unbind != NULL ? api->unbind(p->api->user, &p->sdk_rc)
+                                       : H2_PAL_ERR_INVALID_STATE;
       break;
     case J_STOP:
-      p->call_rc = p->tap_active ? api->stop_tap(p->api->user) : 0;
-      if (p->call_rc == 0) {
-        p->tap_active = false;
-      }
+      p->call_rc = api->stop_tap(p->api->user);
       break;
     default:
       p->call_rc = H2_PAL_ERR_INVALID_STATE;
@@ -550,6 +523,7 @@ static void paid(payment_page_t* p) {
 static void finish_job(payment_page_t* p) {
   job_t job = p->job;
   p->job = J_NONE;
+  if (job == J_TAP_START && p->call_rc == 0) p->tap_active = true;
   log_payment(
       p,
       "H2_ALIPAY_PAYMENT operation=%u pal_rc=%d sdk_rc=%d sdk_status=%d state=%d nfc_rc=%d sent=%d nfc_attempted=%d processing_status=%d processing_error=%d transport_rc=%d code_length=%u",
@@ -560,36 +534,6 @@ static void finish_job(payment_page_t* p) {
       p->result.processing_status, p->result.processing_error,
       p->result.transport_rc,
       job == J_CODE ? (unsigned)p->generated_length : 0u);
-  if (job == J_TAP_QUERY && p->result.query_diagnostics_valid) {
-    char action_digest[65];
-    h2_sha256_hex(p->result.query_action_sha256, action_digest);
-    log_payment(
-        p,
-        "H2_ALIPAY_QUERY_SHAPE action_hash_valid=%u action_identifier=%u "
-        "action_sha256=%s response_fields=%u business_type=%u business_bytes=%zu "
-        "response_code_valid=%u response_code=%d generation=%u sequence=%u",
-        (unsigned)p->result.query_action_hash_valid,
-        (unsigned)p->result.query_action_identifier, action_digest,
-        p->result.query_response_fields, p->result.query_business_type,
-        p->result.query_business_length,
-        (unsigned)p->result.query_response_code_valid,
-        p->result.query_response_code, (unsigned)p->job_generation,
-        p->query_sequence);
-    log_payment(
-        p,
-        "H2_ALIPAY_QUERY_RESULT elapsed_ms=%llu query_rc=%d request_rc=%d "
-        "attempted=%u http_status=%d rpc_status=%d body_bytes=%zu "
-        "response_action=%u action_bytes=%zu ack_rc=%d generation=%u sequence=%u "
-        "token_present=%u code_bytes=%zu tid_bytes=%zu uid_bytes=%zu",
-        (unsigned long long)p->result.query_elapsed_ms, p->result.query_result,
-        p->result.query_request_result, (unsigned)p->result.query_attempted,
-        p->result.query_http_status, p->result.query_rpc_status,
-        p->result.query_body_length, p->result.query_action,
-        p->result.query_action_length, p->result.query_ack_result,
-        (unsigned)p->job_generation, p->query_sequence,
-        (unsigned)p->result.query_token_present, p->result.query_code_length,
-        p->result.query_tid_length, p->result.query_uid_length);
-  }
   if (job == J_UNBIND) {
     if (p->call_rc == H2_PAL_OK && p->sdk_rc == 0) {
       p->unbound = true;
@@ -608,6 +552,7 @@ static void finish_job(payment_page_t* p) {
     }
   } else if (job == J_STOP) {
     if (p->call_rc == 0) {
+      p->tap_active = false;
       bool retain = p->stay_on_result && !p->leaving && !p->exiting;
       p->stay_on_result = false;
       if (retain) {
@@ -662,7 +607,8 @@ static void finish_job(payment_page_t* p) {
         p->mode = RESULT;
       }
     } else if (job == J_FRAME) {
-      if (job == J_FRAME && p->nfc_read_rc != 0) {
+      p->nfc_received = p->call_rc == 0 || p->result.response_sent;
+      if (p->nfc_read_rc != 0) {
         char text[80];
         (void)snprintf(text, sizeof(text), "NFC read failed\nrc: %d",
                        p->nfc_read_rc);
@@ -876,7 +822,7 @@ int h2_alipay_payment_page_run(h2_runtime_t* rt,
           if (delta > 5000u) p->model.refresh_ms = 0u;
         }
       }
-      if (p->mode == TAP && !p->leaving && p->worker == NULL &&
+      if (p->mode == TAP && p->tap_active && !p->leaving && p->worker == NULL &&
           p->query_due == 0u && !p->nfc_received &&
           event.kind == H2_RUNTIME_COMPONENT_EVENT_NFC_STATE &&
           event.component_id == config->payment_nfc_component_id) {
@@ -931,7 +877,11 @@ int h2_alipay_payment_page_run(h2_runtime_t* rt,
           p->mode = TAP;
           ++p->generation;
           p->query_due = 0u;
-          (void)start_job(p, J_TAP_START);
+          p->nfc_received = false;
+          if (start_job(p, J_TAP_START) != 0) {
+            p->mode = RESULT;
+            controls(p);
+          }
         } else if (action == A_UNBIND && p->mode == MENU &&
                    p->api->vtable->unbind != NULL && !p->tap_active) {
           p->mode = UNBIND_CONFIRM;

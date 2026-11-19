@@ -1,6 +1,44 @@
 #include "h2_alipay_e2e.h"
 #include <string.h>
 
+h2_pal_result_t h2_alipay_e2e_validate_payment(
+    const h2_runtime_t* runtime, const h2_alipay_e2e_config_t* config) {
+  if (runtime == NULL || config == NULL) return H2_PAL_ERR_INVALID_ARG;
+  if (config->payment == NULL) return H2_PAL_OK;
+  const h2_alipay_payment_vtable_t* payment = config->payment->vtable;
+  if (payment == NULL || payment->get_code == NULL ||
+      payment->query_code == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  const h2_alipay_payment_buttons_t* keys = &config->payment_buttons;
+  const h2_runtime_component_id_t ids[] = {keys->previous, keys->next,
+                                           keys->activate, keys->back};
+  for (size_t index = 0u; index < sizeof(ids) / sizeof(ids[0]); ++index) {
+    h2_runtime_component_info_t info;
+    int rc = h2_runtime_component_get(runtime, ids[index], &info);
+    if (rc != H2_PAL_OK) return rc;
+    if (info.kind != H2_RUNTIME_COMPONENT_BUTTON) return H2_PAL_ERR_INVALID_ARG;
+    for (size_t prior = 0u; prior < index; ++prior)
+      if (ids[index] == ids[prior]) return H2_PAL_ERR_INVALID_ARG;
+  }
+  if (payment->start_tap == NULL) return H2_PAL_OK;
+  h2_runtime_component_info_t reader;
+  int rc = h2_runtime_component_get(runtime, config->payment_nfc_component_id,
+                                    &reader);
+  if (rc != H2_PAL_OK) return rc;
+  if (reader.kind != H2_RUNTIME_COMPONENT_NFC_READER)
+    return H2_PAL_ERR_INVALID_ARG;
+  if (payment->stop_tap == NULL || payment->receive_ndef == NULL ||
+      payment->query_tap == NULL || config->payment_nfc_encode_reply == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  const h2_pal_nfc_api_t* nfc = runtime->nfc;
+  if (nfc == NULL || nfc->vtable == NULL ||
+      nfc->vtable->scan_nfc_reader == NULL ||
+      nfc->vtable->prepare_ndef_write == NULL ||
+      nfc->vtable->finish_ndef_write == NULL)
+    return H2_PAL_ERR_UNSUPPORTED;
+  return H2_PAL_OK;
+}
+
 static uint64_t now(h2_runtime_t* runtime) {
   uint64_t ms = 0;
   (void)h2_pal_time_get_monotonic_ms(runtime->time, &ms);

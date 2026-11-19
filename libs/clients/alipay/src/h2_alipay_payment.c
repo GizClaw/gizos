@@ -1,8 +1,6 @@
 #include "h2_alipay_client_internal.h"
 
 #include "yyjson.h"
-#include "h2_sha256.h"
-#include <limits.h>
 #include <string.h>
 
 typedef struct payment_workspace {
@@ -194,95 +192,6 @@ static yyjson_doc* parse_string(yyjson_val* value, const yyjson_alc* alc) {
                           0u, alc, NULL);
 }
 
-static h2_alipay_client_payment_action_t classify_action(yyjson_val* action) {
-  if (action == NULL) return H2_ALIPAY_CLIENT_ACTION_ABSENT;
-  if (!yyjson_is_str(action)) return H2_ALIPAY_CLIENT_ACTION_INVALID;
-  if (yyjson_equals_str(action, "pay_success"))
-    return H2_ALIPAY_CLIENT_ACTION_PAID;
-  if (yyjson_equals_str(action, "soundWavePaySuccessPush"))
-    return H2_ALIPAY_CLIENT_ACTION_SOUNDWAVE;
-  if (yyjson_equals_str(action, "failure_info"))
-    return H2_ALIPAY_CLIENT_ACTION_FAILURE;
-  if (yyjson_equals_str(action, "CLOSECODE"))
-    return H2_ALIPAY_CLIENT_ACTION_DISABLED;
-  if (yyjson_equals_str(action, "DELSEED") ||
-      yyjson_equals_str(action, "DELSEEDANDINDEX"))
-    return H2_ALIPAY_CLIENT_ACTION_UNBOUND;
-  return H2_ALIPAY_CLIENT_ACTION_UNKNOWN;
-}
-
-static bool diagnostic_code(yyjson_val* value, int* out) {
-  if (yyjson_is_sint(value)) {
-    int64_t code = yyjson_get_sint(value);
-    if (code < 0 || code > INT_MAX) return false;
-    *out = (int)code;
-    return true;
-  }
-  if (yyjson_is_uint(value)) {
-    uint64_t code = yyjson_get_uint(value);
-    if (code > INT_MAX) return false;
-    *out = (int)code;
-    return true;
-  }
-  if (!yyjson_is_str(value)) return false;
-  size_t size = yyjson_get_len(value);
-  if (size == 0u || size > 9u) return false;
-  const char* text = yyjson_get_str(value);
-  int code = 0;
-  for (size_t i = 0u; i < size; ++i) {
-    if (text[i] < '0' || text[i] > '9') return false;
-    code = code * 10 + text[i] - '0';
-  }
-  *out = code;
-  return true;
-}
-
-static void observe_response(yyjson_val* root, yyjson_val* action,
-                             h2_alipay_client_query_diagnostics_t* query) {
-  if (yyjson_is_str(action)) {
-    const char* text = yyjson_get_str(action);
-    size_t size = yyjson_get_len(action);
-    h2_sha256_t hash;
-    h2_sha256_init(&hash);
-    h2_sha256_update(&hash, (const uint8_t*)text, size);
-    h2_sha256_finish(&hash, query->action_sha256);
-    query->action_hash_valid = true;
-    query->action_identifier = size != 0u;
-    for (size_t i = 0u; i < size; ++i) {
-      bool letter = (text[i] >= 'a' && text[i] <= 'z') ||
-                    (text[i] >= 'A' && text[i] <= 'Z') || text[i] == '_';
-      bool digit = i != 0u && text[i] >= '0' && text[i] <= '9';
-      if (!letter && !digit) query->action_identifier = false;
-    }
-  }
-  yyjson_val* success = yyjson_obj_get(root, "success");
-  if (yyjson_is_true(success))
-    query->response_fields |= H2_ALIPAY_CLIENT_QUERY_SUCCESS_TRUE;
-  if (yyjson_is_false(success))
-    query->response_fields |= H2_ALIPAY_CLIENT_QUERY_SUCCESS_FALSE;
-  yyjson_val* error = yyjson_obj_get(root, "errorCode");
-  yyjson_val* code = yyjson_obj_get(root, "resultCode");
-  if (error != NULL)
-    query->response_fields |= H2_ALIPAY_CLIENT_QUERY_ERROR_CODE;
-  if (yyjson_obj_get(root, "errorMsg") != NULL)
-    query->response_fields |= H2_ALIPAY_CLIENT_QUERY_ERROR_MESSAGE;
-  if (code != NULL)
-    query->response_fields |= H2_ALIPAY_CLIENT_QUERY_RESULT_CODE;
-  if (yyjson_obj_get(root, "resultMsg") != NULL)
-    query->response_fields |= H2_ALIPAY_CLIENT_QUERY_RESULT_MESSAGE;
-  query->response_code_valid =
-      diagnostic_code(error != NULL ? error : code, &query->response_code);
-  yyjson_val* business = yyjson_obj_get(root, "sdkBizData");
-  if (business != NULL) {
-    query->response_fields |= H2_ALIPAY_CLIENT_QUERY_BUSINESS;
-    query->business_type = yyjson_is_obj(business)   ? 1u
-                           : yyjson_is_str(business) ? 2u
-                                                     : 3u;
-    if (yyjson_is_str(business))
-      query->business_length = yyjson_get_len(business);
-  }
-}
-
 static int parse(const h2_alipay_client_config_t* config,
                  payment_workspace_t* work, size_t response_length,
                  h2_alipay_client_payment_t* result, char* ext_data,
@@ -310,10 +219,6 @@ static int parse(const h2_alipay_client_config_t* config,
     goto done;
   }
   yyjson_val* action = yyjson_obj_get(root, "action");
-  observe_response(root, action, &result->query);
-  result->query.action = classify_action(action);
-  result->query.action_length =
-      yyjson_is_str(action) ? yyjson_get_len(action) : 0u;
   if (action == NULL) {
     result->state = H2_ALIPAY_CLIENT_PAYMENT_PENDING;
   } else if (!yyjson_is_str(action)) {
@@ -393,16 +298,7 @@ static int query_order(const h2_alipay_client_config_t* config,
   if (rc == H2_PAL_OK) {
     size_t response_length = 0u;
     result->stage = H2_ALIPAY_CLIENT_QUERY_PAYMENT;
-    result->query.attempted = true;
-    result->query.nfc_token_present = token != NULL && token[0] != '\0';
-    result->query.code_length = size;
-    result->query.tid_length = strlen(work->binding.tid);
-    result->query.uid_length = strlen(work->binding.uid);
     rc = request(config, work, code, token, false, &response_length);
-    result->query.request_result = rc;
-    result->query.http_status = work->request.http_status;
-    result->query.rpc_status = work->request.rpc_status;
-    result->query.body_length = response_length;
     if (rc == H2_PAL_OK)
       rc = parse(config, work, response_length, result, ext_data, capacity,
                  ext_length, details);

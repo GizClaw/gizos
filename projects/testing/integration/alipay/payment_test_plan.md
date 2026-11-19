@@ -1,6 +1,6 @@
 # H106 Alipay payment qualification
 
-This plan covers the current H106 entry: displayed payer QR and screen-on NFC response inside the Alipay wallet, using the owned compatible client and `PAYCODE | NFCPAY | SQUARE` (`0x4005`). Follow the wallet flow on PDF pages 12–17 and the current six-field callback header. Ordinary awake payment outside Alipay and screen-off payment are outside this scope. The integration App acquires no payment BLE radio. BLE compatibility in the client library has separate host replay coverage and is not a hardware acceptance claim for this entry. NFC payment has not passed real-device validation; the checks below remain qualification work.
+This plan covers the H106 entry for displayed payer QR and screen-on NFC response inside the Alipay wallet, using the owned compatible client and `PAYCODE | NFCPAY | SQUARE` (`0x4005`). Follow the wallet flow on PDF pages 12–17 and the current six-field callback header. Issue #845 records the November 19, 2026 H106 merchant pass at 43 dB. The checks below apply when qualifying another build or terminal.
 
 ## Prerequisites and evidence
 
@@ -20,7 +20,7 @@ The entry prepares network IP and calibrated UTC without an extra HEAD gateway p
 ## NFC wallet response
 
 - Register NFC send and processing-status callbacks when entering the wallet's tap page, before reading a terminal. Use `alipay_nfc_recv_data_handle`, whose context is wallet `0`; ordinary `AWAKE` is `1`. Pass the complete NDEF and its exact length without extracting records, stripping headers or stopping at embedded zero bytes.
-- Alipay confirmed Text-type NDEF replies on November 18, 2026, as reported by the user. Retain the current encoder's UTF-8 Text record with language `en`, with the complete message bounded to 512 bytes. Verify exact reply bytes, payload offsets and lengths on the terminal; the confirmed record type does not replace physical submission or payment qualification.
+- Verify the reference framing. The encoder copies exactly 39 SDK bytes into a 46-byte UTF-8 Text record with language `en`. The driver writes `03 00`, the full record and `FE`, then publishes `0x2E`.
 - Keep the same terminal close enough for discovery, complete input acquisition, SDK processing and one physical reply write. Check the exact discovered UID at each data operation; replacing the card must abort before writes to a different UID.
 - Qualify first-message extraction, retained CRC checks, tag extent, static/dynamic locks, control TLVs, partial-page preservation and publish-last length handling. Unsupported tags must be rejected before sending Type 2 page commands.
 - Exercise bounded transient activation/read retries and BUSY waits. BUSY before device access may wait at most 100 times for 20 ms with the same UID, encoded message and SDK invocation. Verify one encoding and at most one accepted physical write. A failed or ambiguous physical write must produce an explicit failure and zero payment queries, without an automatic second write, account reset, alternate response or payment BLE fallback.
@@ -39,6 +39,6 @@ bazel test --config=macos_arm64 //projects/testing/integration/alipay/app:paymen
 
 Immutable replay preserves the original client fixtures and explicitly reports unsupported image/script exclusions. Those results do not qualify physical NFC interoperability.
 
-Real-device NFC payment remains unpassed. Keep the issue open and do not create a PR until the requested device follow-up establishes the terminal profile and records actual merchant/result evidence. Preserve failed attempts and raw non-payload diagnostics alongside later successful retries. A fresh native package build is also required after the boundary cleanup; a missing toolchain is a blocked check, not a pass.
+Record subsequent native builds and merchant trials against their own source revisions. Preserve failed attempts and non-payload diagnostics alongside later successful trials.
 
 Source contracts: [client API](../../../../libs/clients/alipay/include/h2_alipay_api.h), [App binding API](app/include/h2_alipay.h), [App payment API](app/include/h2_alipay_payment.h), [reply encoder](app/include/h2_alipay_nfc.h).

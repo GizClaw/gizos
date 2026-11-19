@@ -173,10 +173,6 @@ int main(void) {
   assert(payment->vtable->query_tap(payment->user, &result) == 0);
   assert(result.sdk_rc != 0 && result.state == H2_ALIPAY_PAYMENT_UNKNOWN &&
          result.amount[0] == '\0' && fixture.requests == 1u);
-  assert(result.query_diagnostics_valid && result.query_attempted &&
-         result.query_request_result == fixture.network_rc &&
-         result.query_http_status == 0 && result.query_rpc_status == -1 &&
-         result.query_action == H2_ALIPAY_CLIENT_ACTION_UNOBSERVED);
   fixture.network_rc = 0;
   fixture.response =
       "{\"action\":\"TEST_PENDING_0001\",\"success\":false,"
@@ -184,33 +180,12 @@ int main(void) {
   assert(payment->vtable->query_tap(payment->user, &result) == 0);
   assert(result.sdk_rc == 0 && result.state == H2_ALIPAY_PAYMENT_PENDING &&
          result.amount[0] == '\0' && fixture.requests == 2u);
-  assert(result.query_diagnostics_valid && result.query_attempted &&
-         result.query_token_present && result.query_code_length >= 18u &&
-         result.query_request_result == 0 && result.query_http_status == 200 &&
-         result.query_rpc_status == 1000 &&
-         result.query_body_length == strlen(fixture.response) &&
-         result.query_action == H2_ALIPAY_CLIENT_ACTION_UNKNOWN);
-  static const uint8_t expected_action_hash[32] = {
-      0x65u, 0x9du, 0xd9u, 0xedu, 0x33u, 0xd8u, 0x8bu, 0x80u,
-      0x40u, 0x6fu, 0xd8u, 0x50u, 0x4eu, 0x73u, 0xe0u, 0x5cu,
-      0xc2u, 0x88u, 0x5du, 0xa4u, 0xf9u, 0x3bu, 0xa4u, 0x76u,
-      0xd6u, 0x37u, 0x91u, 0xbfu, 0xccu, 0xd9u, 0x05u, 0x28u};
-  assert(
-      result.query_action_hash_valid && result.query_action_identifier &&
-      memcmp(result.query_action_sha256, expected_action_hash,
-             sizeof(expected_action_hash)) == 0 &&
-      result.query_response_fields == 22u && result.query_business_type == 2u &&
-      result.query_business_length == 1u && result.query_response_code_valid &&
-      result.query_response_code == 1007);
   fixture.response =
       "{\"action\":\"pay_success\",\"sdkBizData\":{\"realAmount\":\"0.00\"}}";
   assert(payment->vtable->query_tap(payment->user, &result) == 0);
   assert(result.sdk_rc == 0 && result.state == H2_ALIPAY_PAYMENT_PAID &&
          strcmp(result.amount, "0.00") == 0 && fixture.requests == 4u &&
          fixture.writes == 4u);
-  assert(result.query_action == H2_ALIPAY_CLIENT_ACTION_PAID &&
-         result.query_http_status == 200 && result.query_rpc_status == 1000 &&
-         result.query_ack_result == 0);
   assert(payment->vtable->stop_tap(payment->user) == 0);
   pref.commit.result = H2_PAL_ERR_WRITE;
   pref.commit.remaining = 1u;

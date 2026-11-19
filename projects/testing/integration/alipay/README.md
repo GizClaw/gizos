@@ -1,6 +1,6 @@
 # Alipay integration
 
-This suite composes the owned [Alipay client](../../../../libs/clients/alipay/README.md) into one portable binding/payment App and H106 firmware entries. The client provides the compatible C ABI without an external vendor header tree or binary archive. Native NFC payment qualification is still incomplete; a completed physical write or host test does not establish merchant acceptance or a debit.
+This suite composes the owned [Alipay client](../../../../libs/clients/alipay/README.md) into one portable binding/payment App and H106 firmware entries. The client provides the compatible C ABI using owned source. On November 19, 2026, H106 completed a screen-on NFC wallet payment with the default 43 dB receive gain. Issue #845 records the tested revision and evidence.
 
 ## Ownership
 
@@ -29,7 +29,7 @@ Initialization is serialized and cached within the configured adapter lifetime. 
 
 The payment menu provides Pay code, Tap to pay and, when supported by the adapter, Unbind. Unbind opens a confirmation page with Cancel selected by default. Confirm invokes `alipay_unbinding()` on the serialized worker only after NFC cleanup. Failure shows the SDK/PAL result and leaves Back available; successful local removal clears private payment state and shows a reminder to check/unbind the phone-side Smart Devices entry. Continue returns to a new binding QR without rebooting. The compatible client attempts cloud notification before removing local binding/context records; a successful local unbind does not establish remote notification success. Session storage and factory/certificate policy remain unchanged.
 
-Four distinct Runtime Button mappings provide previous, next, activate and back actions on release. The App opens no Touch PAL. Display rendering and LVGL calls remain on the App thread; SDK operations run on one worker at a time. Shutdown retains dependencies until worker join succeeds.
+Four distinct Runtime Button mappings provide previous, next, activate and back actions on release. The launcher validates those mappings and, when tap is enabled, the NFC Reader mapping plus scan/prepare/finish capabilities before entering the App. The App opens no Touch PAL. The App thread owns UI and payment state. SDK operations run on one worker at a time, and the App retains dependencies until the worker joins and the session stops.
 
 Payer codes contain 18 or 19 digits and use the existing QR encoder with level Q, integer scale and a quiet zone. Refresh is scheduled every 60 seconds, on user refresh and on a material clock step. The model retains a bounded set of previously displayed codes so queries continue to identify the original attempt after refresh. Code generation and display do not establish payment. Only an actual successful result query produces a local paid receipt; errors and missing results remain visible. Codes and packets are not printed or persisted.
 
@@ -61,15 +61,7 @@ Page references use the printed pages in *支付宝智能穿戴 - 碰一下支�
 
 The H106 integration compiles INFO logs and enables only the `alipay/payment` scope at INFO; other scopes retain the board default. `H2_ALIPAY_LOG_CONFIG` reports the effective compile/runtime levels at boot. Portable App diagnostics use the injected Log PAL. Native provider/entry logs report phases, errors, lengths and non-payload metadata. The bounded Trace records actual adapter operations; dropped events are explicit. The offline [collector](tools/README.md) validates source, order and capture completeness without opening a device or contacting a service.
 
-The H106 entry selects the Text encoder and reports `H2_ALIPAY_NFC_PROFILE mode=text source=independent callbacks=1` at startup. A 39-byte SDK reply becomes a 46-byte Text NDEF message. `H2_ALIPAY_NFC_HANDOFF` reports the lengths and the comparison of the complete message with the callback bytes. `H2_ALIPAY_NDEF_LAYOUT` reports whether the Text body's bytes match the callback bytes.
-
-`H2_ALIPAY_NDEF_LAYOUT` inspects the exact encoded buffer passed to PAL and compares its Text body with the borrowed callback bytes without exporting either. It reports record flags, payload/language/text offsets and lengths, exact message length and byte equality; this is software handoff evidence only. It neither changes submission nor adds an RF readback.
-
 `H2_ALIPAY_NFC_CALLBACKS` records whether each SDK callback ran, the SDK processing status and error, and the result of the synchronous NFC writeback. The owned SDK calls `send_data_handle` before `notify_payment_result_handle` on the successful wallet path. Check for `response_sent=1` before interpreting the subsequent payment result query.
-
-`H2_ALIPAY_QUERY_RESULT` reports the query's PAL result, HTTP and RPC status, accepted body length, elapsed time and a bounded action classification. Query observations are captured before any success ACK. Action values are 0 unobserved, 1 absent, 2 unknown, 3 invalid type, 4 pay success, 5 sound-wave success, 6 failure information, 7 disabled and 8 unbound. No action text, response body, token or payer code is logged. Missing and unknown actions can both produce pending, while HTTP/RPC/request errors remain separate.
-
-`H2_ALIPAY_QUERY_SHAPE` adds SHA-256 of the exact parsed action bytes, an ASCII identifier flag, root field presence/boolean bits, `sdkBizData` type/length and a bounded numeric `errorCode` or `resultCode`. It exports no action text, message or response body and does not change payment status handling. Response bits are 1 success true, 2 success false, 4 errorCode, 8 errorMsg, 16 sdkBizData, 32 resultCode and 64 resultMsg; business types are 0 absent, 1 object, 2 string and 3 other. Code validity is explicit; a missing/textual code is not numeric success.
 
 The wallet's acquisition reports its READ count and frame status in `H2_NFC_READ_FRAMES`. The `H2_NFC_WRITE_PREREAD` diagnostic belongs to the standalone writer.
 
@@ -85,4 +77,4 @@ The H106 final entry supplies `https://iotapi.alipay.com/mgw.htm` through `h2_al
 
 Host tests cover real owned-client calls, initialization reuse, output guards, cancellation, earlier displayed attempts, Runtime buttons, QR pixels, complete binary NDEF forwarding, NFC acquisition budgets, one encoding/write after BUSY waits, failed-write non-retry, zero payment queries after write failure and resource cleanup. Adapter and UI tests separate SDK processing success, pending response submission and actual SDK result queries, including query failure and a zero-amount paid result. The seven immutable client fixtures preserve their original hashes and 10,416 archived records. Current replay compares 10,378 supported records, explicitly excluding 38 downloaded-script records and 23 additional image-decode comparisons. Image decoding and downloaded transit scripts remain unsupported.
 
-Native compilation, flashing, merchant interoperability, issuer/account eligibility and financial results require separate evidence for the exact firmware. NFC payment has not passed real-device validation. See [the payment test plan](payment_test_plan.md); host tests and completed SPI/DMA or NFC writes do not close its hardware acceptance criteria.
+See [the payment test plan](payment_test_plan.md) for native compilation, installation and merchant validation. Record each real-device result against the exact firmware revision.
