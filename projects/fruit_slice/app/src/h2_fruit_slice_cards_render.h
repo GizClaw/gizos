@@ -32,6 +32,8 @@ void h2_fruit_slice_draw_text_centered(h2_fruit_slice_canvas_t* canvas,
                                        int32_t scale, uint16_t color,
                                        uint32_t alpha);
 int32_t h2_fruit_slice_text_scale(float unit, float base);
+int32_t h2_fruit_slice_body_scale(const char* value, float unit,
+                                  float preferred);
 int32_t h2_fruit_slice_fit_scale(const char* value, float max_width,
                                  int32_t preferred);
 void h2_fruit_slice_draw_fruit(h2_fruit_slice_canvas_t* canvas,

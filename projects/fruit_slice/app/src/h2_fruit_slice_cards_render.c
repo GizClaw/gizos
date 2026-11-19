@@ -1017,7 +1017,7 @@ void h2_fruit_slice_cards_render_album_static(
       (void)snprintf(line, sizeof(line), TR("%s - LOCKED"),
                      TR(h2_fruit_slice_card_rarity_name(card->rarity)));
     const int32_t small_pref =
-        (int32_t)fminf(limit, (float)h2_fruit_slice_text_scale(u, 2.0f));
+        (int32_t)fminf(limit, (float)h2_fruit_slice_body_scale(line, u, 2.0f));
     if (compact) {
       char combined[128];
       (void)snprintf(combined, sizeof(combined), "%s %s", name, line);
@@ -1046,7 +1046,10 @@ void h2_fruit_slice_cards_render_album_static(
     const char* hint = status != NULL ? status : TR(card->hint);
     h2_fruit_slice_draw_text_centered(
         canvas, hint, cx, compact ? d->y0 + 16.0f : d->y0 + dh * 0.72f,
-        h2_fruit_slice_fit_scale(hint, dw, small_pref),
+        h2_fruit_slice_fit_scale(
+            hint, dw,
+            (int32_t)fminf(limit,
+                           (float)h2_fruit_slice_body_scale(hint, u, 2.0f))),
         status != NULL ? RGB(255, 150, 90)
                        : (have ? RGB(206, 196, 176) : RGB(255, 222, 120)),
         256u);
