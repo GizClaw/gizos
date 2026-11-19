@@ -13,8 +13,12 @@ typedef struct h2_fruit_slice_audio_voice {
   bool active;
 } h2_fruit_slice_audio_voice_t;
 
+/* The optional worker owns a copy of the mixer and provider handles until
+ * stop/join returns them. The controller stays on the App thread. */
+struct h2_fruit_slice_audio_worker;
+
 /* Main-loop-owned, bounded mixer. Runtime and APIs are borrowed until close.
- * No audio worker or shared mutable state; all calls run on the App thread.
+ * Optional worker mode transfers mixer ownership through bounded queues.
  * Unsupported audio is optional and explicitly reported by init/pump.
  */
 typedef struct h2_fruit_slice_audio {
@@ -33,6 +37,9 @@ typedef struct h2_fruit_slice_audio {
   uint32_t seen;
   uint8_t mute;
   bool available, speaker_started;
+  struct h2_fruit_slice_audio_worker* worker;
+  bool worker_requested;
+  uint32_t dropped_commands;
 } h2_fruit_slice_audio_t;
 
 /* Loads independent fruit_slice/audio_v1 u32 preference. Does not start a
@@ -47,8 +54,9 @@ int h2_fruit_slice_audio_prepare(h2_fruit_slice_audio_t* audio);
  * now_ms is monotonic wall time. BOMB clears lower-priority voices. */
 void h2_fruit_slice_audio_emit(h2_fruit_slice_audio_t* audio,
                                h2_fruit_slice_sound_t sound, uint64_t now_ms);
-/* Changes mute flags immediately and persists independently of game/profile.
- * Flushes queued PCM so muting cannot leave old audio playing. */
+/* Stop/flush playback, then apply and persist independent mute flags. Failed
+ * shutdown retains the previous applied value so the App retries the request.
+ * A persistence failure leaves the successfully applied mute in memory. */
 int h2_fruit_slice_audio_set_mute(h2_fruit_slice_audio_t* audio, uint8_t mute);
 /* At most three native frames per call, at most 20 ms of lookahead, write
  * timeout zero, no backlog replay. Service at frame boundaries/during waits. */
