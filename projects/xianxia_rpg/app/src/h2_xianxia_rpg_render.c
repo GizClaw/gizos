@@ -812,10 +812,35 @@ static void river_backdrop(canvas_t* canvas, const game_t* game) {
             RGB(20, 16, 24), 256u);
 }
 
+static uint16_t c9_color(uint32_t phase) {
+  static const uint16_t colors[4] = {RGB(150, 224, 200), RGB(104, 194, 235),
+                                     RGB(222, 238, 236), RGB(214, 171, 231)};
+  return colors[phase % 4u];
+}
+
 static void battle_backdrop(canvas_t* canvas, const game_t* game) {
   const h2_xianxia_rpg_layout_t* l = &game->layout;
   const float w = (float)canvas->width, sh = (float)l->stage.h;
   const float u = game->unit;
+  if (game->chapter == 9u) {
+    fill_rect(canvas, 0, 0, w, sh, RGB(17, 32, 39), 256u);
+    for (int i = 0; i < 7; ++i) {
+      float x = w * ((float)i + .25f) / 7;
+      fill_rect(canvas, x, sh * .15f, w * .065f, sh * .62f, RGB(49, 69, 72),
+                256u);
+      fill_rect(canvas, x, sh * .15f, w * .065f, 5, C_GOLD, 256u);
+    }
+    ellipse(canvas, w * .5f, sh * .86f, w * .46f, sh * .16f, 0,
+            RGB(104, 91, 62), 256u);
+    ellipse(canvas, w * .5f, sh * .86f, w * .43f, sh * .14f, 0, RGB(39, 65, 69),
+            256u);
+    for (int i = 0; i < 4; ++i)
+      fill_rect(canvas, w * (.12f + .23f * (float)i), sh * .79f, w * .05f,
+                sh * .1f, c9_color((uint32_t)i), 256u);
+    fill_rect(canvas, 0, (float)l->panel.y, w, (float)l->panel.h,
+              RGB(20, 16, 24), 256u);
+    return;
+  }
   if (game->chapter == 8u) {
     fill_rect(canvas, 0, 0, w, sh, RGB(32, 54, 74), 256u);
     for (int i = 0; i < 12; ++i) {
@@ -1607,6 +1632,96 @@ static void c6_tile_art(canvas_t* canvas, const game_t* game, char tile,
   }
 }
 
+/* Nine-cell pixel glyphs: altered shapes have a conspicuous extra/missing
+ * stroke. All comparisons use this one drawing at the same scale. */
+static void c9_glyph(canvas_t* canvas, uint32_t id, float cx, float cy,
+                     float size, uint16_t color) {
+  static const uint16_t pixels[12][9] = {
+      {0, 16, 16, 0, 68, 68, 0, 16, 0},
+      {0, 254, 0, 124, 0, 254, 0, 0, 0},
+      {16, 56, 56, 16, 16, 124, 16, 16, 0},
+      {0, 124, 2, 62, 64, 124, 0, 0, 0},
+      {0, 68, 170, 17, 0, 68, 170, 17, 0},
+      {16, 56, 84, 16, 16, 124, 68, 124, 0},
+      {0, 124, 146, 146, 146, 146, 124, 0, 0},
+      {16, 84, 56, 254, 56, 84, 16, 0, 0},
+      {0, 254, 16, 124, 16, 254, 16, 0, 0},
+      {0, 68, 170, 17, 16, 16, 16, 16, 0},
+      {16, 16, 16, 254, 16, 16, 16, 0, 0},
+      {0, 124, 130, 130, 130, 130, 124, 0, 0},
+  };
+  const float px = floorf(size / 9.0f) < 1 ? 1 : floorf(size / 9.0f);
+  for (uint32_t y = 0; y < 9; ++y)
+    for (uint32_t x = 0; x < 9; ++x)
+      if (pixels[id % 12u][y] & (1u << x))
+        fill_rect(canvas, cx - px * 4.5f + (float)x * px,
+                  cy - px * 4.5f + (float)y * px, px, px, color, 256u);
+}
+static const char* c9_label(const game_t* game, char tile) {
+  if (game->map == H2_XIANXIA_RPG_MAP_ECHO_HALL && tile >= 'A' && tile <= 'D')
+    return h2_xianxia_rpg_c9_room_names[tile - 'A'];
+  int id = tile == 'R'   ? H2_XIANXIA_RPG_C9_REST
+           : tile == 'I' ? H2_XIANXIA_RPG_C9_INSCRIPTION
+           : tile == 'U' ? H2_XIANXIA_RPG_C9_UP
+           : tile == 'D' ? H2_XIANXIA_RPG_C9_DOWN
+           : tile == 'F' ? (game->map == H2_XIANXIA_RPG_MAP_ECHO_HALL
+                                ? H2_XIANXIA_RPG_C9_CORE
+                                : H2_XIANXIA_RPG_C9_FATHER)
+           : tile == 'E' ? (game->map == H2_XIANXIA_RPG_MAP_ECHO_HALL
+                                ? H2_XIANXIA_RPG_C9_UP
+                                : H2_XIANXIA_RPG_C9_HALL)
+                         : -1;
+  return id < 0 ? NULL : h2_xianxia_rpg_c9_text[id];
+}
+static void c9_tile_art(canvas_t* canvas, const game_t* game, char tile,
+                        float x, float y, float t) {
+  fill_rect(canvas, x, y, t, t, RGB(13, 27, 35), 256u);
+  if (tile == '~') return;
+  if (tile == '#') {
+    fill_rect(canvas, x + 1, y + 1, t - 2, t - 2, RGB(42, 59, 65), 256u);
+    fill_rect(canvas, x + 2, y + 2, t - 4, 2, RGB(79, 96, 94), 256u);
+    return;
+  }
+  if (tile == '=' || tile == 'U' ||
+      (tile == 'D' && game->map == H2_XIANXIA_RPG_MAP_SHAFT_UPPER)) {
+    fill_rect(canvas, x + t * .23f, y, 2, t, C_GOLD, 256u);
+    fill_rect(canvas, x + t * .72f, y, 2, t, C_GOLD, 256u);
+    for (int i = 0; i < 3; ++i)
+      fill_rect(canvas, x + t * .23f, y + t * (.15f + .3f * (float)i), t * .5f,
+                2, RGB(190, 159, 105), 256u);
+    return;
+  }
+  fill_rect(canvas, x, y, t, t - 1, RGB(63, 84, 87), 256u);
+  if (game->map == H2_XIANXIA_RPG_MAP_LANTERN_CORE)
+    fill_rect(canvas, x + t * .45f, y, t * .08f, t, RGB(127, 118, 81), 256u);
+  if (tile == 'R')
+    lamp_post(canvas, x + t * .1f, y - t * .1f, t * .8f, true);
+  else if (tile == 'I') {
+    fill_rect(canvas, x + t * .1f, y, t * .8f, t * .75f, RGB(30, 44, 49), 256u);
+    c9_glyph(canvas, 7, x + t * .5f, y + t * .3f, t * .7f, C_GOLD);
+  } else if (game->map == H2_XIANXIA_RPG_MAP_ECHO_HALL && tile >= 'A' &&
+             tile <= 'D') {
+    const uint32_t room = (uint32_t)(tile - 'A');
+    const bool won = (game->flags & (1u << (room + 4u))) != 0u;
+    fill_rect(canvas, x, y - t * .25f, t, t, won ? c9_color(room) : C_GOLD,
+              256u);
+    fill_rect(canvas, x + 3, y - t * .15f, t - 6, t * .8f, RGB(20, 31, 40),
+              256u);
+    c9_glyph(canvas, h2_xianxia_rpg_c9_reference(room, 1), x + t * .5f,
+             y + t * .2f, t * .65f, c9_color(room));
+    if (won)
+      fill_rect(canvas, x + t * .4f, y + t * .7f, t * .2f, t * .3f, C_GOLD,
+                256u);
+  } else if (tile == 'F' && game->map == H2_XIANXIA_RPG_MAP_LANTERN_CORE) {
+    fill_rect(canvas, x + t * .38f, y - t * .2f, t * .24f, t * .24f,
+              RGB(231, 220, 177), 256u);
+    fill_rect(canvas, x + t * .23f, y + t * .08f, t * .54f, t * .45f,
+              RGB(153, 214, 199), 256u);
+    fill_rect(canvas, x + t * .44f, y + t * .18f, t * .12f, t * .48f, C_GOLD,
+              256u);
+  }
+}
+
 static const char* c8_label(char tile) {
   if (tile == 'J')
     return h2_xianxia_rpg_actor_name(H2_XIANXIA_RPG_ACTOR_JIANGLI);
@@ -1764,6 +1879,10 @@ static void tile_art(canvas_t* canvas, const game_t* game, int32_t col,
   const float x = (float)(l->map_x + col * l->tile);
   const float y = (float)(l->map_y + row * l->tile);
   const uint32_t seed = hash32((uint32_t)(map * 977 + row * 31 + col));
+  if (h2_xianxia_rpg_map_chapter(map) == 9u) {
+    c9_tile_art(canvas, game, h2_xianxia_rpg_tile(map, col, row), x, y, t);
+    return;
+  }
   if (h2_xianxia_rpg_map_chapter(map) == 8u) {
     c8_tile_art(canvas, game, h2_xianxia_rpg_tile(map, col, row), x, y, t,
                 seed);
@@ -2194,13 +2313,14 @@ static void map_background(canvas_t* canvas, const game_t* game) {
               (float)(ROWS * l->tile), RGB(14, 22, 46),
               game->map == H2_XIANXIA_RPG_MAP_NIGHT_VILLAGE ? 110u : 48u);
   }
-  if (game->chapter == 8u) {
+  if (game->chapter >= 8u) {
     for (int row = 0; row < ROWS; ++row)
       for (int col = 0; col < COLS; ++col) {
         const char tile = h2_xianxia_rpg_tile(game->map, col, row);
         if (tile == 'W' && !(game->facts & H2_XIANXIA_RPG_FACT_C8_WENZHOU))
           continue;
-        const char* label = c8_label(tile);
+        const char* label =
+            game->chapter == 9u ? c9_label(game, tile) : c8_label(tile);
         if (label == NULL) continue;
         const float cx = (float)l->map_x + ((float)col + .5f) * (float)l->tile;
         const int y = l->map_y + row * l->tile +
@@ -2585,6 +2705,8 @@ static void draw_enemy(canvas_t* canvas, h2_xianxia_rpg_enemy_t enemy, float cx,
   const float bob = sinf(phase) * s * 0.04f;
   cy += bob;
   switch (enemy) {
+    case H2_XIANXIA_RPG_ENEMY_NODE_ECHO:
+    case H2_XIANXIA_RPG_ENEMY_CORE_SHADE:
     case H2_XIANXIA_RPG_ENEMY_BRIDGE_SHADE:
       for (int i = 0; i < 3; ++i) {
         const float xx = cx + (float)(i - 1) * s * .3f;
@@ -2882,6 +3004,7 @@ void h2_xianxia_rpg_background_key(const game_t* game,
  * id, or TEXT_COUNT for none. */
 static h2_xianxia_rpg_text_id_t battle_hint(const game_t* game) {
   const h2_xianxia_rpg_battle_t* b = &game->battle;
+  if (b->node_battle) return H2_XIANXIA_RPG_TEXT_COUNT;
   if (b->dual_lamps) {
     if (b->state == H2_XIANXIA_RPG_BATTLE_VICTORY ||
         b->state == H2_XIANXIA_RPG_BATTLE_DEFEAT)
@@ -2977,6 +3100,9 @@ void h2_xianxia_rpg_static_key(const game_t* game,
         f[10] = (int32_t)(script ^ (script >> 16) ^ game->dialogue.page_offset);
         f[11] = game->banner_ms > 0u ? 1 : 0;
         f[12] = game->objective_ms > 0u ? 1 : 0;
+        if (game->chapter == 9u)
+          f[13] = (int32_t)(game->glyph_view | (game->node_room << 4) |
+                            (game->glyph_wrong ? 256u : 0u));
       } else {
         const h2_xianxia_rpg_battle_t* b = &game->battle;
         f[7] = (int32_t)b->state;
@@ -3007,9 +3133,10 @@ void h2_xianxia_rpg_static_key(const game_t* game,
       f[20] = (int32_t)game->battle.lamp_hp;
       f[21] = (int32_t)(game->battle.dual_lamps ? game->battle.west_lamp_hp
                                                 : game->battle.wave);
-      f[22] = (int32_t)(game->chapter == 5u ? game->battle.turn
-                                            : game->battle.wave_turn);
-      f[23] = game->chapter == 8u ? (int32_t)game->facts
+      f[22] = (int32_t)((game->chapter == 5u || game->chapter == 9u)
+                            ? game->battle.turn
+                            : game->battle.wave_turn);
+      f[23] = game->chapter >= 8u ? (int32_t)game->facts
               : game->chapter == 7u
                   ? (int32_t)(game->facts | (game->trust << 16))
               : game->chapter == 6u
@@ -3272,16 +3399,19 @@ static void draw_ending(canvas_t* canvas, const game_t* game) {
   if (game->time_ms >= game->phase_started_ms + 1500u)
     paper_centered(
         canvas, false,
-        h2_xianxia_rpg_text
-            [onward
-                 ? (game->chapter == 7u   ? H2_XIANXIA_RPG_TEXT_C8_ONWARD
-                    : game->chapter == 6u ? H2_XIANXIA_RPG_TEXT_C7_ONWARD
-                    : game->chapter == 5u ? H2_XIANXIA_RPG_TEXT_C6_ONWARD
-                    : game->chapter == 4u ? H2_XIANXIA_RPG_TEXT_C5_ONWARD
-                    : game->chapter == 3u ? H2_XIANXIA_RPG_TEXT_C4_ONWARD
-                    : game->chapter == 2u ? H2_XIANXIA_RPG_TEXT_C3_ONWARD
-                                          : H2_XIANXIA_RPG_TEXT_ENDING_ONWARD)
-                 : H2_XIANXIA_RPG_TEXT_ENDING_HINT],
+        game->chapter == 8u
+            ? h2_xianxia_rpg_c9_text[H2_XIANXIA_RPG_C9_ONWARD]
+            : h2_xianxia_rpg_text
+                  [onward
+                       ? (game->chapter == 7u   ? H2_XIANXIA_RPG_TEXT_C8_ONWARD
+                          : game->chapter == 6u ? H2_XIANXIA_RPG_TEXT_C7_ONWARD
+                          : game->chapter == 5u ? H2_XIANXIA_RPG_TEXT_C6_ONWARD
+                          : game->chapter == 4u ? H2_XIANXIA_RPG_TEXT_C5_ONWARD
+                          : game->chapter == 3u ? H2_XIANXIA_RPG_TEXT_C4_ONWARD
+                          : game->chapter == 2u
+                              ? H2_XIANXIA_RPG_TEXT_C3_ONWARD
+                              : H2_XIANXIA_RPG_TEXT_ENDING_ONWARD)
+                       : H2_XIANXIA_RPG_TEXT_ENDING_HINT],
         w * 0.5f, y, RGB(150, 110, 60), 240u);
 }
 
@@ -3330,6 +3460,26 @@ static void draw_hud(canvas_t* canvas, const game_t* game) {
             C_GOLD, 200u);
   const int32_t x = r->x + 10, w = r->w - 20;
   int32_t y = r->y + 5;
+  if (game->chapter == 9u) {
+    uint32_t wins = 0;
+    for (uint32_t i = 0; i < 4; ++i) wins += (game->flags >> (i + 4u)) & 1u;
+    char status[128];
+    (void)snprintf(
+        status, sizeof(status),
+        h2_xianxia_rpg_c9_text[H2_XIANXIA_RPG_C9_STATUS], (unsigned)wins,
+        h2_xianxia_rpg_actor_name(h2_xianxia_rpg_c9_wenzhou(game)
+                                      ? H2_XIANXIA_RPG_ACTOR_WENZHOU
+                                      : H2_XIANXIA_RPG_ACTOR_JIANGLI));
+    const char* goal =
+        game->stage == H2_XIANXIA_RPG_STAGE_C9_DESCEND &&
+                (game->facts & H2_XIANXIA_RPG_FACT_C9_BOOK)
+            ? h2_xianxia_rpg_c9_text[H2_XIANXIA_RPG_C9_DESCEND_READY]
+            : h2_xianxia_rpg_objective(game->stage);
+    text_wrapped(canvas, goal, x, y, w, 1, C_TEXT, 256u, UINT32_MAX);
+    text_wrapped(canvas, status, x, y + LINE_PX + 3, w, 1, C_GOLD, 256u,
+                 UINT32_MAX);
+    return;
+  }
   if (game->chapter == 8u) {
     char status[128];
     const char* order =
@@ -3653,7 +3803,49 @@ static void draw_battle_static(canvas_t* canvas, const game_t* game) {
   const h2_xianxia_rpg_enemy_info_t* info =
       h2_xianxia_rpg_enemy_info((h2_xianxia_rpg_enemy_t)b->enemy);
   const int32_t w = canvas->width;
-  if (game->chapter == 5u) {
+  if (game->chapter == 9u) {
+    const h2_xianxia_rpg_rect_t* hero = &l->party[0];
+    const h2_xianxia_rpg_rect_t* foe = &l->party[1];
+    char line[128];
+    panel(canvas, (float)hero->x, (float)hero->y, (float)hero->w,
+          (float)hero->h, 6, 256u);
+    panel(canvas, (float)foe->x, (float)foe->y, (float)foe->w, (float)foe->h, 6,
+          256u);
+    (void)snprintf(line, sizeof(line),
+                   h2_xianxia_rpg_text[H2_XIANXIA_RPG_TEXT_C4_HERO],
+                   (unsigned)game->hero.hp, (unsigned)game->hero.hp_max);
+    text_centered(canvas, false, line, (float)(hero->x + hero->w / 2), hero->y,
+                  C_TEXT, 256u);
+    (void)snprintf(line, sizeof(line),
+                   h2_xianxia_rpg_text[H2_XIANXIA_RPG_TEXT_C4_RESOURCES],
+                   (unsigned)game->hero.mp, (unsigned)game->hero.pills);
+    text_centered(canvas, false, line, (float)(hero->x + hero->w / 2),
+                  hero->y + LINE_PX, C_GOLD, 256u);
+    text_centered(canvas, false, info->name, (float)(foe->x + foe->w / 2),
+                  foe->y, C_TEXT, 256u);
+    bar(canvas, foe->x + 8, foe->y + LINE_PX + 4, foe->w - 16, 10, b->enemy_hp,
+        b->enemy_hp_max, c9_color(b->node_phase));
+    const int y = game->height < 300 ? 48 : 58;
+    text_centered(canvas, false, h2_xianxia_rpg_c9_phase_hints[b->node_phase],
+                  (float)w * .5f, y, c9_color(b->node_phase), 256u);
+    const char* ally = h2_xianxia_rpg_actor_name(
+        h2_xianxia_rpg_c9_wenzhou(game) ? H2_XIANXIA_RPG_ACTOR_WENZHOU
+                                        : H2_XIANXIA_RPG_ACTOR_JIANGLI);
+    if (b->node_phase == 3u)
+      (void)snprintf(line, sizeof(line),
+                     h2_xianxia_rpg_c9_text[H2_XIANXIA_RPG_C9_MIRROR_ORDER],
+                     ally,
+                     b->mirror_command == H2_XIANXIA_RPG_COMMAND_FLEE
+                         ? h2_xianxia_rpg_c9_text[H2_XIANXIA_RPG_C9_SWITCH]
+                         : h2_xianxia_rpg_command_label(
+                               (h2_xianxia_rpg_command_t)b->mirror_command));
+    else
+      (void)snprintf(line, sizeof(line),
+                     h2_xianxia_rpg_c9_text[H2_XIANXIA_RPG_C9_PHASE], ally,
+                     (unsigned)(b->turn % 2u + 1u));
+    text_centered(canvas, false, line, (float)w * .5f, y + LINE_PX, C_TEXT,
+                  256u);
+  } else if (game->chapter == 5u) {
     const h2_xianxia_rpg_rect_t* hero = &l->party[0];
     const h2_xianxia_rpg_rect_t* foe = &l->party[1];
     char line[96];
@@ -3719,7 +3911,7 @@ static void draw_battle_static(canvas_t* canvas, const game_t* game) {
                     b->state == H2_XIANXIA_RPG_BATTLE_DEFEAT ||
                     b->state == H2_XIANXIA_RPG_BATTLE_FLED;
   /* The lanterns give way to the tap hint once the battle is over. */
-  if (b->ally && !over && !b->lamp_battle) {
+  if (b->ally && !over && !b->lamp_battle && !b->node_battle) {
     /* Rapport lanterns at the right end of the message box. */
     const int32_t lamp = LINE_PX - 6;
     const char* label = h2_xianxia_rpg_text[H2_XIANXIA_RPG_TEXT_RAPPORT];
@@ -3786,7 +3978,9 @@ static void draw_battle_static(canvas_t* canvas, const game_t* game) {
       rounded_rect(canvas, x0 + 3.0f, y0 + 3.0f, x1 - 3.0f,
                    y0 + (float)r->h * 0.45f, 5.0f, RGB(255, 230, 180), 40u);
     const char* label =
-        b->dual_lamps && i == H2_XIANXIA_RPG_COMMAND_FLEE
+        b->node_battle && i == H2_XIANXIA_RPG_COMMAND_FLEE
+            ? h2_xianxia_rpg_c9_text[H2_XIANXIA_RPG_C9_SWITCH]
+        : b->dual_lamps && i == H2_XIANXIA_RPG_COMMAND_FLEE
             ? h2_xianxia_rpg_text[H2_XIANXIA_RPG_TEXT_C8_GUARD]
         : b->lamp_battle && i == H2_XIANXIA_RPG_COMMAND_FLEE
             ? h2_xianxia_rpg_text[H2_XIANXIA_RPG_TEXT_C4_GUARD]
@@ -3821,8 +4015,8 @@ static void draw_battle_static(canvas_t* canvas, const game_t* game) {
     text_centered(canvas, false, line, cx, (int32_t)y + 5, C_TEXT, 256u);
   }
   /* The companion's next action above her head. */
-  if (b->ally && choosing && !b->lamp_battle && game->chapter != 5u &&
-      !(game->chapter == 7u && game->height < 360)) {
+  if (b->ally && choosing && !b->lamp_battle && !b->node_battle &&
+      game->chapter != 5u && !(game->chapter == 7u && game->height < 360)) {
     const h2_xianxia_rpg_ally_action_t intent =
         h2_xianxia_rpg_ally_intent(game);
     char bubble[48];
@@ -3927,6 +4121,50 @@ static void draw_c6_ritual(canvas_t* canvas, const game_t* game) {
            h2_xianxia_rpg_text[H2_XIANXIA_RPG_TEXT_C6_COOL + i], true);
 }
 
+static void draw_c9_glyphs(canvas_t* canvas, const game_t* game) {
+  const int w = game->width, h = game->height;
+  const bool book = game->glyph_view == 1u;
+  fill_rect(canvas, 0, 0, (float)w, (float)h, RGB(18, 33, 42), 256u);
+  panel(canvas, 8, 8, (float)w - 16, (float)h - 16, 6, 256u);
+  text_centered(canvas, false,
+                book ? h2_xianxia_rpg_c9_text[H2_XIANXIA_RPG_C9_BOOK_TITLE]
+                     : h2_xianxia_rpg_c9_room_names[game->node_room],
+                (float)w * .5f, 12, C_GOLD, 256u);
+  text_centered(canvas, false,
+                h2_xianxia_rpg_c9_text[book ? H2_XIANXIA_RPG_C9_BOOK_HELP
+                                            : H2_XIANXIA_RPG_C9_DOOR_HELP],
+                (float)w * .5f, 38, C_TEXT, 256u);
+  if (book) {
+    const float cell_h = (float)(h - 118) / 2;
+    for (uint32_t i = 0; i < 8; ++i) {
+      const float cx = (float)w * ((float)(i % 4u) + .5f) / 4;
+      const float cy = 66 + cell_h * ((float)(i / 4u) + .35f);
+      c9_glyph(canvas, i, cx, cy, h < 300 ? 27.0f : 45.0f, C_GOLD);
+      text_centered(canvas, false, h2_xianxia_rpg_c9_glyph_names[i], cx,
+                    (int32_t)(cy + (h < 300 ? 14 : 26)), C_TEXT, 256u);
+    }
+  } else {
+    const float size = h < 300 ? 36.0f : 54.0f;
+    const float cy = (float)h * .36f;
+    for (uint32_t i = 0; i < 2; ++i)
+      c9_glyph(canvas, h2_xianxia_rpg_c9_reference(game->node_room, i),
+               (float)w * (.35f + .3f * (float)i), cy, size, C_GOLD);
+    for (uint32_t i = 0; i < 3; ++i) {
+      const h2_xianxia_rpg_rect_t* r = &game->layout.glyph_choices[i];
+      button(canvas, r, "", true);
+      c9_glyph(canvas, h2_xianxia_rpg_c9_glyph(game->node_room, i),
+               (float)(r->x + r->w / 2), (float)(r->y + r->h / 2), size,
+               C_GOLD);
+    }
+    if (game->glyph_wrong)
+      text_centered(canvas, false,
+                    h2_xianxia_rpg_c9_text[H2_XIANXIA_RPG_C9_WRONG],
+                    (float)w * .5f, h - 76, RGB(255, 194, 146), 256u);
+  }
+  button(canvas, &game->layout.glyph_back,
+         h2_xianxia_rpg_c9_text[H2_XIANXIA_RPG_C9_BACK], true);
+}
+
 void h2_xianxia_rpg_render_static(canvas_t* canvas, const game_t* game) {
   unclip(canvas);
   switch (game->phase) {
@@ -3947,9 +4185,19 @@ void h2_xianxia_rpg_render_static(canvas_t* canvas, const game_t* game) {
         draw_c6_ritual(canvas, game);
         break;
       }
+      if (game->chapter == 9u && game->glyph_view) {
+        draw_c9_glyphs(canvas, game);
+        break;
+      }
       draw_hud(canvas, game);
       draw_banner(canvas, game);
       draw_dialogue(canvas, game);
+      if (game->chapter == 9u && !game->dialogue.active) {
+        button(canvas, &game->layout.escort_actions[0],
+               h2_xianxia_rpg_c9_text[H2_XIANXIA_RPG_C9_BOOK_BUTTON], true);
+        button(canvas, &game->layout.escort_actions[1],
+               h2_xianxia_rpg_c9_text[H2_XIANXIA_RPG_C9_HELP_BUTTON], true);
+      }
       if (game->chapter == 8u && !game->dialogue.active) {
         const bool injury = game->stage == H2_XIANXIA_RPG_STAGE_C8_INJURY;
         const bool camp = game->map == H2_XIANXIA_RPG_MAP_SNOW_CAMP;
@@ -4252,8 +4500,9 @@ static void explore_scene(canvas_t* canvas, const game_t* game) {
         .x = (float)l->map_x + (ax + 0.5f) * t + (same ? -t * 0.3f : 0.0f),
         /* Just behind the hero when both share a tile. */
         .feet = (float)l->map_y + (ay + 0.92f) * t - (same ? 0.5f : 0.0f),
-        .actor = game->chapter == 8u &&
-                         (game->facts & H2_XIANXIA_RPG_FACT_C8_ACTIVE_WEN)
+        .actor = (game->chapter == 9u && h2_xianxia_rpg_c9_wenzhou(game)) ||
+                         (game->chapter == 8u &&
+                          (game->facts & H2_XIANXIA_RPG_FACT_C8_ACTIVE_WEN))
                      ? H2_XIANXIA_RPG_ACTOR_WENZHOU
                      : H2_XIANXIA_RPG_ACTOR_JIANGLI,
         .facing = game->facing,
@@ -4317,8 +4566,8 @@ static void battle_scene(canvas_t* canvas, const game_t* game) {
   const float w = (float)canvas->width;
   const float sh = (float)l->stage.h;
   const float u = game->unit;
-  const bool compact =
-      b->lamp_battle || game->chapter == 5u || game->chapter == 7u;
+  const bool compact = b->lamp_battle || b->node_battle ||
+                       game->chapter == 5u || game->chapter == 7u;
   if (compact && l->stage.h <= 122) return;
   const float base_size = compact && sh < 260.0f ? (sh - 122.0f) * 0.65f
                                                  : fminf(sh * 0.5f, w * 0.26f);
@@ -4424,12 +4673,14 @@ static void battle_scene(canvas_t* canvas, const game_t* game) {
           ? ally_k * PI * 2.0f
           : 0.0f;
   if (b->ally && !ally_acting)
-    draw_person(
-        canvas,
-        b->dual_lamps && (game->facts & H2_XIANXIA_RPG_FACT_C8_ACTIVE_WEN)
-            ? H2_XIANXIA_RPG_ACTOR_WENZHOU
-            : H2_XIANXIA_RPG_ACTOR_JIANGLI,
-        ax, hfeet, s * 0.85f, H2_XIANXIA_RPG_FACING_RIGHT, ally_walk, ally_bob);
+    draw_person(canvas,
+                (b->node_battle && h2_xianxia_rpg_c9_wenzhou(game)) ||
+                        (b->dual_lamps &&
+                         (game->facts & H2_XIANXIA_RPG_FACT_C8_ACTIVE_WEN))
+                    ? H2_XIANXIA_RPG_ACTOR_WENZHOU
+                    : H2_XIANXIA_RPG_ACTOR_JIANGLI,
+                ax, hfeet, s * 0.85f, H2_XIANXIA_RPG_FACING_RIGHT, ally_walk,
+                ally_bob);
   if (b->ally && b->split && b->state != H2_XIANXIA_RPG_BATTLE_VICTORY) {
     /* Her lantern light falls on the real shadow. */
     const h2_xianxia_rpg_rect_t* real = &l->shadows[b->real_shadow & 1u];
@@ -4470,8 +4721,12 @@ static void battle_scene(canvas_t* canvas, const game_t* game) {
          b->hero_flash_ms * 180u / H2_XIANXIA_RPG_FLASH_MS);
   if (fallen) glow(canvas, hx, hfeet - s * 0.4f, s * 0.6f, C_SHADOW, 150u);
   if (b->ally && ally_acting)
-    draw_person(canvas, H2_XIANXIA_RPG_ACTOR_JIANGLI, ax, hfeet + s * 0.02f,
-                s * 0.85f, H2_XIANXIA_RPG_FACING_RIGHT, ally_walk, ally_bob);
+    draw_person(canvas,
+                b->node_battle && h2_xianxia_rpg_c9_wenzhou(game)
+                    ? H2_XIANXIA_RPG_ACTOR_WENZHOU
+                    : H2_XIANXIA_RPG_ACTOR_JIANGLI,
+                ax, hfeet + s * 0.02f, s * 0.85f, H2_XIANXIA_RPG_FACING_RIGHT,
+                ally_walk, ally_bob);
 
   /* Pole strike from the companion. */
   if (ally_acting && b->ally_action == H2_XIANXIA_RPG_ALLY_POLE &&
@@ -4582,7 +4837,7 @@ void h2_xianxia_rpg_render_scene(canvas_t* canvas, const game_t* game) {
     case H2_XIANXIA_RPG_PHASE_CHAPTERS:
       break;
     case H2_XIANXIA_RPG_PHASE_EXPLORE:
-      explore_scene(canvas, game);
+      if (game->chapter != 9u || !game->glyph_view) explore_scene(canvas, game);
       break;
     case H2_XIANXIA_RPG_PHASE_BATTLE:
       battle_scene(canvas, game);

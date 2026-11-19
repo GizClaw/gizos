@@ -211,6 +211,23 @@ typedef enum h2_xianxia_rpg_script_id {
   H2_XIANXIA_RPG_SCRIPT_C8_NO_PILL,
   H2_XIANXIA_RPG_SCRIPT_C8_RECALL_GIVE,
   H2_XIANXIA_RPG_SCRIPT_C8_RECALL_TAKE,
+  H2_XIANXIA_RPG_SCRIPT_C9_FIRST,
+  H2_XIANXIA_RPG_SCRIPT_C9_INTRO = H2_XIANXIA_RPG_SCRIPT_C9_FIRST,
+  H2_XIANXIA_RPG_SCRIPT_C9_BOOK,
+  H2_XIANXIA_RPG_SCRIPT_C9_LOWER,
+  H2_XIANXIA_RPG_SCRIPT_C9_HALL,
+  H2_XIANXIA_RPG_SCRIPT_C9_MIST,
+  H2_XIANXIA_RPG_SCRIPT_C9_TIDE,
+  H2_XIANXIA_RPG_SCRIPT_C9_COLD,
+  H2_XIANXIA_RPG_SCRIPT_C9_MIRROR,
+  H2_XIANXIA_RPG_SCRIPT_C9_TRIAL_WON,
+  H2_XIANXIA_RPG_SCRIPT_C9_NEED,
+  H2_XIANXIA_RPG_SCRIPT_C9_FATHER,
+  H2_XIANXIA_RPG_SCRIPT_C9_BATTLE,
+  H2_XIANXIA_RPG_SCRIPT_C9_RETRY,
+  H2_XIANXIA_RPG_SCRIPT_C9_REVEAL,
+  H2_XIANXIA_RPG_SCRIPT_C9_REST,
+  H2_XIANXIA_RPG_SCRIPT_C9_HELP,
   H2_XIANXIA_RPG_SCRIPT_COUNT,
 } h2_xianxia_rpg_script_id_t;
 
@@ -601,6 +618,59 @@ bool h2_xianxia_rpg_c7_walkable(const h2_xianxia_rpg_game_t* game, char tile);
 h2_xianxia_rpg_script_id_t h2_xianxia_rpg_c7_feedback(
     const h2_xianxia_rpg_game_t* game);
 size_t h2_xianxia_rpg_c7_strings(const char** out, size_t capacity);
+
+char h2_xianxia_rpg_c9_tile(h2_xianxia_rpg_map_t map, int32_t x, int32_t y);
+const char* h2_xianxia_rpg_c9_map_name(h2_xianxia_rpg_map_t map);
+const h2_xianxia_rpg_chapter_info_t* h2_xianxia_rpg_c9_info(void);
+const h2_xianxia_rpg_script_t* h2_xianxia_rpg_c9_script(
+    h2_xianxia_rpg_script_id_t id);
+size_t h2_xianxia_rpg_c9_strings(const char** out, size_t capacity);
+/** Each door has two canonical reference glyphs and one altered candidate.
+ * IDs 0..7 are ink/mist/sword/wind/tide/spring/mirror/snow; 8..11 are fakes. */
+uint32_t h2_xianxia_rpg_c9_glyph(uint32_t room, uint32_t choice);
+uint32_t h2_xianxia_rpg_c9_reference(uint32_t room, uint32_t index);
+bool h2_xianxia_rpg_c9_wrong_glyph(uint32_t room, uint32_t choice);
+extern const char* const h2_xianxia_rpg_c9_glyph_names[8];
+extern const char* const h2_xianxia_rpg_c9_room_names[4];
+extern const char* const h2_xianxia_rpg_c9_phase_hints[4];
+
+typedef enum h2_xianxia_rpg_c9_text_id {
+  H2_XIANXIA_RPG_C9_BOOK_TITLE,
+  H2_XIANXIA_RPG_C9_BOOK_HELP,
+  H2_XIANXIA_RPG_C9_DOOR_HELP,
+  H2_XIANXIA_RPG_C9_WRONG,
+  H2_XIANXIA_RPG_C9_BACK,
+  H2_XIANXIA_RPG_C9_BOOK_BUTTON,
+  H2_XIANXIA_RPG_C9_HELP_BUTTON,
+  H2_XIANXIA_RPG_C9_SWITCH,
+  H2_XIANXIA_RPG_C9_SWITCHED,
+  H2_XIANXIA_RPG_C9_JIANGLI,
+  H2_XIANXIA_RPG_C9_WENZHOU,
+  H2_XIANXIA_RPG_C9_STATUS,
+  H2_XIANXIA_RPG_C9_PHASE,
+  H2_XIANXIA_RPG_C9_MIST_LIGHT,
+  H2_XIANXIA_RPG_C9_TIDE_CUT,
+  H2_XIANXIA_RPG_C9_COLD_WARM,
+  H2_XIANXIA_RPG_C9_MIRROR_READ,
+  H2_XIANXIA_RPG_C9_ALLY_HIT,
+  H2_XIANXIA_RPG_C9_ENEMY_HIT,
+  H2_XIANXIA_RPG_C9_MIST_HOLD,
+  H2_XIANXIA_RPG_C9_CORE_WON,
+  H2_XIANXIA_RPG_C9_TRIAL_WON,
+  H2_XIANXIA_RPG_C9_REST,
+  H2_XIANXIA_RPG_C9_DOWN,
+  H2_XIANXIA_RPG_C9_UP,
+  H2_XIANXIA_RPG_C9_HALL,
+  H2_XIANXIA_RPG_C9_CORE,
+  H2_XIANXIA_RPG_C9_INSCRIPTION,
+  H2_XIANXIA_RPG_C9_FATHER,
+  H2_XIANXIA_RPG_C9_READY,
+  H2_XIANXIA_RPG_C9_ONWARD,
+  H2_XIANXIA_RPG_C9_MIRROR_ORDER,
+  H2_XIANXIA_RPG_C9_DESCEND_READY,
+  H2_XIANXIA_RPG_C9_TEXT_COUNT,
+} h2_xianxia_rpg_c9_text_id_t;
+extern const char* const h2_xianxia_rpg_c9_text[H2_XIANXIA_RPG_C9_TEXT_COUNT];
 
 char h2_xianxia_rpg_c8_tile(h2_xianxia_rpg_map_t map, int32_t x, int32_t y);
 const char* h2_xianxia_rpg_c8_map_name(h2_xianxia_rpg_map_t map);
