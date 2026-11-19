@@ -30,11 +30,14 @@ typedef struct session {
   uint16_t* background;
   /* Background plus the static parts; the scene is composed on top of it. */
   uint16_t* static_layer;
-  /* Lane of the nearest plant figure per static pixel, for occlusion. */
+  /* Nearest static figure per pixel, for occlusion. */
   uint8_t* depth;
   h2_garden_guard_static_key_t static_key[PART_COUNT];
   dirty_t static_cover[PART_COUNT];
   dirty_t previous;
+  uint64_t idle_pose_tick;
+  uint32_t plant_revision;
+  bool previous_transient;
   bool first_frame;
   unsigned touch_failures;
   uint32_t frames, frames_since_stats;
@@ -185,7 +188,7 @@ static void dirty_all(dirty_t* out, const session_t* s) {
   }
 }
 
-/* Forget plant ownership wherever static pixels are restored. */
+/* Forget depth ownership wherever static pixels are restored. */
 static void clear_depth(const session_t* s, const dirty_t* dirty) {
   const int32_t width = s->display.width, height = s->display.height;
   for (int32_t band = 0; band < H2_GARDEN_GUARD_MAX_BANDS; ++band) {
@@ -313,10 +316,41 @@ static h2_pal_result_t push_dirty(session_t* s, const dirty_t* dirty) {
   return rc;
 }
 
+/* Idle foliage has a slower pose clock. Between its ticks, leave the
+ * displayed pixels alone unless the current or previous scene has effects
+ * that can move at full speed. This includes the last frame of an exit. */
+static bool scene_has_transient(const h2_garden_guard_game_t* game) {
+  if (game->banner_ms != 0u || game->hover_lane >= 0) return true;
+  for (unsigned i = 0; i < H2_GARDEN_GUARD_MAX_PARTICLES; ++i)
+    if (game->particles[i].active) return true;
+  if (game->phase != H2_GARDEN_GUARD_PHASE_PLAYING) return false;
+  for (unsigned i = 0; i < H2_GARDEN_GUARD_MAX_SUNS; ++i)
+    if (game->suns[i].active) return true;
+  for (unsigned i = 0; i < H2_GARDEN_GUARD_MAX_PEAS; ++i)
+    if (game->peas[i].active) return true;
+  for (unsigned i = 0; i < H2_GARDEN_GUARD_MAX_PESTS; ++i)
+    if (game->pests[i].active || game->pests[i].exit_ms != 0u) return true;
+  for (unsigned lane = 0; lane < H2_GARDEN_GUARD_LANES; ++lane) {
+    if (game->carts[lane].state == H2_GARDEN_GUARD_CART_SWEEPING) return true;
+    for (unsigned col = 0; col < H2_GARDEN_GUARD_COLS; ++col) {
+      const h2_garden_guard_plant_t* plant = &game->plants[lane][col];
+      if (plant->grow_ms || plant->action_ms || plant->impact_ms) return true;
+    }
+  }
+  return false;
+}
+
 static h2_pal_result_t render_frame(session_t* s) {
   const uint64_t started = clock_ms(s);
   dirty_t dirty = {0};
   update_static_layer(s, &dirty);
+  const bool transient = scene_has_transient(&s->game);
+  const uint64_t tick = s->game.phase == H2_GARDEN_GUARD_PHASE_PLAYING
+                            ? s->game.time_ms / H2_GARDEN_GUARD_PLANT_IDLE_MS
+                            : 0u;
+  if (dirty.bands == 0u && !transient && !s->previous_transient &&
+      tick == s->idle_pose_tick && s->plant_revision == s->game.plant_revision)
+    return H2_PAL_OK;
   h2_garden_guard_canvas_t canvas = layer_canvas(s, s->frame, true);
   h2_garden_guard_render_scene(&canvas, &s->game);
   dirty_t current;
@@ -333,6 +367,9 @@ static h2_pal_result_t render_frame(session_t* s) {
   s->push_ms += pushed - composed;
   if (rc == H2_PAL_OK) {
     s->previous = current;
+    s->previous_transient = transient;
+    s->idle_pose_tick = tick;
+    s->plant_revision = s->game.plant_revision;
     s->first_frame = false;
   }
   return rc;

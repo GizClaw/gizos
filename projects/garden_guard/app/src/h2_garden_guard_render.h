@@ -11,10 +11,8 @@
  * then a paint pass draws them. The run loop restores only bands covered in
  * this or the previous frame and pushes only those rows.
  *
- * Plants live in the static layer, so a moving pest behind a nearer plant
- * would otherwise be painted over it. While the static field part is painted
- * it records, per pixel, the lane of the nearest plant covering it; the scene
- * skips pixels that a nearer lane's plant owns. */
+ * The moving scene paints plants, zombies and projectiles by lane, far to
+ * near. A per-pixel map keeps nearer parked carts over the moving scene. */
 
 #include "h2_garden_guard_game.h"
 
@@ -44,7 +42,7 @@ typedef struct h2_garden_guard_canvas {
    * draws; zero clip_y1 selects the full height. */
   int32_t clip_y0, clip_y1;
   /** Optional borrowed occlusion map: one byte per pixel with stride_pixels,
-   * 0 for open ground and lane + 1 under a plant figure. The static field
+   * 0 for open ground and lane + 1 below a static figure. The static field
    * part writes it and the scene reads it; NULL disables occlusion. The
    * owner clears it wherever it restores static pixels. */
   uint8_t* depth;
@@ -56,7 +54,7 @@ typedef struct h2_garden_guard_canvas {
 typedef enum h2_garden_guard_part {
   /** Sun counter, cards and wave progress. */
   H2_GARDEN_GUARD_PART_TOOLBAR = 0,
-  /** Plants, parked carts and the title or result panel. */
+  /** Parked carts and the title or result panel. */
   H2_GARDEN_GUARD_PART_FIELD,
   H2_GARDEN_GUARD_PART_COUNT,
 } h2_garden_guard_part_t;
@@ -88,6 +86,12 @@ void h2_garden_guard_render_static(h2_garden_guard_canvas_t* canvas,
 /** Draw or measure the moving scene above the static layer. */
 void h2_garden_guard_render_scene(h2_garden_guard_canvas_t* canvas,
                                   const h2_garden_guard_game_t* game);
+
+/** Draw or measure a neutral zombie at a given foot point and lane size. */
+void h2_garden_guard_render_zombie_portrait(h2_garden_guard_canvas_t* canvas,
+                                            h2_garden_guard_pest_kind_t kind,
+                                            float x, float ground_y,
+                                            float size);
 
 /** Pixel width of text drawn at an integer scale. */
 int32_t h2_garden_guard_text_width(const char* text, int32_t scale);

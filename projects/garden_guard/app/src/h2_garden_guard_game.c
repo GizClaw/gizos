@@ -43,7 +43,7 @@ typedef struct pest_spec {
 } pest_spec_t;
 
 static const pest_spec_t k_pests[H2_GARDEN_GUARD_PEST_KIND_COUNT] = {
-    [H2_GARDEN_GUARD_PEST_BEETLE] = {190, 0, 0.21f, 55.0f, 10u},
+    [H2_GARDEN_GUARD_PEST_SHAMBLER] = {190, 0, 0.21f, 55.0f, 10u},
     [H2_GARDEN_GUARD_PEST_SHELLBACK] = {190, 330, 0.19f, 55.0f, 25u},
     [H2_GARDEN_GUARD_PEST_RUNNER] = {110, 0, 0.42f, 40.0f, 15u},
 };
@@ -174,11 +174,11 @@ static void compute_layout(h2_garden_guard_layout_t* l, int32_t width,
   l->mid_x = patio + l->near_w * 0.5f;
   l->far_ratio = FAR_RATIO;
   l->sprite = l->near_w / (float)H2_GARDEN_GUARD_COLS;
-  const float facade = floorf(fmaxf(h * 0.05f, 8.0f));
+  const float facade = floorf(fmaxf(h * 0.066f, 8.0f));
   l->near_y = h - facade;
   /* Keep far-row figures clear of the toolbar, and cap the depth so the
    * camera does not look straight down on tall displays. */
-  const float courtyard = fmaxf(l->sprite * FAR_RATIO * 0.8f, h * 0.04f);
+  const float courtyard = fmaxf(l->sprite * FAR_RATIO * 1.22f, h * 0.06f);
   const float depth =
       fminf(l->near_y - bar - courtyard,
             l->sprite * (float)H2_GARDEN_GUARD_LANES * MAX_DEPTH_PER_LANE);
@@ -276,6 +276,41 @@ float h2_garden_guard_plant_height(h2_garden_guard_plant_kind_t kind) {
   }
 }
 
+h2_garden_guard_plant_pose_t h2_garden_guard_plant_pose(
+    const h2_garden_guard_game_t* game, uint32_t lane, uint32_t col) {
+  const h2_garden_guard_plant_t* plant = &game->plants[lane][col];
+  const uint64_t idle = game->time_ms / H2_GARDEN_GUARD_PLANT_IDLE_MS;
+  const uint64_t t =
+      idle * H2_GARDEN_GUARD_PLANT_IDLE_MS + lane * 311u + col * 197u;
+  const float remaining = (float)plant->grow_ms / H2_GARDEN_GUARD_PLANT_GROW_MS;
+  h2_garden_guard_plant_pose_t pose = {
+      .growth = 1.0f - 0.56f * remaining * remaining,
+      .impact = (float)plant->impact_ms / H2_GARDEN_GUARD_BITE_IMPACT_MS};
+  switch (plant->kind) {
+    case H2_GARDEN_GUARD_PLANT_SUNFLOWER:
+      pose.sway = 0.075f * sinf((float)(t % 2400u) *
+                                (2.0f * H2_GARDEN_GUARD_PI / 2400.0f));
+      pose.blink = t % 3360u < H2_GARDEN_GUARD_PLANT_IDLE_MS;
+      pose.action = (float)plant->action_ms / H2_GARDEN_GUARD_BLOOM_POSE_MS;
+      pose.lift = 0.09f * pose.action;
+      break;
+    case H2_GARDEN_GUARD_PLANT_SHOOTER:
+      pose.sway = 0.033f * sinf((float)(t % 1680u) *
+                                (2.0f * H2_GARDEN_GUARD_PI / 1680.0f));
+      pose.blink = t % 2640u < H2_GARDEN_GUARD_PLANT_IDLE_MS;
+      pose.action = (float)plant->action_ms / H2_GARDEN_GUARD_SHOT_POSE_MS;
+      break;
+    case H2_GARDEN_GUARD_PLANT_PUMPKIN:
+      pose.lift = 0.022f * sinf((float)(t % 3960u) *
+                                (2.0f * H2_GARDEN_GUARD_PI / 3960.0f));
+      pose.blink = t % 4680u < H2_GARDEN_GUARD_PLANT_IDLE_MS;
+      break;
+    default:
+      break;
+  }
+  return pose;
+}
+
 bool h2_garden_guard_plant_at(const h2_garden_guard_game_t* game, float x,
                               float y, uint32_t* out_lane, uint32_t* out_col) {
   /* Nearer figures are drawn over farther ones, so they win the hit. */
@@ -288,10 +323,24 @@ bool h2_garden_guard_plant_at(const h2_garden_guard_game_t* game, float x,
       float gx, gy;
       h2_garden_guard_field_point(&game->layout, lane, (float)col + 0.5f, &gx,
                                   &gy);
-      const float top = gy - h2_garden_guard_plant_height(
-                                 (h2_garden_guard_plant_kind_t)kind) *
-                                 size;
-      if (fabsf(x - gx) <= 0.42f * size && y >= top && y <= gy + 0.12f * size) {
+      const h2_garden_guard_plant_pose_t pose =
+          h2_garden_guard_plant_pose(game, lane, col);
+      const float s = size * pose.growth;
+      // Follow the raised head, including growth and recoil, with touch slop.
+      const float raised = fmaxf(0.0f, (gy - y) / s);
+      const float shift =
+          kind == H2_GARDEN_GUARD_PLANT_PUMPKIN
+              ? -0.075f * pose.impact
+              : (pose.sway - 0.19f * pose.action * pose.action *
+                                 (kind == H2_GARDEN_GUARD_PLANT_SHOOTER)) *
+                    fminf(1.0f, raised / 0.62f);
+      const float top =
+          gy -
+          (h2_garden_guard_plant_height((h2_garden_guard_plant_kind_t)kind) +
+           fmaxf(0.0f, pose.lift) + 0.06f) *
+              s;
+      if (fabsf(x - gx - shift * s) <= 0.46f * s && y >= top &&
+          y <= gy + 0.12f * s) {
         *out_lane = lane;
         *out_col = col;
         return true;
@@ -528,6 +577,7 @@ static void apply_card(h2_garden_guard_game_t* game, uint32_t lane,
   *plant = (h2_garden_guard_plant_t){
       .kind = (uint8_t)kind,
       .hp = k_plants[kind].hp,
+      .grow_ms = H2_GARDEN_GUARD_PLANT_GROW_MS,
       .timer_ms = kind == H2_GARDEN_GUARD_PLANT_SUNFLOWER
                       ? (int32_t)SUNFLOWER_FIRST_MS
                       : 0};
@@ -645,25 +695,26 @@ static void spawn_pest(h2_garden_guard_game_t* game) {
   }
   if (kind >= H2_GARDEN_GUARD_PEST_KIND_COUNT) return;
   h2_garden_guard_pest_t* slot = NULL;
-  for (unsigned i = 0; i < H2_GARDEN_GUARD_MAX_PESTS; ++i)
-    if (!game->pests[i].active) {
+  for (unsigned i = 0; i < H2_GARDEN_GUARD_MAX_PESTS; ++i) {
+    if (game->pests[i].active) continue;
+    if (slot == NULL || game->pests[i].exit_ms < slot->exit_ms)
       slot = &game->pests[i];
-      break;
-    }
+    if (slot->exit_ms == 0u) break;
+  }
   /* A full field delays the spawn rather than dropping it. */
   if (slot == NULL) return;
   --game->wave_left[kind];
   uint32_t lane = random_below(game, H2_GARDEN_GUARD_LANES);
   if (lane == game->last_lane) lane = random_below(game, H2_GARDEN_GUARD_LANES);
   game->last_lane = lane;
-  *slot =
-      (h2_garden_guard_pest_t){.active = true,
-                               .kind = (uint8_t)kind,
-                               .lane = (uint8_t)lane,
-                               .x = PEST_ENTRY_X,
-                               .hp = k_pests[kind].hp,
-                               .armor = k_pests[kind].armor,
-                               .phase_ms = (uint16_t)random_below(game, 1000u)};
+  *slot = (h2_garden_guard_pest_t){
+      .active = true,
+      .kind = (uint8_t)kind,
+      .lane = (uint8_t)lane,
+      .x = PEST_ENTRY_X,
+      .hp = k_pests[kind].hp,
+      .armor = k_pests[kind].armor,
+      .stride_ms = (uint16_t)random_below(game, 1000u)};
 }
 
 static void step_waves(h2_garden_guard_game_t* game) {
@@ -713,11 +764,19 @@ static void step_sky(h2_garden_guard_game_t* game) {
   add_sun(game, x, l->bar_h - r, rest);
 }
 
+static uint32_t countdown(uint32_t value, uint32_t dt) {
+  return value > dt ? value - dt : 0u;
+}
+
 static void step_plants(h2_garden_guard_game_t* game, uint32_t dt) {
   const h2_garden_guard_layout_t* l = &game->layout;
   for (uint32_t lane = 0; lane < H2_GARDEN_GUARD_LANES; ++lane) {
     for (uint32_t col = 0; col < H2_GARDEN_GUARD_COLS; ++col) {
       h2_garden_guard_plant_t* plant = &game->plants[lane][col];
+      if (plant->kind == H2_GARDEN_GUARD_PLANT_NONE) continue;
+      plant->grow_ms = (uint16_t)countdown(plant->grow_ms, dt);
+      plant->action_ms = (uint16_t)countdown(plant->action_ms, dt);
+      plant->impact_ms = (uint16_t)countdown(plant->impact_ms, dt);
       if (plant->kind == H2_GARDEN_GUARD_PLANT_SUNFLOWER) {
         plant->timer_ms -= (int32_t)dt;
         if (plant->timer_ms > 0) continue;
@@ -726,7 +785,8 @@ static void step_plants(h2_garden_guard_game_t* game, uint32_t dt) {
         h2_garden_guard_field_point(l, lane, (float)col + 0.5f, &x, &y);
         const float size = h2_garden_guard_lane_size(l, lane);
         /* Drop from the flower head to the ground beside its stem. */
-        add_sun(game, x + 0.34f * size, y - 0.85f * size, y + 0.06f * size);
+        plant->action_ms = H2_GARDEN_GUARD_BLOOM_POSE_MS;
+        add_sun(game, x + 0.32f * size, y - 0.93f * size, y + 0.06f * size);
       } else if (plant->kind == H2_GARDEN_GUARD_PLANT_SHOOTER) {
         if (plant->timer_ms > 0) plant->timer_ms -= (int32_t)dt;
         if (plant->timer_ms > 0) continue;
@@ -743,6 +803,7 @@ static void step_plants(h2_garden_guard_game_t* game, uint32_t dt) {
           if (pea->active) continue;
           *pea = (h2_garden_guard_pea_t){
               .active = true, .lane = (uint8_t)lane, .x = (float)col + 0.75f};
+          plant->action_ms = H2_GARDEN_GUARD_SHOT_POSE_MS;
           break;
         }
         plant->timer_ms = SHOOTER_PERIOD_MS;
@@ -754,11 +815,11 @@ static void step_plants(h2_garden_guard_game_t* game, uint32_t dt) {
 static uint16_t pest_color(uint8_t kind) {
   switch (kind) {
     case H2_GARDEN_GUARD_PEST_SHELLBACK:
-      return H2_GARDEN_GUARD_RGB(150, 158, 170);
+      return H2_GARDEN_GUARD_RGB(150, 174, 172);
     case H2_GARDEN_GUARD_PEST_RUNNER:
-      return H2_GARDEN_GUARD_RGB(196, 64, 40);
+      return H2_GARDEN_GUARD_RGB(190, 82, 62);
     default:
-      return H2_GARDEN_GUARD_RGB(92, 60, 140);
+      return H2_GARDEN_GUARD_RGB(124, 100, 156);
   }
 }
 
@@ -772,6 +833,7 @@ static void kill_pest(h2_garden_guard_game_t* game,
   game->score += k_pests[pest->kind].score;
   ++game->kills;
   pest->active = false;
+  pest->exit_ms = H2_GARDEN_GUARD_PEST_EXIT_MS;
 }
 
 static void step_peas(h2_garden_guard_game_t* game, float seconds) {
@@ -799,7 +861,7 @@ static void step_peas(h2_garden_guard_game_t* game, float seconds) {
          h2_garden_guard_lane_size(&game->layout, pea->lane);
     add_particles(game, x, y, 3u, H2_GARDEN_GUARD_RGB(140, 220, 90),
                   90.0f * game->layout.unit, 2.5f * game->layout.unit);
-    hit->flash_ms = 120u;
+    hit->flash_ms = H2_GARDEN_GUARD_PEST_HIT_MS;
     if (hit->armor > 0) {
       hit->armor -= PEA_DAMAGE;
       if (hit->armor < 0) hit->armor = 0;
@@ -830,9 +892,10 @@ static bool step_pests(h2_garden_guard_game_t* game, uint32_t dt,
                        float seconds) {
   for (unsigned i = 0; i < H2_GARDEN_GUARD_MAX_PESTS; ++i) {
     h2_garden_guard_pest_t* pest = &game->pests[i];
+    pest->exit_ms = (uint16_t)countdown(pest->exit_ms, dt);
     if (!pest->active) continue;
     const pest_spec_t* spec = &k_pests[pest->kind];
-    pest->flash_ms = pest->flash_ms > dt ? (uint16_t)(pest->flash_ms - dt) : 0u;
+    pest->flash_ms = (uint16_t)countdown(pest->flash_ms, dt);
     /* A pest chews plant column c while its center is in [c + 0.5, c + 1.15]:
      * the interval is shorter than a cell, so at most one column applies. */
     const int32_t col = (int32_t)ceilf(pest->x - 1.15f);
@@ -841,8 +904,14 @@ static bool step_pests(h2_garden_guard_game_t* game, uint32_t dt,
         pest->x >= (float)col + 0.5f &&
         game->plants[pest->lane][col].kind != H2_GARDEN_GUARD_PLANT_NONE)
       plant = &game->plants[pest->lane][col];
-    pest->eating = plant != NULL;
     if (plant != NULL) {
+      const uint16_t before = pest->eating ? pest->chew_ms : 0u;
+      const uint16_t after = (uint16_t)(before + dt);
+      pest->eating = true;
+      pest->chew_ms = after % H2_GARDEN_GUARD_PEST_BITE_MS;
+      /* Keep continuous combat damage; the pose marks the jaw closing. */
+      if (before < 350u && after >= 350u)
+        plant->impact_ms = H2_GARDEN_GUARD_BITE_IMPACT_MS;
       plant->hp -= spec->bite_dps * seconds;
       if (plant->hp <= 0.0f) {
         remove_plant(game, pest->lane, (uint32_t)col,
@@ -857,6 +926,10 @@ static bool step_pests(h2_garden_guard_game_t* game, uint32_t dt,
       }
       continue;
     }
+    pest->eating = false;
+    pest->chew_ms = 0u;
+    // All gait periods divide 8400 ms, keeping the cycle seamless at wrap.
+    pest->stride_ms = (uint16_t)((pest->stride_ms + dt) % 8400u);
     pest->x -= spec->speed * seconds;
     if (pest->x >= -0.15f) continue;
     h2_garden_guard_cart_t* cart = &game->carts[pest->lane];
@@ -915,10 +988,6 @@ static void step_particles(h2_garden_guard_game_t* game, uint32_t dt,
     p->vx *= damping;
     p->vy *= damping;
   }
-}
-
-static uint32_t countdown(uint32_t value, uint32_t dt) {
-  return value > dt ? value - dt : 0u;
 }
 
 static void step_once(h2_garden_guard_game_t* game, uint32_t dt) {

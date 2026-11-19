@@ -21,7 +21,7 @@
 #define WIDTH 480
 #define HEIGHT 320
 #define MAX_PIXELS (480 * 800)
-#define SCRIPT_MAX 32
+#define SCRIPT_MAX 48
 
 typedef struct fake_display {
   h2_display_info_t info;
@@ -331,6 +331,7 @@ static void test_idle_title_pushes_once(void) {
 
 /* Push a tap at display coordinates, scaled to the Touch viewport. */
 static void script_tap(float x, float y) {
+  CHECK(fx.touch.script_count + 2u <= SCRIPT_MAX);
   const float sx = (float)fx.touch.info.width / (float)fx.display.info.width;
   const float sy = (float)fx.touch.info.height / (float)fx.display.info.height;
   const int32_t tx = (int32_t)(x * sx), ty = (int32_t)(y * sy);
@@ -381,12 +382,12 @@ static void test_shovel_restores_raised_figure(void) {
   script_tap(l->card_x[H2_GARDEN_GUARD_CARD_SUNFLOWER] + l->card_w * 0.5f,
              l->card_y + l->card_h * 0.5f);
   script_tap(x, y);
-  script_tap(470.0f, 20.0f);
+  for (unsigned i = 0; i < 15u; ++i) script_tap(470.0f, 20.0f);
   script_tap(l->card_x[H2_GARDEN_GUARD_CARD_SHOVEL] + l->card_w * 0.5f,
              l->card_y + l->card_h * 0.5f);
   script_tap(x, head_y);
   fx.probes[0] = (probe_t){.frame = 8u, .x = x, .y = head_y};
-  fx.probes[1] = (probe_t){.frame = 12u, .x = x, .y = head_y};
+  fx.probes[1] = (probe_t){.frame = 42u, .x = x, .y = head_y};
   CHECK(run() == H2_PAL_OK);
   CHECK(fx.touch.script_next == fx.touch.script_count);
   CHECK(fx.probes[0].value != fx.probes[1].value);

@@ -54,6 +54,14 @@ extern "C" {
 #define H2_GARDEN_GUARD_WIN_BONUS 250u
 /** Height of a flying pea above the ground, in lane sizes. */
 #define H2_GARDEN_GUARD_PEA_HEIGHT 0.6f
+#define H2_GARDEN_GUARD_PLANT_IDLE_MS 120u
+#define H2_GARDEN_GUARD_PLANT_GROW_MS 280u
+#define H2_GARDEN_GUARD_SHOT_POSE_MS 200u
+#define H2_GARDEN_GUARD_BLOOM_POSE_MS 400u
+#define H2_GARDEN_GUARD_BITE_IMPACT_MS 180u
+#define H2_GARDEN_GUARD_PEST_HIT_MS 160u
+#define H2_GARDEN_GUARD_PEST_EXIT_MS 400u
+#define H2_GARDEN_GUARD_PEST_BITE_MS 720u
 
 typedef enum h2_garden_guard_phase {
   H2_GARDEN_GUARD_PHASE_TITLE = 0,
@@ -87,10 +95,10 @@ typedef enum h2_garden_guard_card {
 #define H2_GARDEN_GUARD_CARD_NONE (-1)
 
 typedef enum h2_garden_guard_pest_kind {
-  H2_GARDEN_GUARD_PEST_BEETLE = 0,
-  /** A beetle whose shell plate absorbs damage first. */
+  H2_GARDEN_GUARD_PEST_SHAMBLER = 0,
+  /** A bulky zombie whose salvaged plate absorbs damage first. */
   H2_GARDEN_GUARD_PEST_SHELLBACK,
-  /** A fast, fragile ant. */
+  /** A fast, fragile courier zombie. */
   H2_GARDEN_GUARD_PEST_RUNNER,
   H2_GARDEN_GUARD_PEST_KIND_COUNT,
 } h2_garden_guard_pest_kind_t;
@@ -144,7 +152,15 @@ typedef struct h2_garden_guard_plant {
   float hp;
   /** Time until the next sun or shot; a shooter waits at 0 for a target. */
   int32_t timer_ms;
+  /** Visual counters. action_ms is set by a real shot or sun allocation. */
+  uint16_t grow_ms, action_ms, impact_ms;
 } h2_garden_guard_plant_t;
+
+/** Plant pose shared by the renderer and shovel hit area. */
+typedef struct h2_garden_guard_plant_pose {
+  float growth, sway, lift, action, impact;
+  bool blink;
+} h2_garden_guard_plant_pose_t;
 
 typedef struct h2_garden_guard_pest {
   bool active;
@@ -155,10 +171,10 @@ typedef struct h2_garden_guard_pest {
   /** Center position along the lane, in cells. */
   float x;
   int32_t hp, armor;
-  /** Remaining hit flash. */
-  uint16_t flash_ms;
-  /** Animation phase offset so pests do not move in lockstep. */
-  uint16_t phase_ms;
+  /** Remaining feedback after a hit, and visual-only exit after removal. */
+  uint16_t flash_ms, exit_ms;
+  /** The locomotion clock holds while biting. */
+  uint16_t stride_ms, chew_ms;
 } h2_garden_guard_pest_t;
 
 typedef struct h2_garden_guard_pea {
@@ -291,6 +307,10 @@ bool h2_garden_guard_cell_at(const h2_garden_guard_layout_t* layout, float x,
 
 /** Height of a plant kind's upright figure in lane sizes. */
 float h2_garden_guard_plant_height(h2_garden_guard_plant_kind_t kind);
+
+/** Sample a planted figure's pose. Toolbar and title use a neutral pose. */
+h2_garden_guard_plant_pose_t h2_garden_guard_plant_pose(
+    const h2_garden_guard_game_t* game, uint32_t lane, uint32_t col);
 
 /** Plant whose upright figure covers a display point, nearest lane first;
  * false when no figure is there. */

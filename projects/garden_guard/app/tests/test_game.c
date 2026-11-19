@@ -172,6 +172,7 @@ static void test_perspective_gestures(void) {
   CHECK(game.hover_lane == -1 && game.hover_col == -1);
 
   /* Shovel the upright head even where the ground belongs to a back row. */
+  h2_garden_guard_game_step(&game, H2_GARDEN_GUARD_PLANT_GROW_MS);
   h2_garden_guard_field_point(&game.layout, 4u, 0.5f, &x, &y);
   y -= 0.9f * h2_garden_guard_lane_size(&game.layout, 4u);
   uint32_t lane, col;
@@ -310,14 +311,14 @@ static void test_shooter_defeats_pests(void) {
   for (unsigned i = 0; i < H2_GARDEN_GUARD_MAX_PEAS; ++i)
     CHECK(!game.peas[i].active);
   /* A pest in another lane is ignored. */
-  place_pest(&game, 0u, H2_GARDEN_GUARD_PEST_BEETLE, 1u, 8.0f);
+  place_pest(&game, 0u, H2_GARDEN_GUARD_PEST_SHAMBLER, 1u, 8.0f);
   h2_garden_guard_game_step(&game, 100u);
   for (unsigned i = 0; i < H2_GARDEN_GUARD_MAX_PEAS; ++i)
     CHECK(!game.peas[i].active);
   game.pests[0].active = false;
 
   h2_garden_guard_pest_t* pest =
-      place_pest(&game, 0u, H2_GARDEN_GUARD_PEST_BEETLE, 0u, 8.0f);
+      place_pest(&game, 0u, H2_GARDEN_GUARD_PEST_SHAMBLER, 0u, 8.0f);
   unsigned frames = 0;
   while (pest->active && frames < 1000u) {
     h2_garden_guard_game_step(&game, 20u);
@@ -336,12 +337,48 @@ static void test_shooter_defeats_pests(void) {
   CHECK(pest->armor < 330 && pest->hp == 190);
 }
 
+static void test_combat_poses_follow_events(void) {
+  start(&game, 480, 320, 11u);
+  freeze_spawns(&game);
+  plant(&game, H2_GARDEN_GUARD_CARD_SUNFLOWER, 1u, 1u);
+  plant(&game, H2_GARDEN_GUARD_CARD_SHOOTER, 2u, 2u);
+  h2_garden_guard_plant_t* flower = &game.plants[1][1];
+  h2_garden_guard_plant_t* shooter = &game.plants[2][2];
+  CHECK(flower->grow_ms == H2_GARDEN_GUARD_PLANT_GROW_MS);
+  CHECK(h2_garden_guard_plant_pose(&game, 1u, 1u).growth < 1.0f);
+  CHECK(shooter->action_ms == 0u);
+  h2_garden_guard_game_step(&game, H2_GARDEN_GUARD_PLANT_GROW_MS);
+  CHECK(h2_garden_guard_plant_pose(&game, 1u, 1u).growth == 1.0f);
+  flower->timer_ms = 1;
+  h2_garden_guard_game_step(&game, 20u);
+  CHECK(flower->action_ms == H2_GARDEN_GUARD_BLOOM_POSE_MS);
+  CHECK(resting_sun(&game) != NULL && shooter->action_ms == 0u);
+  h2_garden_guard_pest_t* pest =
+      place_pest(&game, 0u, H2_GARDEN_GUARD_PEST_SHAMBLER, 2u, 3.25f);
+  pest->hp = 1;
+  h2_garden_guard_game_step(&game, 20u);
+  CHECK(shooter->action_ms == H2_GARDEN_GUARD_SHOT_POSE_MS);
+  CHECK(pest->active);
+  h2_garden_guard_game_step(&game, 100u);
+  CHECK(!pest->active && pest->exit_ms > 0u && game.kills == 1u);
+  h2_garden_guard_game_step(&game, H2_GARDEN_GUARD_PEST_EXIT_MS);
+  CHECK(pest->exit_ms == 0u && shooter->action_ms == 0u);
+
+  /* A bite pulse requires contact and occurs when the jaw closes. */
+  shooter->timer_ms = 2000;
+  pest = place_pest(&game, 0u, H2_GARDEN_GUARD_PEST_SHAMBLER, 2u, 3.12f);
+  h2_garden_guard_game_step(&game, 200u);
+  CHECK(pest->eating && pest->chew_ms == 200u && shooter->impact_ms == 0u);
+  h2_garden_guard_game_step(&game, 155u);
+  CHECK(pest->eating && pest->chew_ms == 355u && shooter->impact_ms > 0u);
+}
+
 static void test_pests_chew_and_pumpkin_blocks(void) {
   start(&game, 480, 320, 13u);
   freeze_spawns(&game);
   plant(&game, H2_GARDEN_GUARD_CARD_PUMPKIN, 2u, 3u);
   h2_garden_guard_pest_t* pest =
-      place_pest(&game, 0u, H2_GARDEN_GUARD_PEST_BEETLE, 2u, 5.0f);
+      place_pest(&game, 0u, H2_GARDEN_GUARD_PEST_SHAMBLER, 2u, 5.0f);
   h2_garden_guard_game_step(&game, 10000u);
   /* The pest stopped at the pumpkin's edge and is chewing it. */
   CHECK(pest->active && pest->eating);
@@ -365,7 +402,7 @@ static void test_cart_then_loss(void) {
   h2_garden_guard_pest_t* first =
       place_pest(&game, 0u, H2_GARDEN_GUARD_PEST_RUNNER, 4u, 0.4f);
   h2_garden_guard_pest_t* follower =
-      place_pest(&game, 1u, H2_GARDEN_GUARD_PEST_BEETLE, 4u, 3.0f);
+      place_pest(&game, 1u, H2_GARDEN_GUARD_PEST_SHAMBLER, 4u, 3.0f);
   /* The first pest through triggers the lane's cart, which clears it. */
   h2_garden_guard_game_step(&game, 2000u);
   CHECK(game.carts[4].state != H2_GARDEN_GUARD_CART_READY);
@@ -459,6 +496,7 @@ int main(void) {
   test_title_starts_and_plants();
   test_suns();
   test_shooter_defeats_pests();
+  test_combat_poses_follow_events();
   test_pests_chew_and_pumpkin_blocks();
   test_cart_then_loss();
   test_waves_to_victory();

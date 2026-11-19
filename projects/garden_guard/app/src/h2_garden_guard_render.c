@@ -200,7 +200,7 @@ static uint8_t* depth_row(const h2_garden_guard_canvas_t* canvas, int32_t y) {
 }
 
 /* Blend one pixel, honouring the occlusion mode: the scene skips pixels a
- * nearer lane owns, and mostly opaque plant pixels claim their lane. */
+ * nearer lane owns, and mostly opaque static pixels claim their lane. */
 static void plot(const h2_garden_guard_canvas_t* canvas, uint16_t* row,
                  uint8_t* depth, int32_t x, uint16_t color, uint32_t alpha) {
   if (depth != NULL) {
@@ -446,44 +446,51 @@ static void ground_shadow(h2_garden_guard_canvas_t* canvas, float gx, float gy,
 }
 
 static void draw_sunflower(h2_garden_guard_canvas_t* canvas, float gx, float gy,
-                           float s, uint32_t stage) {
+                           float s, uint32_t stage,
+                           h2_garden_guard_plant_pose_t pose) {
+  s *= pose.growth;
   const uint32_t dim = stage * 46u;
   const float line = rim_width(s);
   const uint16_t rim = RGB(34, 72, 26);
   ground_shadow(canvas, gx, gy, 0.3f * s);
-  ocapsule(canvas, gx, gy - 0.02f * s, gx, gy - 0.62f * s, 0.045f * s, line,
+  const float hx = gx + pose.sway * s;
+  const float hy = gy - (0.74f + pose.lift) * s;
+  ocapsule(canvas, gx, gy - 0.02f * s, hx, hy + 0.10f * s, 0.045f * s, line,
            darken(RGB(80, 154, 52), dim), rim);
-  oellipse(canvas, gx - 0.15f * s, gy - 0.22f * s, 0.15f * s, 0.065f * s, line,
-           darken(RGB(92, 176, 62), dim), rim);
-  oellipse(canvas, gx + 0.15f * s, gy - 0.35f * s, 0.14f * s, 0.06f * s, line,
-           darken(RGB(92, 176, 62), dim), rim);
-  const float hx = gx, hy = gy - 0.74f * s;
+  oellipse(canvas, gx - 0.15f * s, gy - (0.22f + pose.sway) * s, 0.15f * s,
+           0.065f * s, line, darken(RGB(92, 176, 62), dim), rim);
+  oellipse(canvas, gx + 0.15f * s, gy - (0.35f - pose.sway + pose.lift) * s,
+           0.14f * s, 0.06f * s, line, darken(RGB(92, 176, 62), dim), rim);
+  // A crown of overlapping petals. Keep the inner highlight on the lit side.
+  static const float ring[][2] = {
+      {1, 0},           {0.866f, 0.5f},  {0.5f, 0.866f},  {0, 1},
+      {-0.5f, 0.866f},  {-0.866f, 0.5f}, {-1, 0},         {-0.866f, -0.5f},
+      {-0.5f, -0.866f}, {0, -1},         {0.5f, -0.866f}, {0.866f, -0.5f},
+  };
+  const float spread = (0.218f + 0.04f * pose.action) * s;
+  for (unsigned k = 0; k < 12u; ++k)
+    disc(canvas, hx + ring[k][0] * spread, hy + ring[k][1] * spread,
+         0.105f * s + line, RGB(139, 75, 18), 256u);
   for (unsigned k = 0; k < 12u; ++k) {
-    const float a = (float)k * (2.0f * H2_GARDEN_GUARD_PI / 12.0f);
-    disc(canvas, hx + cosf(a) * 0.22f * s, hy + sinf(a) * 0.22f * s,
-         0.1f * s + line, RGB(150, 84, 10), 256u);
+    const uint16_t petal =
+        ring[k][1] < 0.1f ? RGB(255, 210, 74) : RGB(243, 163, 37);
+    disc(canvas, hx + ring[k][0] * spread, hy + ring[k][1] * spread, 0.105f * s,
+         lighten(darken(petal, dim), (uint32_t)(100.0f * pose.action)), 256u);
   }
-  for (unsigned k = 0; k < 12u; ++k) {
-    const float a = (float)k * (2.0f * H2_GARDEN_GUARD_PI / 12.0f);
-    disc(canvas, hx + cosf(a) * 0.22f * s, hy + sinf(a) * 0.22f * s, 0.1f * s,
-         darken(RGB(244, 170, 30), dim), 256u);
-  }
-  for (unsigned k = 0; k < 12u; ++k) {
-    const float a = ((float)k + 0.5f) * (2.0f * H2_GARDEN_GUARD_PI / 12.0f);
-    disc(canvas, hx + cosf(a) * 0.17f * s, hy + sinf(a) * 0.17f * s, 0.08f * s,
-         darken(RGB(255, 216, 64), dim), 256u);
-  }
+  disc(canvas, hx, hy, 0.206f * s, RGB(255, 222, 100), 256u);
   odisc(canvas, hx, hy, 0.15f * s, line, darken(RGB(128, 78, 34), dim),
         RGB(70, 40, 14));
   disc(canvas, hx, hy + 0.01f * s, 0.11f * s, darken(RGB(152, 96, 42), dim),
        256u);
   const uint16_t ink = RGB(36, 20, 8);
-  disc(canvas, hx - 0.055f * s, hy - 0.03f * s, 0.03f * s, ink, 256u);
-  disc(canvas, hx + 0.055f * s, hy - 0.03f * s, 0.03f * s, ink, 256u);
-  disc(canvas, hx - 0.047f * s, hy - 0.04f * s, 0.011f * s, RGB(255, 250, 230),
-       256u);
-  disc(canvas, hx + 0.063f * s, hy - 0.04f * s, 0.011f * s, RGB(255, 250, 230),
-       256u);
+  for (int side = -1; side <= 1; side += 2) {
+    const float eye = hx + (float)side * 0.055f * s;
+    ellipse(canvas, eye, hy - 0.03f * s, 0.03f * s,
+            (pose.blink ? 0.012f : 0.035f) * s, ink, 256u);
+    if (!pose.blink)
+      disc(canvas, eye - 0.008f * s, hy - 0.041f * s, 0.012f * s,
+           RGB(255, 250, 230), 256u);
+  }
   capsule(canvas, hx - 0.06f * s, hy + 0.035f * s, hx - 0.02f * s,
           hy + 0.065f * s, 0.016f * s, ink, 230u);
   capsule(canvas, hx - 0.02f * s, hy + 0.065f * s, hx + 0.02f * s,
@@ -497,49 +504,72 @@ static void draw_sunflower(h2_garden_guard_canvas_t* canvas, float gx, float gy,
 }
 
 static void draw_shooter(h2_garden_guard_canvas_t* canvas, float gx, float gy,
-                         float s, uint32_t stage) {
+                         float s, uint32_t stage,
+                         h2_garden_guard_plant_pose_t pose) {
+  s *= pose.growth;
   const uint32_t dim = stage * 46u;
   const float line = rim_width(s);
   const uint16_t rim = RGB(30, 66, 24);
   const uint16_t leaf = darken(RGB(76, 156, 54), dim);
   ground_shadow(canvas, gx, gy, 0.28f * s);
-  ocapsule(canvas, gx, gy - 0.03f * s, gx - 0.24f * s, gy - 0.1f * s,
-           0.055f * s, line, leaf, rim);
-  ocapsule(canvas, gx, gy - 0.03f * s, gx + 0.22f * s, gy - 0.08f * s,
-           0.05f * s, line, leaf, rim);
-  ocapsule(canvas, gx, gy - 0.04f * s, gx - 0.02f * s, gy - 0.45f * s,
-           0.055f * s, line, darken(RGB(84, 160, 54), dim), rim);
-  const float hx = gx - 0.03f * s, hy = gy - 0.62f * s;
-  ocapsule(canvas, hx, hy, hx + 0.27f * s, hy - 0.01f * s, 0.1f * s, line,
-           darken(RGB(100, 190, 64), dim), rim);
-  odisc(canvas, hx + 0.3f * s, hy - 0.01f * s, 0.12f * s, line,
-        darken(RGB(86, 166, 54), dim), rim);
-  disc(canvas, hx + 0.32f * s, hy - 0.01f * s, 0.065f * s, RGB(24, 56, 20),
-       256u);
-  odisc(canvas, hx, hy, 0.23f * s, line, darken(RGB(120, 210, 76), dim), rim);
-  disc(canvas, hx - 0.08f * s, hy - 0.09f * s, 0.07f * s, RGB(230, 255, 210),
-       90u);
-  odisc(canvas, hx + 0.06f * s, hy - 0.07f * s, 0.065f * s, line,
-        RGB(250, 252, 240), rim);
-  disc(canvas, hx + 0.085f * s, hy - 0.07f * s, 0.035f * s, RGB(20, 24, 16),
-       256u);
-  ocapsule(canvas, hx - 0.08f * s, hy - 0.2f * s, hx - 0.24f * s,
-           hy - 0.32f * s, 0.045f * s, line, leaf, rim);
+  ocapsule(canvas, gx, gy - 0.03f * s, gx - 0.24f * s,
+           gy - (0.1f + 1.4f * pose.sway) * s, 0.055f * s, line, leaf, rim);
+  ocapsule(canvas, gx, gy - 0.03f * s, gx + 0.22f * s,
+           gy - (0.08f - pose.sway) * s, 0.05f * s, line, leaf, rim);
+  const float recoil = pose.action * pose.action;
+  const float hx = gx + (-0.03f + pose.sway - recoil * 0.19f) * s;
+  const float hy = gy - (0.62f + 0.06f * recoil) * s;
+  ocapsule(canvas, gx, gy - 0.04f * s, hx, hy + 0.17f * s, 0.055f * s, line,
+           darken(RGB(84, 160, 54), dim), rim);
+
+  // The seed pod opens into a flared copper-green trumpet, not a round snout.
+  const uint16_t pod = darken(RGB(104, 191, 122), dim);
+  oellipse(canvas, hx - 0.056f * s, hy + 0.018f * s, 0.215f * s, 0.246f * s,
+           line, pod, rim);
+  ellipse(canvas, hx - 0.13f * s, hy - 0.055f * s, 0.089f * s, 0.15f * s,
+          RGB(198, 231, 140), 160u);
+  ocapsule(canvas, hx - 0.08f * s, hy - 0.18f * s, hx - 0.14f * s,
+           hy - (0.34f - 1.5f * pose.sway + 0.05f * recoil) * s, 0.043f * s,
+           line, leaf, rim);
+  ocapsule(canvas, hx - 0.06f * s, hy - 0.22f * s, hx + 0.045f * s,
+           hy - (0.34f + 0.9f * pose.sway) * s, 0.034f * s, line,
+           RGB(141, 206, 114), rim);
+  ocapsule(canvas, hx + 0.09f * s, hy + 0.025f * s, hx + 0.28f * s,
+           hy - 0.005f * s, 0.088f * s, line, RGB(153, 184, 88), rim);
+  oellipse(canvas, hx + 0.32f * s, hy, 0.094f * s,
+           (0.126f + 0.022f * recoil) * s, line, RGB(213, 211, 109), rim);
+  ellipse(canvas, hx + 0.34f * s, hy, 0.048f * s, 0.082f * s,
+          recoil > 0.58f ? RGB(250, 245, 161) : RGB(41, 80, 58), 256u);
+  const float eye = hx - 0.045f * s;
+  if (pose.blink) {
+    capsule(canvas, eye - 0.049f * s, hy - 0.055f * s, eye + 0.047f * s,
+            hy - 0.055f * s, 0.018f * s, rim, 256u);
+  } else {
+    oellipse(canvas, eye, hy - 0.065f * s, 0.053f * s, 0.071f * s, line,
+             RGB(245, 240, 188), rim);
+    disc(canvas, eye + 0.016f * s, hy - 0.065f * s, 0.028f * s, RGB(26, 51, 40),
+         256u);
+  }
 }
 
 static void draw_pumpkin(h2_garden_guard_canvas_t* canvas, float gx, float gy,
-                         float s, uint32_t stage) {
+                         float s, uint32_t stage,
+                         h2_garden_guard_plant_pose_t pose) {
+  s *= pose.growth;
   const uint32_t dim = stage * 30u;
+  const float squash = 1.0f - 0.11f * pose.impact;
+  gx -= 0.075f * pose.impact * s;
   const float line = rim_width(s);
   const uint16_t rim = RGB(120, 52, 10);
-  const float cy = gy - 0.3f * s;
+  const float cy = gy - (0.3f * squash + pose.lift) * s;
+  const uint32_t flash = (uint32_t)(128.0f * pose.impact);
   ground_shadow(canvas, gx, gy, 0.42f * s);
-  oellipse(canvas, gx - 0.17f * s, cy, 0.21f * s, 0.27f * s, line,
-           darken(RGB(216, 110, 26), dim), rim);
-  oellipse(canvas, gx + 0.17f * s, cy, 0.21f * s, 0.27f * s, line,
-           darken(RGB(216, 110, 26), dim), rim);
-  oellipse(canvas, gx, cy - 0.01f * s, 0.23f * s, 0.3f * s, line,
-           darken(RGB(242, 138, 36), dim), rim);
+  oellipse(canvas, gx - 0.17f * s, cy, 0.21f * s, 0.27f * s * squash, line,
+           lighten(darken(RGB(216, 110, 26), dim), flash), rim);
+  oellipse(canvas, gx + 0.17f * s, cy, 0.21f * s, 0.27f * s * squash, line,
+           lighten(darken(RGB(216, 110, 26), dim), flash), rim);
+  oellipse(canvas, gx, cy - 0.01f * s, 0.23f * s, 0.3f * s * squash, line,
+           lighten(darken(RGB(242, 138, 36), dim), flash), rim);
   ellipse(canvas, gx - 0.07f * s, cy - 0.09f * s, 0.05f * s, 0.15f * s,
           RGB(255, 196, 120), 110u);
   ellipse(canvas, gx - 0.24f * s, cy - 0.05f * s, 0.035f * s, 0.12f * s,
@@ -549,10 +579,10 @@ static void draw_pumpkin(h2_garden_guard_canvas_t* canvas, float gx, float gy,
   oellipse(canvas, gx - 0.1f * s, cy - 0.32f * s, 0.08f * s, 0.035f * s, line,
            RGB(84, 160, 54), RGB(30, 66, 24));
   const uint16_t ink = RGB(70, 30, 6);
-  ellipse(canvas, gx - 0.09f * s, cy - 0.03f * s, 0.04f * s, 0.055f * s, ink,
-          256u);
-  ellipse(canvas, gx + 0.09f * s, cy - 0.03f * s, 0.04f * s, 0.055f * s, ink,
-          256u);
+  ellipse(canvas, gx - 0.09f * s, cy - 0.03f * s, 0.04f * s,
+          (pose.blink || pose.impact > 0.4f ? 0.015f : 0.055f) * s, ink, 256u);
+  ellipse(canvas, gx + 0.09f * s, cy - 0.03f * s, 0.04f * s,
+          (pose.blink || pose.impact > 0.4f ? 0.015f : 0.055f) * s, ink, 256u);
   capsule(canvas, gx - 0.15f * s, cy - 0.12f * s, gx - 0.05f * s,
           cy - 0.09f * s, 0.018f * s, ink, 240u);
   capsule(canvas, gx + 0.15f * s, cy - 0.12f * s, gx + 0.05f * s,
@@ -589,17 +619,20 @@ static void draw_shovel(h2_garden_guard_canvas_t* canvas, float cx, float cy,
        180u);
 }
 
+static const h2_garden_guard_plant_pose_t k_neutral_plant = {.growth = 1.0f};
+
 static void draw_plant_kind(h2_garden_guard_canvas_t* canvas, uint8_t kind,
-                            float gx, float gy, float s, uint32_t stage) {
+                            float gx, float gy, float s, uint32_t stage,
+                            h2_garden_guard_plant_pose_t pose) {
   switch (kind) {
     case H2_GARDEN_GUARD_PLANT_SUNFLOWER:
-      draw_sunflower(canvas, gx, gy, s, stage);
+      draw_sunflower(canvas, gx, gy, s, stage, pose);
       break;
     case H2_GARDEN_GUARD_PLANT_SHOOTER:
-      draw_shooter(canvas, gx, gy, s, stage);
+      draw_shooter(canvas, gx, gy, s, stage, pose);
       break;
     case H2_GARDEN_GUARD_PLANT_PUMPKIN:
-      draw_pumpkin(canvas, gx, gy, s, stage);
+      draw_pumpkin(canvas, gx, gy, s, stage, pose);
       break;
     default:
       break;
@@ -607,128 +640,189 @@ static void draw_plant_kind(h2_garden_guard_canvas_t* canvas, uint8_t kind,
 }
 
 /* Side view of a beetle walking left; t is its animation clock in seconds. */
-static void draw_beetle(h2_garden_guard_canvas_t* canvas, float gx, float gy,
-                        float s, float t, bool eating, bool shellback,
-                        bool armored, bool flash) {
-  const uint32_t glow = flash ? 140u : 0u;
-  const float line = rim_width(s);
-  const float bob = eating ? 0.025f * s * sinf(t * 16.0f)
-                           : 0.02f * s * fabsf(sinf(t * 11.0f));
-  const float nibble = eating ? 0.03f * s * sinf(t * 16.0f) : 0.0f;
-  const uint16_t leg_far = lighten(RGB(26, 18, 30), glow);
-  const uint16_t leg = lighten(RGB(44, 30, 50), glow);
-  ground_shadow(canvas, gx, gy, 0.36f * s);
-  static const float hips[3] = {-0.14f, 0.02f, 0.18f};
-  for (unsigned k = 0; k < 3u; ++k) {
-    const float swing =
-        eating ? 0.0f : 0.06f * s * sinf(t * 11.0f + (float)k * 2.1f);
-    const float hx = gx + hips[k] * s + 0.04f * s;
-    capsule(canvas, hx, gy - 0.2f * s - bob, hx + 0.05f * s - swing,
-            gy - 0.02f * s, 0.022f * s, leg_far, 256u);
-  }
-  const float by = gy - 0.3f * s - bob;
-  const uint16_t shell =
-      lighten(shellback ? RGB(64, 120, 70) : RGB(112, 70, 164), glow);
-  oellipse(canvas, gx + 0.06f * s, by, 0.32f * s, 0.21f * s, line, shell,
-           darken(shell, 150u));
-  ellipse(canvas, gx + 0.02f * s, by - 0.09f * s, 0.2f * s, 0.06f * s,
-          lighten(shell, 120u), 120u);
-  if (!shellback) {
-    disc(canvas, gx + 0.14f * s, by - 0.01f * s, 0.045f * s, darken(shell, 90u),
-         256u);
-    disc(canvas, gx - 0.03f * s, by + 0.05f * s, 0.035f * s, darken(shell, 90u),
-         256u);
-    disc(canvas, gx + 0.26f * s, by + 0.06f * s, 0.03f * s, darken(shell, 90u),
-         256u);
-  }
-  if (armored) {
-    const uint16_t steel = lighten(RGB(164, 172, 186), glow);
-    oellipse(canvas, gx + 0.05f * s, by - 0.05f * s, 0.3f * s, 0.17f * s, line,
-             steel, RGB(70, 76, 90));
-    capsule(canvas, gx - 0.22f * s, by + 0.07f * s, gx + 0.32f * s,
-            by + 0.07f * s, 0.03f * s, darken(steel, 70u), 256u);
-    ellipse(canvas, gx - 0.02f * s, by - 0.12f * s, 0.16f * s, 0.04f * s,
-            RGB(240, 244, 250), 150u);
-    for (int k = -1; k <= 1; ++k)
-      disc(canvas, gx + 0.05f * s + (float)k * 0.13f * s, by + 0.07f * s,
-           0.022f * s, darken(steel, 130u), 256u);
-  }
-  for (unsigned k = 0; k < 3u; ++k) {
-    const float swing =
-        eating ? 0.0f : 0.06f * s * sinf(t * 11.0f + (float)k * 2.1f + 3.1f);
-    const float hx = gx + hips[k] * s;
-    const float kx = hx - 0.05f * s - swing * 0.5f, ky = gy - 0.11f * s;
-    capsule(canvas, hx, gy - 0.18f * s - bob, kx, ky, 0.026f * s, leg, 256u);
-    capsule(canvas, kx, ky, hx - 0.03f * s - swing, gy, 0.024f * s, leg, 256u);
-  }
-  const float hx = gx - 0.26f * s - nibble, hy = gy - 0.27f * s - bob * 0.5f;
-  const uint16_t head = lighten(RGB(52, 36, 60), glow);
-  capsule(canvas, hx + 0.02f * s, hy - 0.11f * s, hx - 0.06f * s,
-          hy - 0.28f * s, 0.016f * s, leg_far, 256u);
-  odisc(canvas, hx, hy, 0.13f * s, line, head, RGB(20, 12, 24));
-  capsule(canvas, hx - 0.03f * s, hy - 0.11f * s, hx - 0.13f * s,
-          hy - 0.26f * s, 0.016f * s, leg, 256u);
-  disc(canvas, hx - 0.13f * s, hy - 0.27f * s, 0.03f * s, leg, 256u);
-  odisc(canvas, hx - 0.04f * s, hy - 0.04f * s, 0.05f * s, line * 0.6f,
-        RGB(252, 248, 226), RGB(20, 12, 24));
-  disc(canvas, hx - 0.06f * s, hy - 0.04f * s, 0.025f * s, RGB(16, 12, 12),
-       256u);
-  if (eating)
-    capsule(canvas, hx - 0.11f * s, hy + 0.05f * s, hx - 0.17f * s,
-            hy + 0.02f * s + nibble, 0.02f * s, RGB(30, 20, 20), 256u);
+/* The six joints and two moving face pieces share local coordinates. Fall
+ * rotation is applied around the boots, so the exit stays in its lane. */
+typedef struct zombie_brush {
+  h2_garden_guard_canvas_t* canvas;
+  float x, y, size, edge, cos_angle, sin_angle;
+  uint16_t ink;
+  uint32_t flash;
+} zombie_brush_t;
+
+static void zombie_point(const zombie_brush_t* brush, float x, float y,
+                         float* px, float* py) {
+  *px = brush->x + (x * brush->cos_angle - y * brush->sin_angle) * brush->size;
+  *py = brush->y + (y * brush->cos_angle + x * brush->sin_angle) * brush->size;
 }
 
-/* Side view of a running ant heading left. */
-static void draw_runner(h2_garden_guard_canvas_t* canvas, float gx, float gy,
-                        float s, float t, bool eating, bool flash) {
-  const uint32_t glow = flash ? 140u : 0u;
-  const float line = rim_width(s);
-  const float bob =
-      eating ? 0.02f * s * sinf(t * 18.0f) : 0.03f * s * fabsf(sinf(t * 22.0f));
-  const uint16_t leg_far = lighten(RGB(70, 22, 14), glow);
-  const uint16_t leg = lighten(RGB(96, 30, 18), glow);
-  const uint16_t body = lighten(RGB(200, 64, 40), glow);
-  const uint16_t rim = RGB(80, 18, 10);
-  ground_shadow(canvas, gx, gy, 0.3f * s);
-  for (int k = -1; k <= 1; ++k) {
-    const float swing =
-        eating ? 0.0f : 0.08f * s * sinf(t * 22.0f + (float)k * 2.1f);
-    const float hx = gx + (float)k * 0.04f * s + 0.03f * s;
-    capsule(canvas, hx, gy - 0.26f * s - bob,
-            hx + (float)k * 0.12f * s + swing * 0.4f, gy - 0.34f * s - bob,
-            0.016f * s, leg_far, 256u);
-    capsule(canvas, hx + (float)k * 0.12f * s + swing * 0.4f,
-            gy - 0.34f * s - bob, hx + (float)k * 0.22f * s + swing,
-            gy - 0.01f * s, 0.016f * s, leg_far, 256u);
+static void zombie_limb(const zombie_brush_t* brush, float x0, float y0,
+                        float x1, float y1, float r, uint16_t fill) {
+  float ax, ay, bx, by;
+  zombie_point(brush, x0, y0, &ax, &ay);
+  zombie_point(brush, x1, y1, &bx, &by);
+  ocapsule(brush->canvas, ax, ay, bx, by, r * brush->size, brush->edge,
+           lighten(fill, brush->flash), brush->ink);
+}
+
+static void zombie_oval(const zombie_brush_t* brush, float x, float y, float rx,
+                        float ry, uint16_t fill, bool outlined) {
+  float px, py;
+  zombie_point(brush, x, y, &px, &py);
+  if (outlined)
+    oellipse(brush->canvas, px, py, rx * brush->size, ry * brush->size,
+             brush->edge, lighten(fill, brush->flash), brush->ink);
+  else
+    ellipse(brush->canvas, px, py, rx * brush->size, ry * brush->size,
+            lighten(fill, brush->flash), 256u);
+}
+
+static void zombie_leg(const zombie_brush_t* brush, float hip, float offset,
+                       float stride, float lift, bool near, bool runner,
+                       uint16_t cloth) {
+  const float foot = offset + stride;
+  const float knee = offset + stride * 0.60f + 0.065f * hip;
+  const float knee_y = -0.22f - 0.42f * lift;
+  const float shoe_y = -0.066f - lift;
+  const uint16_t jeans = near ? cloth : darken(cloth, 70u);
+  const float cuff = runner ? 0.055f : 0.075f;
+  zombie_limb(brush, offset, -0.43f, knee, knee_y, cuff, jeans);
+  zombie_limb(brush, knee, knee_y, foot, shoe_y, cuff * 0.77f, jeans);
+  zombie_limb(brush, foot - 0.092f, shoe_y, foot + 0.035f, shoe_y, 0.042f,
+              near ? RGB(114, 81, 69) : RGB(62, 63, 69));
+  if (runner && near)
+    zombie_oval(brush, foot - 0.062f, shoe_y + 0.008f, 0.065f, 0.017f,
+                RGB(229, 207, 155), false);
+}
+
+/* The same figure can be posed for the title, a card or the field. */
+static void draw_zombie(h2_garden_guard_canvas_t* canvas, float gx, float gy,
+                        float size, const h2_garden_guard_pest_t* pest) {
+  const bool armored = pest->kind == H2_GARDEN_GUARD_PEST_SHELLBACK;
+  const bool runner = pest->kind == H2_GARDEN_GUARD_PEST_RUNNER;
+  const bool plated = armored && pest->armor > 0;
+  const float s = size * (armored ? 1.02f : (runner ? 0.89f : 0.96f));
+  const uint32_t period = runner ? 600u : (armored ? 1400u : 1050u);
+  const float angle = (float)(pest->stride_ms % period) *
+                      (2.0f * H2_GARDEN_GUARD_PI / (float)period);
+  const float stride = sinf(angle), step = cosf(angle);
+  const float bite = (float)pest->chew_ms / H2_GARDEN_GUARD_PEST_BITE_MS;
+  // Anticipation, open jaw, then a faster snap. Damage remains continuous.
+  const float open =
+      pest->eating
+          ? clampf(fminf(bite / 0.32f, (0.49f - bite) / 0.10f), 0.0f, 1.0f)
+          : 0.0f;
+  const float lunge =
+      pest->eating
+          ? 0.21f * clampf(1.0f - fabsf(bite - 0.48f) * 3.5f, 0.0f, 1.0f)
+          : 0.0f;
+  const float hit =
+      pest->active ? (float)pest->flash_ms / H2_GARDEN_GUARD_PEST_HIT_MS : 0.0f;
+  const float fall =
+      pest->exit_ms == 0u
+          ? 0.0f
+          : 1.0f - (float)pest->exit_ms / H2_GARDEN_GUARD_PEST_EXIT_MS;
+  const float tilt = 1.35f * fall * (2.0f - fall);
+  const zombie_brush_t brush = {.canvas = canvas,
+                                .x = gx + 0.14f * hit * s,
+                                .y = gy + 0.05f * fall * s,
+                                .size = s * (1.0f - 0.38f * fall * fall),
+                                .edge = rim_width(s) * 0.86f,
+                                .cos_angle = cosf(tilt),
+                                .sin_angle = sinf(tilt),
+                                .ink = RGB(35, 39, 47),
+                                .flash = (uint32_t)(165.0f * hit * hit)};
+  const float reach =
+      pest->eating ? 0.075f : (runner ? 0.25f : (armored ? 0.12f : 0.19f));
+  const float lift = pest->eating ? 0.0f : (runner ? 0.19f : 0.085f);
+  const uint16_t coat = armored
+                            ? RGB(70, 108, 111)
+                            : (runner ? RGB(179, 77, 50) : RGB(112, 89, 146));
+  const uint16_t pants = RGB(74, 91, 115);
+  const uint16_t skin = runner ? RGB(160, 196, 132) : RGB(151, 180, 155);
+  ground_shadow(canvas, gx + fall * 0.26f * s, gy, s * (0.30f + fall * 0.20f));
+  zombie_leg(&brush, -1.0f, 0.05f, stride * reach, fmaxf(0.0f, step) * lift,
+             false, runner, pants);
+  zombie_leg(&brush, 1.0f, -0.045f, -stride * reach,
+             fmaxf(0.0f, -step) * lift * (runner ? 1.0f : 0.35f), true, runner,
+             pants);
+
+  const float sx = -(runner ? 0.13f : 0.045f) - lunge * 0.55f + 0.09f * hit;
+  const float sy = -0.66f + (pest->eating ? 0.055f : -0.035f * fabsf(step));
+  const float hx = sx - 0.045f - lunge + 0.045f * hit;
+  const float hy =
+      sy - (runner ? 0.23f : 0.29f) + (pest->eating ? 0.045f : 0.0f);
+  const float arm = pest->eating ? -0.35f - lunge
+                                 : (runner ? -0.07f + stride * 0.2f
+                                           : -0.30f + 0.08f * stride);
+  const float hand_y = sy + (pest->eating ? -0.012f : 0.10f + 0.055f * stride);
+  zombie_limb(&brush, sx + 0.08f, sy, sx + arm * 0.8f, hand_y - 0.05f, 0.058f,
+              darken(skin, 65u));
+  zombie_limb(&brush, 0.027f, -0.41f, sx, sy, armored ? 0.158f : 0.117f, coat);
+  zombie_oval(&brush, sx + 0.047f, sy - 0.015f, 0.067f, 0.082f,
+              lighten(coat, 42u), false);
+  if (plated) {
+    zombie_limb(&brush, sx - 0.07f, sy - 0.01f, sx - 0.06f, sy + 0.13f, 0.113f,
+                RGB(136, 163, 163));
+    zombie_oval(&brush, sx - 0.105f, sy + 0.018f, 0.027f, 0.028f,
+                RGB(243, 206, 127), false);
+    zombie_oval(&brush, sx - 0.112f, sy + 0.12f, 0.022f, 0.025f,
+                RGB(202, 216, 195), false);
+  } else if (runner) {
+    zombie_limb(&brush, hx + 0.07f, hy + 0.155f, sx + 0.28f,
+                sy - 0.04f - 0.05f * stride, 0.042f, RGB(223, 119, 57));
+  } else {
+    zombie_limb(&brush, sx - 0.04f, sy - 0.03f, sx - 0.015f, sy + 0.12f, 0.024f,
+                RGB(206, 169, 103));
+    zombie_oval(&brush, sx + 0.075f, sy + 0.16f, 0.036f, 0.034f,
+                RGB(158, 127, 169), false);
   }
-  oellipse(canvas, gx + 0.2f * s, gy - 0.32f * s - bob, 0.17f * s, 0.13f * s,
-           line, body, rim);
-  ellipse(canvas, gx + 0.16f * s, gy - 0.38f * s - bob, 0.08f * s, 0.04f * s,
-          lighten(body, 120u), 140u);
-  oellipse(canvas, gx, gy - 0.28f * s - bob, 0.09f * s, 0.07f * s, line, body,
-           rim);
-  for (int k = -1; k <= 1; ++k) {
-    const float swing =
-        eating ? 0.0f : 0.08f * s * sinf(t * 22.0f + (float)k * 2.1f + 3.1f);
-    const float hx = gx + (float)k * 0.04f * s;
-    const float kx = hx + (float)k * 0.13f * s - swing * 0.4f;
-    const float ky = gy - 0.36f * s - bob;
-    capsule(canvas, hx, gy - 0.25f * s - bob, kx, ky, 0.02f * s, leg, 256u);
-    capsule(canvas, kx, ky, hx + (float)k * 0.24f * s - swing, gy, 0.019f * s,
-            leg, 256u);
+  const float elbow =
+      sx + (runner ? 0.09f + 0.07f * stride : -0.08f + 0.03f * stride);
+  zombie_limb(&brush, sx + 0.10f, sy + 0.01f, elbow, sy + 0.15f,
+              armored ? 0.078f : 0.06f, coat);
+  zombie_limb(&brush, elbow, sy + 0.15f, sx + arm, hand_y, 0.044f, skin);
+  zombie_oval(&brush, sx + arm - 0.04f, hand_y - 0.01f, 0.065f, 0.052f, skin,
+              true);
+
+  zombie_oval(&brush, hx + 0.12f, hy + 0.007f, 0.074f, 0.084f,
+              darken(skin, 40u), true);
+  zombie_oval(&brush, hx, hy, armored ? 0.178f : 0.159f,
+              runner ? 0.146f : 0.163f, skin, true);
+  zombie_oval(&brush, hx - 0.045f, hy - 0.07f, 0.094f, 0.058f,
+              lighten(skin, 55u), false);
+  const float jaw = hy + 0.096f + 0.066f * open;
+  zombie_oval(&brush, hx - 0.064f, jaw + 0.029f, 0.105f, 0.069f,
+              darken(skin, 35u), true);
+  zombie_oval(&brush, hx - 0.085f, jaw - 0.019f, 0.086f, 0.034f + 0.035f * open,
+              RGB(57, 38, 55), false);
+  zombie_oval(&brush, hx - 0.117f, jaw - 0.041f - 0.024f * open, 0.028f, 0.023f,
+              RGB(252, 224, 163), false);
+  zombie_oval(&brush, hx - 0.079f, hy - 0.025f, 0.068f, 0.055f,
+              RGB(251, 235, 176), true);
+  zombie_oval(&brush, hx - 0.104f, hy - 0.025f, 0.025f, 0.031f, RGB(37, 41, 51),
+              false);
+  zombie_oval(&brush, hx + 0.033f, hy + 0.051f, 0.028f, 0.018f,
+              RGB(102, 129, 113), false);
+  if (armored) {
+    zombie_oval(&brush, hx + 0.035f, hy - 0.134f, 0.157f, 0.10f,
+                plated ? RGB(142, 168, 166) : RGB(92, 120, 114), true);
+    zombie_limb(&brush, hx - 0.133f, hy - 0.138f, hx + 0.164f, hy - 0.112f,
+                0.023f, RGB(215, 213, 177));
+  } else {
+    zombie_limb(&brush, hx + 0.092f, hy - 0.117f,
+                hx + (runner ? 0.23f : 0.035f), hy - 0.204f, 0.033f,
+                RGB(75, 75, 88));
   }
-  const float hx = gx - 0.17f * s, hy = gy - 0.33f * s - bob;
-  odisc(canvas, hx, hy, 0.1f * s, line, body, rim);
-  capsule(canvas, hx - 0.02f * s, hy - 0.08f * s, hx - 0.1f * s, hy - 0.2f * s,
-          0.014f * s, leg, 256u);
-  capsule(canvas, hx - 0.1f * s, hy - 0.2f * s, hx - 0.17f * s, hy - 0.18f * s,
-          0.014f * s, leg, 256u);
-  disc(canvas, hx - 0.04f * s, hy - 0.03f * s, 0.03f * s, RGB(20, 10, 8), 256u);
-  disc(canvas, hx - 0.035f * s, hy - 0.04f * s, 0.01f * s, RGB(255, 240, 220),
-       256u);
-  capsule(canvas, hx - 0.08f * s, hy + 0.05f * s, hx - 0.14f * s,
-          hy + (eating ? 0.03f + 0.03f * sinf(t * 18.0f) : 0.06f) * s,
-          0.018f * s, RGB(50, 16, 10), 256u);
+}
+
+void h2_garden_guard_render_zombie_portrait(h2_garden_guard_canvas_t* canvas,
+                                            h2_garden_guard_pest_kind_t kind,
+                                            float x, float ground_y,
+                                            float size) {
+  if ((unsigned)kind >= H2_GARDEN_GUARD_PEST_KIND_COUNT) return;
+  const h2_garden_guard_pest_t zombie = {
+      .kind = (uint8_t)kind, .active = true, .armor = 1};
+  draw_zombie(canvas, x, ground_y, size, &zombie);
 }
 
 static void draw_cart(h2_garden_guard_canvas_t* canvas, float gx, float gy,
@@ -788,7 +882,7 @@ static uint16_t wood_color(float x, float y, float plank, uint32_t noise) {
       sinf(x * 0.045f + (float)index * 1.7f + 2.0f * sinf(x * 0.011f));
   const float k =
       1.0f + 0.07f * grain + 0.04f * ((float)(noise & 15u) / 15.0f - 0.5f);
-  return scale565(RGB(98, 64, 38), k);
+  return scale565(RGB(39, 72, 69), k);
 }
 
 /* Front face of the raised lawn bed below its near edge. */
@@ -799,8 +893,9 @@ static uint16_t facade_color(const h2_garden_guard_layout_t* l, float x,
   const float lawn_x0 = l->mid_x - 0.5f * l->near_w;
   const float lawn_x1 = l->mid_x + 0.5f * l->near_w;
   const float lip = fmaxf(2.0f, 3.0f * l->unit);
+  if (depth < 1.0f) return RGB(221, 200, 150);
   if (depth < lip)
-    return x >= lawn_x0 && x < lawn_x1 ? RGB(62, 118, 42) : RGB(214, 206, 188);
+    return x >= lawn_x0 && x < lawn_x1 ? RGB(86, 128, 68) : RGB(219, 192, 144);
   const float course = fmaxf((height - lip) * 0.5f, 4.0f);
   const float block = fmaxf(l->near_w * 0.075f, 8.0f);
   const int32_t row = (int32_t)((depth - lip) / course);
@@ -808,11 +903,13 @@ static uint16_t facade_color(const h2_garden_guard_layout_t* l, float x,
   const int32_t brick = (int32_t)floorf(shifted / block);
   const uint32_t tone =
       hash32((uint32_t)row * 2654435761u ^ (uint32_t)brick * 97u) & 31u;
-  uint16_t color = RGB(170u + tone / 2u, 150u + tone / 2u, 118u + tone / 3u);
+  uint16_t color = RGB(154u + tone / 2u, 124u + tone / 2u, 88u + tone / 3u);
   if (fmodf(depth - lip, course) < 1.2f ||
       fractf(shifted / block) * block < 1.2f)
-    color = RGB(104, 88, 66);
-  else if ((noise & 31u) < 2u)
+    color = RGB(86, 73, 56);
+  else if (fmodf(depth - lip, course) < 2.4f)
+    color = lighten(color, 55u);
+  else if ((noise & 63u) < 2u)
     color = darken(color, 40u);
   return scale565(color, 1.0f - 0.32f * (depth / fmaxf(height, 1.0f)));
 }
@@ -825,9 +922,9 @@ static bool house_color(float hgt, float fw, float px_per_unit, uint32_t noise,
   if (hgt > WALL_HEIGHT + ROOF_HEIGHT) return false;
   if (hgt > WALL_HEIGHT) {
     const float tiles = (hgt - WALL_HEIGHT) / 0.025f;
-    uint16_t c = RGB(176, 84, 56);
-    if (seam_px(tiles, 0.025f * px_per_unit) < 0.7f) c = RGB(120, 52, 36);
-    if (hgt < WALL_HEIGHT + 0.012f) c = RGB(96, 44, 30);
+    uint16_t c = RGB(62, 108, 105);
+    if (seam_px(tiles, 0.025f * px_per_unit) < 0.7f) c = RGB(43, 74, 72);
+    if (hgt < WALL_HEIGHT + 0.012f) c = RGB(36, 59, 56);
     *out = scale565(c, 0.9f + 0.2f * (float)(noise & 7u) / 7.0f);
     return true;
   }
@@ -843,10 +940,10 @@ static bool house_color(float hgt, float fw, float px_per_unit, uint32_t noise,
     const float hv = (hgt - 0.1f) / 0.11f;
     if (local < 0.08f || local > 0.92f || hv < 0.1f || hv > 0.9f ||
         fabsf(local - 0.5f) < 0.03f || fabsf(hv - 0.5f) < 0.04f)
-      *out = RGB(246, 244, 236);
+      *out = RGB(243, 213, 164);
     else
-      *out = fractf((local + hv) * 1.3f) < 0.18f ? RGB(200, 228, 244)
-                                                 : RGB(112, 160, 196);
+      *out = fractf((local + hv) * 1.3f) < 0.18f ? RGB(174, 214, 195)
+                                                 : RGB(94, 155, 154);
     return true;
   }
   uint16_t c = RGB(214, 196, 160);
@@ -856,26 +953,32 @@ static bool house_color(float hgt, float fw, float px_per_unit, uint32_t noise,
   return true;
 }
 
-static uint16_t lawn_color(uint32_t lane, uint32_t col, float f, float seam,
+static uint16_t lawn_color(uint32_t lane, uint32_t col, float f,
+                           float lane_seam, float cell_seam, float u,
                            uint32_t noise) {
   const bool odd = ((lane + col) & 1u) != 0u;
-  uint16_t color = odd ? RGB(98, 168, 60) : RGB(122, 190, 74);
+  uint16_t color = odd ? RGB(108, 161, 89) : RGB(121, 174, 94);
   float k =
-      0.97f + 0.05f * (float)(hash32(lane * 31u + col * 7u + 3u) & 15u) / 15.0f;
+      0.99f + 0.03f * (float)(hash32(lane * 31u + col * 7u + 3u) & 15u) / 15.0f;
   /* Farther grass is a little darker and cooler. */
-  k *= 1.0f - 0.14f * clampf(f, 0.0f, 1.0f);
+  k *= 1.0f - 0.14f * f;
+  // Soft house shade stops short of the second column.
+  k *= 1.0f - 0.16f * clampf((0.20f - (u + 0.09f * f)) * 8.0f, 0.0f, 1.0f);
   const uint32_t speck = noise & 63u;
-  if (speck < 3u)
-    k *= 0.84f;
-  else if (speck < 5u)
-    k *= 1.12f;
-  if (seam < 0.8f) k *= 0.86f;
+  if (speck == 0u)
+    k *= 0.91f;
+  else if (speck == 1u)
+    k *= 1.075f;
+  if (lane_seam < 0.9f)
+    k *= 0.85f;
+  else if (cell_seam < 0.7f)
+    k *= 0.92f;
   return scale565(color, k);
 }
 
 static uint16_t sky_color(float y, float top, float horizon) {
   const float s = clampf((y - top) / fmaxf(horizon - top, 1.0f), 0.0f, 1.0f);
-  return blend(RGB(118, 184, 234), RGB(214, 236, 242), (uint32_t)(s * 256.0f));
+  return blend(RGB(104, 171, 181), RGB(240, 226, 175), (uint32_t)(s * 256.0f));
 }
 
 static void draw_courtyard_details(h2_garden_guard_canvas_t* canvas,
@@ -906,18 +1009,24 @@ static void draw_courtyard_details(h2_garden_guard_canvas_t* canvas,
       disc(canvas, x - r * 0.3f, y - r * 0.35f, r * 0.45f, RGB(86, 146, 76),
            200u);
     }
-    /* A few clouds high in the sky. */
+    /* Small streaks of cloud read as a separate distant plane. */
     const float sky = hedge_low - l->bar_h;
     if (sky > 60.0f) {
+      const float radius = fminf(sky * 0.16f, 31.0f * l->unit);
+      const float x_sun = (float)l->width * 0.64f;
+      const float y_sun = l->bar_h + sky * 0.37f;
+      disc(canvas, x_sun, y_sun, radius * 1.22f, RGB(252, 225, 154), 88u);
+      disc(canvas, x_sun, y_sun, radius, RGB(255, 228, 157), 246u);
       static const float clouds[][2] = {
-          {0.2f, 0.22f}, {0.72f, 0.12f}, {0.5f, 0.42f}};
+          {0.18f, 0.22f}, {0.82f, 0.12f}, {0.42f, 0.49f}};
       for (unsigned i = 0; i < sizeof(clouds) / sizeof(clouds[0]); ++i) {
         const float x = (float)l->width * clouds[i][0];
         const float y = l->bar_h + sky * clouds[i][1] + 10.0f * l->unit;
         const float r = 16.0f * l->unit;
-        disc(canvas, x - r, y + r * 0.2f, r * 0.8f, RGB(250, 252, 255), 220u);
-        disc(canvas, x + r, y + r * 0.25f, r * 0.75f, RGB(250, 252, 255), 220u);
-        disc(canvas, x, y, r, RGB(255, 255, 255), 230u);
+        ellipse(canvas, x, y + r * 0.15f, r * 2.7f, r * 0.40f,
+                RGB(249, 236, 205), 200u);
+        ellipse(canvas, x - r * 0.65f, y - r * 0.16f, r * 1.0f, r * 0.48f,
+                RGB(254, 242, 211), 225u);
       }
     }
   }
@@ -936,18 +1045,18 @@ static void draw_courtyard_details(h2_garden_guard_canvas_t* canvas,
     disc(canvas, x, y - r * 1.0f, r, RGB(58, 118, 54), 256u);
     disc(canvas, x - r * 0.3f, y - r * 1.4f, r * 0.4f, RGB(96, 158, 80), 180u);
   }
-  static const uint16_t blooms[4] = {RGB(244, 120, 160), RGB(255, 246, 236),
-                                     RGB(255, 210, 60), RGB(170, 120, 230)};
-  for (unsigned i = 0; i < 34u; ++i) {
+  static const uint16_t blooms[4] = {RGB(206, 118, 124), RGB(236, 225, 193),
+                                     RGB(222, 171, 81), RGB(161, 140, 166)};
+  for (unsigned i = 0; i < 24u; ++i) {
     const uint32_t h = hash32(i * 2654435761u + 11u);
     const float u =
-        -0.15f + 1.3f * ((float)i + (float)(h & 255u) / 512.0f) / 34.0f;
+        -0.12f + 1.23f * ((float)i + (float)(h & 255u) / 512.0f) / 24.0f;
     const float f =
         1.035f + (BED_DEPTH - 0.07f) * (float)((h >> 8) & 255u) / 255.0f;
     float x, y;
     h2_garden_guard_ground_point(l, u, f, &x, &y);
     const float r =
-        fmaxf(0.0085f * l->near_w * h2_garden_guard_depth_scale(l, f), 1.2f);
+        fmaxf(0.009f * l->near_w * h2_garden_guard_depth_scale(l, f), 1.2f);
     capsule(canvas, x, y, x, y - r * 2.2f, r * 0.3f, RGB(56, 116, 46), 256u);
     const uint16_t c = blooms[(h >> 16) & 3u];
     for (unsigned k = 0; k < 5u; ++k) {
@@ -956,6 +1065,23 @@ static void draw_courtyard_details(h2_garden_guard_canvas_t* canvas,
            r * 0.55f, c, 256u);
     }
     disc(canvas, x, y - r * 2.4f, r * 0.4f, RGB(250, 200, 40), 256u);
+  }
+  // Terracotta pots set against the back border, outside every playable tile.
+  for (unsigned i = 0; i < 3u; ++i) {
+    float x, y;
+    h2_garden_guard_ground_point(l, 0.21f + (float)i * 0.305f, 1.09f, &x, &y);
+    const float s = 0.047f * l->near_w;
+    ground_shadow(canvas, x, y, 0.45f * s);
+    trapezoid(canvas, y - 0.62f * s, x - 0.31f * s, x + 0.31f * s, y,
+              x - 0.23f * s, x + 0.23f * s, RGB(157, 88, 66), 256u);
+    ellipse(canvas, x, y - 0.59f * s, 0.35f * s, 0.12f * s, RGB(218, 142, 101),
+            256u);
+    ellipse(canvas, x + 0.04f * s, y - 0.77f * s, 0.32f * s, 0.23f * s,
+            RGB(65, 108, 67), 256u);
+    ellipse(canvas, x - 0.2f * s, y - 0.85f * s, 0.21f * s, 0.12f * s,
+            RGB(117, 158, 95), 256u);
+    disc(canvas, x + 0.10f * s, y - 0.98f * s, 0.105f * s, RGB(237, 205, 137),
+         256u);
   }
   canvas->clip_y0 = 0;
 }
@@ -987,12 +1113,12 @@ void h2_garden_guard_render_background(h2_garden_guard_canvas_t* canvas,
           hash32((uint32_t)x * 73856093u ^ (uint32_t)y * 19349663u ^ 0x5A17u);
       /* MSVC cannot infer that house_color assigns its out parameter whenever
        * it returns true. Keep initialization explicit before the done paths. */
-      uint16_t color = RGB(104, 72, 48);
+      uint16_t color = RGB(105, 79, 56);
       if (fy < l->bar_h) {
         /* Toolbar plank with a dark lower edge. */
         color = wood_color(fx, fy, plank, noise);
         if (fy > l->bar_h - 3.0f || fmodf(fy, plank) < 1.0f)
-          color = RGB(54, 34, 20);
+          color = RGB(22, 46, 48);
         else if (fy > l->bar_h - 5.0f)
           color = lighten(color, 40u);
         row[x] = color;
@@ -1024,14 +1150,14 @@ void h2_garden_guard_render_background(h2_garden_guard_canvas_t* canvas,
         if (hgt <= FENCE_HEIGHT) {
           const float board = uf / 0.03f;
           color = scale565(
-              RGB(184, 138, 90),
+              RGB(127, 148, 111),
               0.92f +
                   0.12f *
                       (float)(hash32((uint32_t)(int32_t)floorf(board) + 77u) &
                               15u) /
                       15.0f);
-          if (seam_px(board, 0.03f * fence_px) < 0.8f) color = RGB(110, 76, 46);
-          if (hgt > FENCE_HEIGHT - 0.01f) color = RGB(206, 164, 112);
+          if (seam_px(board, 0.03f * fence_px) < 0.8f) color = RGB(69, 101, 86);
+          if (hgt > FENCE_HEIGHT - 0.01f) color = RGB(186, 184, 139);
           if (fabsf(hgt - 0.022f) < 0.005f || fabsf(hgt - 0.05f) < 0.005f)
             color = darken(color, 50u);
         } else {
@@ -1052,21 +1178,21 @@ void h2_garden_guard_render_background(h2_garden_guard_canvas_t* canvas,
       if (!done) {
         if (f > 1.0f) {
           color = f < 1.0f + CURB * 1.5f
-                      ? RGB(206, 200, 186)
-                      : scale565(RGB(104, 72, 48),
-                                 0.85f + 0.3f * (float)(noise & 15u) / 15.0f);
+                      ? RGB(211, 183, 135)
+                      : scale565(RGB(105, 79, 56),
+                                 0.92f + 0.16f * (float)(noise & 15u) / 15.0f);
         } else if (u >= 0.0f && u < 1.0f) {
           const uint32_t lane = (uint32_t)clampf((1.0f - f) * (float)LANES,
                                                  0.0f, (float)LANES - 1.0f);
           const uint32_t col =
               (uint32_t)clampf(u * (float)COLS, 0.0f, (float)COLS - 1.0f);
-          const float seam = fminf(seam_px(u * (float)COLS, col_px),
-                                   seam_px((1.0f - f) * (float)LANES, lane_px));
-          color = lawn_color(lane, col, f, seam, noise);
+          const float cell_seam = seam_px(u * (float)COLS, col_px);
+          const float lane_seam = seam_px((1.0f - f) * (float)LANES, lane_px);
+          color = lawn_color(lane, col, f, lane_seam, cell_seam, u, noise);
         } else if (u < 0.0f && u >= -CURB) {
-          color = RGB(214, 208, 194);
+          color = RGB(217, 190, 145);
         } else if (u > 1.0f && u <= 1.0f + CURB) {
-          color = RGB(214, 208, 194);
+          color = RGB(217, 190, 145);
         } else if (u < 0.0f) {
           /* Patio flagstones. */
           const float tu = u / 0.045f, tf = f * 8.0f;
@@ -1078,10 +1204,19 @@ void h2_garden_guard_render_background(h2_garden_guard_canvas_t* canvas,
               seam_px(tf, lane_px * (float)LANES / 8.0f) < 0.8f)
             color = RGB(128, 112, 88);
         } else {
-          /* Gravel path where pests come in. */
-          const uint32_t speck = noise & 31u;
-          color = scale565(RGB(172, 146, 108),
-                           speck < 4u ? 0.78f : (speck < 7u ? 1.12f : 1.0f));
+          /* Clay pavers stagger at the entry, in the same ground projection. */
+          const float course = f * 16.0f;
+          const float brick =
+              (u - 1.0f) * 14.0f + (((int32_t)course & 1) ? 0.5f : 0.0f);
+          const float mortar =
+              fminf(seam_px(brick, l->near_w * t / 14.0f),
+                    seam_px(course, lane_px * (float)LANES / 16.0f));
+          const uint32_t tone = hash32((uint32_t)(int32_t)course * 97u ^
+                                       (uint32_t)(int32_t)brick * 73u) &
+                                15u;
+          color = mortar < 0.7f ? RGB(129, 111, 83)
+                                : RGB(175u + tone, 137u + tone, 104u + tone);
+          if (mortar >= 0.7f && mortar < 1.4f) color = lighten(color, 28u);
         }
       }
       row[x] = color;
@@ -1165,8 +1300,9 @@ void h2_garden_guard_static_key(const h2_garden_guard_game_t* game,
   for (unsigned lane = 0; lane < LANES; ++lane)
     if (game->carts[lane].state == H2_GARDEN_GUARD_CART_READY)
       carts |= 1u << lane;
-  out->values[0] = game->plant_revision;
   out->values[1] = carts;
+  if (game->phase == H2_GARDEN_GUARD_PHASE_PLAYING) return;
+  out->values[0] = game->plant_revision;
   out->values[2] = game->score;
   out->values[3] = game->best;
   out->values[4] = game->new_best ? 1u : 0u;
@@ -1193,12 +1329,12 @@ static void draw_card(h2_garden_guard_canvas_t* canvas,
   const float well_y1 = y0 + l->card_h * 0.7f;
   rounded_rect(canvas, x0 + inset, y0 + inset, x1 - inset, well_y1,
                radius * 0.7f,
-               affordable ? RGB(132, 196, 228) : RGB(120, 128, 136), 256u);
+               affordable ? RGB(127, 170, 149) : RGB(101, 128, 118), 256u);
   /* A strip of lawn at the bottom of the well for the figure to stand on. */
   const float well_h = well_y1 - y0 - inset;
   rounded_rect(canvas, x0 + inset, well_y1 - well_h * 0.24f, x1 - inset,
                well_y1, radius * 0.5f,
-               affordable ? RGB(104, 172, 64) : RGB(104, 112, 98), 256u);
+               affordable ? RGB(112, 151, 92) : RGB(98, 117, 101), 256u);
   const float cx = (x0 + x1) * 0.5f;
   if (card == H2_GARDEN_GUARD_CARD_SHOVEL) {
     draw_shovel(canvas, cx, (y0 + inset + well_y1) * 0.5f,
@@ -1211,7 +1347,8 @@ static void draw_card(h2_garden_guard_canvas_t* canvas,
         fminf(well_h * 0.84f / height, (l->card_w - 2.0f * inset) * 1.25f);
     const float gx =
         kind == H2_GARDEN_GUARD_PLANT_SHOOTER ? cx - 0.06f * s : cx;
-    draw_plant_kind(canvas, kind, gx, well_y1 - well_h * 0.1f, s, 0u);
+    draw_plant_kind(canvas, kind, gx, well_y1 - well_h * 0.1f, s, 0u,
+                    k_neutral_plant);
   }
   if (cost > 0u) {
     char value[12];
@@ -1240,7 +1377,7 @@ static void draw_toolbar(h2_garden_guard_canvas_t* canvas,
   const h2_garden_guard_layout_t* l = &game->layout;
   const float u = l->unit;
   rounded_rect(canvas, l->sun_x, l->card_y, l->sun_x + l->sun_w,
-               l->card_y + l->card_h, l->card_w * 0.14f, RGB(40, 24, 12), 170u);
+               l->card_y + l->card_h, l->card_w * 0.14f, RGB(20, 41, 44), 170u);
   float sx, sy;
   h2_garden_guard_sun_counter_point(l, &sx, &sy);
   draw_sun(canvas, sx, sy, l->card_h * 0.2f, 0.2f, 256u);
@@ -1273,7 +1410,7 @@ static void draw_toolbar(h2_garden_guard_canvas_t* canvas,
   const float bar_y0 = l->card_y + l->card_h * 0.56f;
   const float bar_y1 = l->card_y + l->card_h * 0.8f;
   const float radius = (bar_y1 - bar_y0) * 0.5f;
-  rounded_rect(canvas, x0, bar_y0, x1, bar_y1, radius, RGB(30, 18, 10), 220u);
+  rounded_rect(canvas, x0, bar_y0, x1, bar_y1, radius, RGB(18, 38, 39), 220u);
   const uint32_t step = progress_step(game);
   if (step > 0u) {
     const float inset = fmaxf(1.0f, 2.0f * u);
@@ -1318,11 +1455,11 @@ static void draw_title(h2_garden_guard_canvas_t* canvas,
   const float ground = y0 + h * 0.56f;
   rounded_rect(canvas, x0 + w * 0.06f, ground - 0.1f * s, x0 + w * 0.94f,
                ground + 0.12f * s, 0.11f * s, RGB(92, 156, 58), 230u);
-  draw_sunflower(canvas, x0 + w * 0.17f, ground, s, 0u);
-  draw_shooter(canvas, x0 + w * 0.37f, ground, s, 0u);
-  draw_pumpkin(canvas, x0 + w * 0.6f, ground, s, 0u);
-  draw_beetle(canvas, x0 + w * 0.83f, ground, s * 0.95f, 0.0f, false, false,
-              false, false);
+  draw_sunflower(canvas, x0 + w * 0.17f, ground, s, 0u, k_neutral_plant);
+  draw_shooter(canvas, x0 + w * 0.37f, ground, s, 0u, k_neutral_plant);
+  draw_pumpkin(canvas, x0 + w * 0.6f, ground, s, 0u, k_neutral_plant);
+  h2_garden_guard_render_zombie_portrait(canvas, H2_GARDEN_GUARD_PEST_SHAMBLER,
+                                         x0 + w * 0.84f, ground, s * 0.84f);
   const char* hint1 = "TAP SUN TO COLLECT IT";
   const char* hint2 = "PICK A CARD, THEN A TILE";
   const int32_t hint = fit_scale(hint2, w * 0.92f, text_scale(u, 2.6f));
@@ -1353,7 +1490,7 @@ static void draw_result(h2_garden_guard_canvas_t* canvas,
   panel(canvas, l, 0.82f, 0.76f, &x0, &y0, &w, &h);
   const float cx = x0 + w * 0.5f;
   const bool won = game->phase == H2_GARDEN_GUARD_PHASE_WON;
-  const char* title = won ? "GARDEN SAFE!" : "BUGS GOT IN!";
+  const char* title = won ? "GARDEN SAFE!" : "ZOMBIES GOT IN!";
   const int32_t big = fit_scale(title, w * 0.9f, text_scale(u, 5.0f));
   text_centered(canvas, title, cx, y0 + h * 0.08f, big,
                 won ? RGB(170, 236, 90) : RGB(255, 96, 72), 256u);
@@ -1363,8 +1500,7 @@ static void draw_result(h2_garden_guard_canvas_t* canvas,
   float y = y0 + h * 0.08f + (float)(big * 11);
   text_centered(canvas, value, cx, y, middle, RGB(255, 236, 200), 256u);
   y += (float)(middle * 11);
-  (void)snprintf(value, sizeof(value), "BUGS STOPPED %u",
-                 (unsigned)game->kills);
+  (void)snprintf(value, sizeof(value), "STOPPED %u", (unsigned)game->kills);
   const int32_t small = fit_scale(value, w * 0.9f, text_scale(u, 2.5f));
   text_centered(canvas, value, cx, y, small, RGB(220, 230, 200), 230u);
   y += (float)(small * 11);
@@ -1383,8 +1519,21 @@ static void draw_result(h2_garden_guard_canvas_t* canvas,
   }
 }
 
-/* Plants and parked carts, far lane first so nearer figures overlap; each
- * claims its pixels in the occlusion map. */
+static void draw_lane_plants(h2_garden_guard_canvas_t* canvas,
+                             const h2_garden_guard_game_t* game, uint32_t lane,
+                             float scale, bool animate) {
+  for (uint32_t col = 0; col < COLS; ++col) {
+    const h2_garden_guard_plant_t* plant = &game->plants[lane][col];
+    if (plant->kind == H2_GARDEN_GUARD_PLANT_NONE) continue;
+    float x, y;
+    h2_garden_guard_field_point(&game->layout, lane, (float)col + 0.5f, &x, &y);
+    const h2_garden_guard_plant_pose_t pose =
+        animate ? h2_garden_guard_plant_pose(game, lane, col) : k_neutral_plant;
+    draw_plant_kind(canvas, plant->kind, x, y, scale, plant->stage, pose);
+  }
+}
+
+/* Cache the parked carts. On result screens the plants rest under the panel. */
 static void draw_field(h2_garden_guard_canvas_t* canvas,
                        const h2_garden_guard_game_t* game) {
   const h2_garden_guard_layout_t* l = &game->layout;
@@ -1397,13 +1546,8 @@ static void draw_field(h2_garden_guard_canvas_t* canvas,
       h2_garden_guard_field_point(l, lane, -0.35f, &x, &y);
       draw_cart(canvas, x, y, s * 0.62f);
     }
-    for (uint32_t col = 0; col < COLS; ++col) {
-      const h2_garden_guard_plant_t* plant = &game->plants[lane][col];
-      if (plant->kind == H2_GARDEN_GUARD_PLANT_NONE) continue;
-      float x, y;
-      h2_garden_guard_field_point(l, lane, (float)col + 0.5f, &x, &y);
-      draw_plant_kind(canvas, plant->kind, x, y, s, plant->stage);
-    }
+    if (game->phase != H2_GARDEN_GUARD_PHASE_PLAYING)
+      draw_lane_plants(canvas, game, lane, s, false);
   }
   depth_mode(canvas, DEPTH_OFF, 0u);
   full_clip(canvas);
@@ -1465,10 +1609,12 @@ void h2_garden_guard_render_scene(h2_garden_guard_canvas_t* canvas,
   const float u = l->unit;
   field_clip(canvas, l);
   draw_hover(canvas, game);
-  /* Lane by lane, far to near; nearer plants hide what stands behind them. */
+  // Compose all moving figures far to near; the map handles parked carts.
   for (uint32_t lane = 0; lane < LANES; ++lane) {
+    if (game->phase != H2_GARDEN_GUARD_PHASE_PLAYING) break;
     depth_mode(canvas, DEPTH_TEST, lane);
     const float s = h2_garden_guard_lane_size(l, lane);
+    draw_lane_plants(canvas, game, lane, s, true);
     const h2_garden_guard_cart_t* cart = &game->carts[lane];
     if (cart->state == H2_GARDEN_GUARD_CART_SWEEPING) {
       float x, y;
@@ -1477,20 +1623,11 @@ void h2_garden_guard_render_scene(h2_garden_guard_canvas_t* canvas,
     }
     for (unsigned i = 0; i < H2_GARDEN_GUARD_MAX_PESTS; ++i) {
       const h2_garden_guard_pest_t* pest = &game->pests[i];
-      if (!pest->active || pest->lane != lane) continue;
+      if ((!pest->active && pest->exit_ms == 0u) || pest->lane != lane)
+        continue;
       float x, y;
       h2_garden_guard_field_point(l, lane, pest->x, &x, &y);
-      const float t =
-          (float)((game->time_ms + pest->phase_ms) % 600000u) * 0.001f;
-      const bool flash = pest->flash_ms != 0u;
-      if (pest->kind == H2_GARDEN_GUARD_PEST_RUNNER) {
-        draw_runner(canvas, x, y, s * 0.92f, t, pest->eating, flash);
-      } else {
-        const bool shellback = pest->kind == H2_GARDEN_GUARD_PEST_SHELLBACK;
-        draw_beetle(canvas, x, y, s * (shellback ? 1.04f : 0.98f), t,
-                    pest->eating, shellback, shellback && pest->armor > 0,
-                    flash);
-      }
+      draw_zombie(canvas, x, y, s, pest);
     }
     for (unsigned i = 0; i < H2_GARDEN_GUARD_MAX_PEAS; ++i) {
       const h2_garden_guard_pea_t* pea = &game->peas[i];

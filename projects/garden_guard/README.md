@@ -1,6 +1,6 @@
 # Garden Guard
 
-A touch lane-defense garden game. Plants hold five lanes of a nine-cell lawn against waves of garden pests. The portable App in [`app/`](app/) depends only on Runtime and the Display, Touch and Pref PAL contracts; it renders RGB565 in software and pushes only the dirty row bands each frame. The public contract is [`h2_garden_guard.h`](app/include/h2_garden_guard.h).
+A touch lane-defense garden game. Plants hold five lanes of a nine-cell lawn against waves of cartoon garden zombies. The portable App in [`app/`](app/) depends only on Runtime and the Display, Touch and Pref PAL contracts; it renders RGB565 in software and pushes only the dirty row bands each frame. The public contract is [`h2_garden_guard.h`](app/include/h2_garden_guard.h).
 
 | Entry | Board | Package |
 | --- | --- | --- |
@@ -27,16 +27,18 @@ Tap the screen to start. Sun pays for plants: tap a falling or resting sun, or s
 | Card | Cost | Role |
 | --- | --- | --- |
 | Sunflower | 50 | Drops a sun every 12 s. |
-| Shooter | 100 | Fires peas down its lane while a pest is ahead of it. |
-| Pumpkin | 50 | Tough wall that holds pests while they chew it; shows cracks as it weakens. |
+| Shooter | 100 | Fires peas down its lane while a zombie is ahead of it. |
+| Pumpkin | 50 | Tough wall that holds zombies while they chew it; shows cracks as it weakens. |
 | Shovel | free | Removes a plant without refund. |
 
-Cards recharge after use, shown by a draining shade. Beetles walk, shell-backed beetles absorb damage with their plate first, and red ants run fast but break easily. Pests stop to chew any plant in their way. Each lane has one cart at the house: the first pest through sends it down the lane, clearing every pest in it. A second pest reaching the house in that lane ends the run. Five waves arrive after a 20 s ready time, the last announced as the final wave; clearing them all wins. The result screen shows the score and best score and accepts a tap to play again after one second.
+Cards recharge after use, shown by a draining shade. Shamblers drag one foot, Shellbacks absorb damage with their salvaged plate first, and Runners take quick strides but break easily. Zombies stop to chew plants in their way. The first zombie through a lane sends its cart across, clearing every zombie in that lane. A second zombie reaching the house in that lane ends the run. Five waves arrive after a 20 s ready time, the last announced as the final wave; clearing them all wins. The result screen shows the score and best score and accepts a tap to play again after one second.
 
-The lawn is viewed obliquely from its front edge: distant rows are narrower and closer together, while upright plants and pests grow larger toward the viewer. All display shapes keep the lanes running right to left toward the house; taller displays show more courtyard behind the lawn. Planting and drag highlights use the same perspective geometry as the ground. The shovel can also target a plant's raised figure.
+The lawn is viewed obliquely from its front edge: distant rows are narrower and closer together, while upright plants and zombies grow larger toward the viewer. All display shapes keep the lanes running right to left toward the house; taller displays show more courtyard behind the lawn. Planting and drag highlights use the same perspective geometry as the ground. The shovel can also target a plant's raised figure.
 
 ## Rendering
 
-The background (toolbar wood, perspective lawn, patio, house, fence and front wall) is drawn once. The static layer has two independently keyed parts: the toolbar (sun, cards, cooldowns, wave progress) and the field (plants, parked carts, title or result panel). A part is repainted only when its key changes. A one-byte-per-pixel occlusion map records the nearest static figure; pests and peas are drawn from far to near and respect that map. This adds 150 KiB at 480×320 or 375 KiB at 480×800 to the three RGB565 buffers, with no frame-time allocations. Pests, peas, suns, particles, drag outlines and banners form the moving scene, whose covered bands in this and the previous frame are restored and pushed. An idle title screen pushes nothing after its first frame. The default frame period is 40 ms.
+The courtyard is drawn once, including the tiled entry, back border and retaining wall. The toolbar and parked carts are cached separately. While playing, the renderer draws plants, zombies, projectiles and moving carts from far lane to near, with a one-byte-per-pixel occlusion map for the parked carts. The scene restores and presents only the horizontal bands and column ranges covered in the current or previous frame. The three RGB565 buffers and depth map together use 7 bytes per pixel (1.03 MiB at 480×320, 2.56 MiB at 480×800). There are no frame-time allocations.
+
+Quiet leaves and blinks update on a 120 ms clock. Growth, bloom, shot recoil, jaw strikes, hits and falls follow gameplay events at the default 40 ms frame period. The planted pose also drives the shovel hit area. An idle title screen presents only its first frame.
 
 The best score is stored as `best` in the `garden_guard` Pref namespace. Targets without a Pref implementation retain it in memory only. Runtime statistics are logged every 10 s as `H2_GARDEN_GUARD_STATS`.
