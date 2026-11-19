@@ -36,7 +36,10 @@ typedef struct h2_garden_guard_config {
   /** Optional, polled on the run thread before every frame. Returning true
    * ends the run with H2_PAL_OK after cleanup. */
   bool (*should_exit)(void* user);
-  /** Borrowed user value passed to ready and should_exit. */
+  /** Optional notification on the run thread after loading or switching
+   * language. language_tag is a borrowed static BCP 47 tag. */
+  void (*language_changed)(void* user, const char* language_tag);
+  /** Borrowed user value passed to the configured callbacks. */
   void* user;
 } h2_garden_guard_config_t;
 

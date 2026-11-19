@@ -81,11 +81,18 @@ static h2_garden_guard_sun_t* resting_sun(h2_garden_guard_game_t* g) {
   return NULL;
 }
 
+static void tap_action(h2_garden_guard_game_t* g,
+                       h2_garden_guard_action_t action) {
+  const h2_garden_guard_rect_t r =
+      h2_garden_guard_action_rect(&g->layout, action);
+  tap(g, r.x + r.w * 0.5f, r.y + r.h * 0.5f);
+}
+
 static void start(h2_garden_guard_game_t* g, int32_t width, int32_t height,
                   uint32_t seed) {
   h2_garden_guard_game_init(g, width, height, seed, 0u);
   CHECK(g->phase == H2_GARDEN_GUARD_PHASE_TITLE);
-  tap(g, (float)width * 0.5f, (float)height * 0.5f);
+  tap_action(g, H2_GARDEN_GUARD_ACTION_START);
   CHECK(g->phase == H2_GARDEN_GUARD_PHASE_PLAYING);
   CHECK(g->sun == H2_GARDEN_GUARD_START_SUN);
 }
@@ -427,10 +434,10 @@ static void test_cart_then_loss(void) {
     CHECK(!game.pests[i].active);
 
   /* Restart waits for the delay, then starts a fresh garden. */
-  tap(&game, 240.0f, 200.0f);
+  tap_action(&game, H2_GARDEN_GUARD_ACTION_RESULT_AGAIN);
   CHECK(game.phase == H2_GARDEN_GUARD_PHASE_LOST);
   h2_garden_guard_game_step(&game, H2_GARDEN_GUARD_RESTART_DELAY_MS);
-  tap(&game, 240.0f, 200.0f);
+  tap_action(&game, H2_GARDEN_GUARD_ACTION_RESULT_AGAIN);
   CHECK(game.phase == H2_GARDEN_GUARD_PHASE_PLAYING);
   CHECK(game.sun == H2_GARDEN_GUARD_START_SUN && game.score == 0u);
   CHECK(game.carts[4].state == H2_GARDEN_GUARD_CART_READY);
@@ -554,7 +561,7 @@ static void test_shop_and_earned_coins(void) {
   tap_rect(&game, h2_garden_guard_menu_back(l));
   CHECK(game.phase == H2_GARDEN_GUARD_PHASE_TITLE &&
         game.menu == H2_GARDEN_GUARD_MENU_NONE);
-  tap(&game, l->mid_x, l->height * 0.5f);
+  tap_action(&game, H2_GARDEN_GUARD_ACTION_START);
   freeze_spawns(&game);
   game.sun = 500u;
   tap_card(&game, H2_GARDEN_GUARD_CARD_FROST);
@@ -586,12 +593,75 @@ static void test_shop_and_earned_coins(void) {
   h2_garden_guard_game_step(&game, H2_GARDEN_GUARD_RESTART_DELAY_MS + 300u);
   tap_rect(&game, h2_garden_guard_menu_back(l));
   CHECK(game.phase == H2_GARDEN_GUARD_PHASE_LOST && game.profile.coins == 3u);
-  tap(&game, l->mid_x, l->height * 0.5f);
+  tap_action(&game, H2_GARDEN_GUARD_ACTION_RESULT_AGAIN);
   CHECK(game.phase == H2_GARDEN_GUARD_PHASE_PLAYING && game.earned_coins == 0u);
   CHECK(game.profile.coins == 3u && game.profile.owned == 3u);
 }
 
+static void test_pause_and_language(void) {
+  start(&game, 480, 800, 23u);
+  freeze_spawns(&game);
+  plant(&game, H2_GARDEN_GUARD_CARD_SUNFLOWER, 1u, 1u);
+  h2_garden_guard_pest_t* pest =
+      place_pest(&game, 0u, H2_GARDEN_GUARD_PEST_SHAMBLER, 1u, 2.0f);
+  h2_garden_guard_game_step(&game, 30u);
+  const uint64_t time = game.time_ms;
+  const uint64_t spawn = game.next_wave_ms;
+  const float hp = game.plants[1][1].hp;
+  const uint16_t chew = pest->chew_ms;
+  const uint32_t cooldown = game.card_cooldown_ms[0];
+  const uint32_t sun = game.sun;
+  game.profile.coins = 4u;
+  game.profile.total_score = 89u;
+  tap_card(&game, H2_GARDEN_GUARD_CARD_SHOVEL);
+  tap_action(&game, H2_GARDEN_GUARD_ACTION_PAUSE);
+  CHECK(h2_garden_guard_paused(&game) &&
+        game.selected == H2_GARDEN_GUARD_CARD_NONE);
+  tap_cell(&game, 1u, 1u);
+  tap_action(&game, H2_GARDEN_GUARD_ACTION_PAUSE_LANGUAGE);
+  CHECK(game.language == H2_GARDEN_GUARD_LANG_ZH && game.language_dirty);
+  h2_garden_guard_game_step(&game, 30000u);
+  CHECK(game.time_ms == time && game.next_wave_ms == spawn &&
+        pest->chew_ms == chew);
+  CHECK(game.plants[1][1].hp == hp && game.card_cooldown_ms[0] == cooldown &&
+        game.sun == sun);
+
+  /* A single gesture cannot open confirmation and then accept it. */
+  const h2_garden_guard_rect_t leave =
+      h2_garden_guard_action_rect(&game.layout, H2_GARDEN_GUARD_ACTION_LEAVE);
+  const h2_garden_guard_rect_t confirm =
+      h2_garden_guard_action_rect(&game.layout, H2_GARDEN_GUARD_ACTION_CONFIRM);
+  h2_garden_guard_game_pointer(&game, H2_GARDEN_GUARD_POINTER_DOWN,
+                               leave.x + leave.w / 2, leave.y + leave.h * 0.9f);
+  h2_garden_guard_game_pointer(&game, H2_GARDEN_GUARD_POINTER_UP,
+                               confirm.x + confirm.w / 2, confirm.y + 1.0f);
+  CHECK(game.menu == H2_GARDEN_GUARD_MENU_PAUSE);
+  tap_action(&game, H2_GARDEN_GUARD_ACTION_LEAVE);
+  CHECK(game.menu == H2_GARDEN_GUARD_MENU_CONFIRM);
+  tap_action(&game, H2_GARDEN_GUARD_ACTION_CANCEL);
+  CHECK(game.menu == H2_GARDEN_GUARD_MENU_PAUSE);
+  tap_action(&game, H2_GARDEN_GUARD_ACTION_RESUME);
+  CHECK(!h2_garden_guard_paused(&game) && game.time_ms == time);
+  h2_garden_guard_game_step(&game, 30u);
+  CHECK(game.time_ms == time + 30u && pest->chew_ms > chew);
+  tap_action(&game, H2_GARDEN_GUARD_ACTION_PAUSE);
+  tap_action(&game, H2_GARDEN_GUARD_ACTION_LEAVE);
+  tap_action(&game, H2_GARDEN_GUARD_ACTION_CONFIRM);
+  CHECK(game.phase == H2_GARDEN_GUARD_PHASE_TITLE &&
+        game.menu == H2_GARDEN_GUARD_MENU_NONE);
+  CHECK(game.profile.total_score == 89u && game.profile.coins == 4u &&
+        game.earned_coins == 0u);
+  CHECK(game.language == H2_GARDEN_GUARD_LANG_ZH && !pest->active);
+  tap_action(&game, H2_GARDEN_GUARD_ACTION_LANGUAGE);
+  CHECK(game.language == H2_GARDEN_GUARD_LANG_EN &&
+        game.phase == H2_GARDEN_GUARD_PHASE_TITLE);
+  tap_action(&game, H2_GARDEN_GUARD_ACTION_START);
+  CHECK(game.phase == H2_GARDEN_GUARD_PHASE_PLAYING &&
+        game.sun == H2_GARDEN_GUARD_START_SUN);
+}
+
 int main(void) {
+  test_pause_and_language();
   test_profile_and_collection();
   test_shop_and_earned_coins();
   test_layouts();

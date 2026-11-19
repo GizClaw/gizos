@@ -15,10 +15,37 @@
 </style>
 <main>
   <canvas id="canvas" width="480" height="320"></canvas>
-  <p id="status">Loading…</p>
+  <p id="game-status" role="status">Loading…</p>
 </main>
 <script>
-  const status = document.getElementById('status');
+  const gameStatus = document.getElementById('game-status');
+  const messages = {
+    en: {
+      title: 'Garden Guard', loading: 'Loading the garden…',
+      wait: 'Close the other Garden Guard tab on this address to continue.',
+      ready: 'Collect sun, choose a card, then plant on the lawn.',
+      error: 'The garden could not start. Reload to try again.',
+    },
+    'zh-CN': {
+      title: '植物守卫', loading: '正在加载庭院…',
+      wait: '请关闭此地址的另一个植物守卫标签页，再继续。',
+      ready: '收集阳光，选择植物卡，再点草坪种植。',
+      error: '庭院启动失败，请刷新重试。',
+    },
+  };
+  let language = 'en';
+  let state = 'loading';
+  try {
+    if (localStorage.getItem('h2.pref.v1.garden_guard.language') === '3:01000000')
+      language = 'zh-CN';
+  } catch (_) { /* The App can still run without storage. */ }
+  const showStatus = () => {
+    document.documentElement.lang = language;
+    document.title = messages[language].title;
+    gameStatus.textContent = messages[language][state];
+    document.getElementById('canvas').setAttribute('aria-label', messages[language].title);
+  };
+  showStatus();
   var Module = {
     canvas: document.getElementById('canvas'),
     preRun: [() => {
@@ -26,18 +53,24 @@
       if (!navigator.locks) return;
       const dependency = 'garden-guard-profile';
       addRunDependency(dependency);
-      status.textContent = 'Waiting for access to your garden. Close any other Garden Guard tab on this address.';
+      state = 'wait';
+      showStatus();
       navigator.locks.request(dependency, () => {
         removeRunDependency(dependency);
         return new Promise(() => {});
       }).catch(() => { removeRunDependency(dependency); });
     }],
+    h2GardenLanguage: tag => {
+      language = tag === 'zh-CN' ? tag : 'en';
+      showStatus();
+    },
     print: text => console.log(text),
     printErr: text => console.error(text),
     onRuntimeInitialized: () => {
-      status.textContent = 'Tap suns to collect them, pick a card, then tap a tile to plant.';
+      state = 'ready';
+      showStatus();
     },
-    onAbort: reason => { status.textContent = 'Stopped: ' + reason; },
+    onAbort: () => { state = 'error'; showStatus(); },
   };
 </script>
 {{{ SCRIPT }}}

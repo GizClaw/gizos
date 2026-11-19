@@ -192,7 +192,12 @@ static void compute_layout(h2_garden_guard_layout_t* l, int32_t width,
   if (pad < 1.0f) pad = 1.0f;
   l->card_y = pad;
   l->card_h = bar - 2.0f * pad;
-  l->card_w = floorf(fminf(l->card_h * 0.82f, w * 0.103f));
+  const float pause_width = fminf(68.0f, w * 0.145f);
+  const float wave_width = fminf(76.0f, w * 0.22f);
+  const float space =
+      w - 11.0f * pad - floorf(l->card_h * 1.25f) - pause_width - wave_width;
+  l->card_w =
+      floorf(fminf(l->card_h * 0.82f, space / H2_GARDEN_GUARD_CARD_COUNT));
   l->sun_x = pad;
   l->sun_w = floorf(l->card_h * 1.25f);
   float x = l->sun_x + l->sun_w + 2.0f * pad;
@@ -423,6 +428,7 @@ static void clear_world(h2_garden_guard_game_t* game) {
 static void enter_title(h2_garden_guard_game_t* game) {
   clear_world(game);
   memset(game->particles, 0, sizeof(game->particles));
+  memset(game->plants, 0, sizeof(game->plants));
   game->phase = H2_GARDEN_GUARD_PHASE_TITLE;
   game->phase_started_ms = game->time_ms;
 }
@@ -630,13 +636,54 @@ static float menu_scale(const h2_garden_guard_layout_t* l) {
   return fminf((float)l->width / 480.0f, (float)l->height / 320.0f);
 }
 
+static h2_garden_guard_rect_t menu_rect(const h2_garden_guard_layout_t* l,
+                                        float x, float y, float w, float h) {
+  const float s = menu_scale(l);
+  return (h2_garden_guard_rect_t){
+      ((float)l->width - 480.0f * s) * 0.5f + x * s,
+      ((float)l->height - 320.0f * s) * 0.5f + y * s, w * s, h * s};
+}
+
+bool h2_garden_guard_paused(const h2_garden_guard_game_t* game) {
+  return game->menu == H2_GARDEN_GUARD_MENU_PAUSE ||
+         game->menu == H2_GARDEN_GUARD_MENU_CONFIRM;
+}
+
+h2_garden_guard_rect_t h2_garden_guard_action_rect(
+    const h2_garden_guard_layout_t* l, h2_garden_guard_action_t action) {
+  switch (action) {
+    case H2_GARDEN_GUARD_ACTION_START:
+      return menu_rect(l, 148.0f, 264.0f, 184.0f, 34.0f);
+    case H2_GARDEN_GUARD_ACTION_PAUSE: {
+      const float width = fminf(68.0f, (float)l->width * 0.145f);
+      return (h2_garden_guard_rect_t){(float)l->width - width - l->card_y,
+                                      l->card_y, width, l->card_h};
+    }
+    case H2_GARDEN_GUARD_ACTION_LANGUAGE:
+      return menu_rect(l, 390.0f, 5.0f, 84.0f, 32.0f);
+    case H2_GARDEN_GUARD_ACTION_RESUME:
+      return menu_rect(l, 126.0f, 106.0f, 228.0f, 42.0f);
+    case H2_GARDEN_GUARD_ACTION_PAUSE_LANGUAGE:
+      return menu_rect(l, 126.0f, 155.0f, 228.0f, 42.0f);
+    case H2_GARDEN_GUARD_ACTION_LEAVE:
+      return menu_rect(l, 126.0f, 204.0f, 228.0f, 42.0f);
+    case H2_GARDEN_GUARD_ACTION_CANCEL:
+      return menu_rect(l, 75.0f, 190.0f, 156.0f, 43.0f);
+    case H2_GARDEN_GUARD_ACTION_CONFIRM:
+      return menu_rect(l, 249.0f, 190.0f, 156.0f, 43.0f);
+    case H2_GARDEN_GUARD_ACTION_RESULT_HOME:
+      return menu_rect(l, 243.0f, 239.0f, 182.0f, 34.0f);
+    case H2_GARDEN_GUARD_ACTION_RESULT_AGAIN:
+      return menu_rect(l, 55.0f, 239.0f, 181.0f, 34.0f);
+  }
+  return (h2_garden_guard_rect_t){0};
+}
+
 h2_garden_guard_rect_t h2_garden_guard_menu_tab(
     const h2_garden_guard_layout_t* l, bool result, unsigned tab) {
-  const float s = menu_scale(l);
-  const float top = ((float)l->height - 320.0f * s) * 0.5f;
-  const float y = top + (result ? 278.0f : 267.0f) * s;
-  const float x = (float)l->width * 0.5f + (tab == 0u ? -212.0f : 104.0f) * s;
-  return (h2_garden_guard_rect_t){x, y, 108.0f * s, 28.0f * s};
+  if (result)
+    return menu_rect(l, tab == 0u ? 55.0f : 243.0f, 278.0f, 182.0f, 28.0f);
+  return menu_rect(l, tab == 0u ? 28.0f : 344.0f, 267.0f, 108.0f, 28.0f);
 }
 
 h2_garden_guard_rect_t h2_garden_guard_menu_back(
@@ -683,7 +730,39 @@ static void press_menu(h2_garden_guard_game_t* game, float x, float y) {
   }
 }
 
+static bool hits_action(const h2_garden_guard_game_t* game,
+                        h2_garden_guard_action_t action, float x, float y) {
+  return contains(h2_garden_guard_action_rect(&game->layout, action), x, y);
+}
+
+static void toggle_language(h2_garden_guard_game_t* game) {
+  game->language = game->language == H2_GARDEN_GUARD_LANG_ZH
+                       ? H2_GARDEN_GUARD_LANG_EN
+                       : H2_GARDEN_GUARD_LANG_ZH;
+  game->language_dirty = true;
+}
+
+/* Modal controls activate on release over the same control. A second state
+ * cannot receive the release that opened it. */
+static unsigned modal_action(const h2_garden_guard_game_t* game, float x,
+                             float y) {
+  if (game->menu == H2_GARDEN_GUARD_MENU_PAUSE) {
+    if (hits_action(game, H2_GARDEN_GUARD_ACTION_RESUME, x, y)) return 1u;
+    if (hits_action(game, H2_GARDEN_GUARD_ACTION_PAUSE_LANGUAGE, x, y))
+      return 2u;
+    if (hits_action(game, H2_GARDEN_GUARD_ACTION_LEAVE, x, y)) return 3u;
+  } else if (game->menu == H2_GARDEN_GUARD_MENU_CONFIRM) {
+    if (hits_action(game, H2_GARDEN_GUARD_ACTION_CANCEL, x, y)) return 4u;
+    if (hits_action(game, H2_GARDEN_GUARD_ACTION_CONFIRM, x, y)) return 5u;
+  }
+  return 0u;
+}
+
 static void press(h2_garden_guard_game_t* game, float x, float y) {
+  if (h2_garden_guard_paused(game)) {
+    game->modal_press = (uint8_t)modal_action(game, x, y);
+    return;
+  }
   if (game->menu != H2_GARDEN_GUARD_MENU_NONE) {
     press_menu(game, x, y);
     return;
@@ -697,19 +776,24 @@ static void press(h2_garden_guard_game_t* game, float x, float y) {
           tab == 0u ? H2_GARDEN_GUARD_MENU_JOURNAL : H2_GARDEN_GUARD_MENU_SHOP;
       return;
     }
-  }
-  switch (game->phase) {
-    case H2_GARDEN_GUARD_PHASE_TITLE:
-      enter_playing(game);
-      return;
-    case H2_GARDEN_GUARD_PHASE_WON:
-    case H2_GARDEN_GUARD_PHASE_LOST:
-      if (game->time_ms - game->phase_started_ms >=
-          H2_GARDEN_GUARD_RESTART_DELAY_MS)
+    if (!result) {
+      if (hits_action(game, H2_GARDEN_GUARD_ACTION_LANGUAGE, x, y))
+        toggle_language(game);
+      else if (hits_action(game, H2_GARDEN_GUARD_ACTION_START, x, y))
         enter_playing(game);
-      return;
-    default:
-      break;
+    } else if (hits_action(game, H2_GARDEN_GUARD_ACTION_RESULT_HOME, x, y)) {
+      enter_title(game);
+    } else if (game->time_ms - game->phase_started_ms >=
+                   H2_GARDEN_GUARD_RESTART_DELAY_MS &&
+               hits_action(game, H2_GARDEN_GUARD_ACTION_RESULT_AGAIN, x, y)) {
+      enter_playing(game);
+    }
+    return;
+  }
+  if (hits_action(game, H2_GARDEN_GUARD_ACTION_PAUSE, x, y)) {
+    game->selected = H2_GARDEN_GUARD_CARD_NONE;
+    game->menu = H2_GARDEN_GUARD_MENU_PAUSE;
+    return;
   }
   if (collect_suns_at(game, x, y)) return;
   const int32_t card = h2_garden_guard_card_at(&game->layout, x, y);
@@ -740,12 +824,17 @@ void h2_garden_guard_game_pointer(h2_garden_guard_game_t* game,
   switch (kind) {
     case H2_GARDEN_GUARD_POINTER_DOWN:
       game->pointer_down = true;
+      game->modal_press = 0u;
       game->drag_from_card = false;
       clear_hover(game);
       press(game, x, y);
       break;
     case H2_GARDEN_GUARD_POINTER_MOVE: {
-      if (!game->pointer_down || game->phase != H2_GARDEN_GUARD_PHASE_PLAYING)
+      if (h2_garden_guard_paused(game) &&
+          game->modal_press != modal_action(game, x, y))
+        game->modal_press = 0u;
+      if (!game->pointer_down || h2_garden_guard_paused(game) ||
+          game->phase != H2_GARDEN_GUARD_PHASE_PLAYING)
         break;
       /* Sweeping across suns collects them. */
       (void)collect_suns_at(game, x, y);
@@ -760,6 +849,30 @@ void h2_garden_guard_game_pointer(h2_garden_guard_game_t* game,
       break;
     }
     case H2_GARDEN_GUARD_POINTER_UP: {
+      if (h2_garden_guard_paused(game) && game->pointer_down &&
+          game->modal_press == modal_action(game, x, y)) {
+        switch (game->modal_press) {
+          case 1u:
+            game->menu = H2_GARDEN_GUARD_MENU_NONE;
+            break;
+          case 2u:
+            toggle_language(game);
+            break;
+          case 3u:
+            game->menu = H2_GARDEN_GUARD_MENU_CONFIRM;
+            break;
+          case 4u:
+            game->menu = H2_GARDEN_GUARD_MENU_PAUSE;
+            break;
+          case 5u:
+            game->menu = H2_GARDEN_GUARD_MENU_NONE;
+            enter_title(game);
+            break;
+          default:
+            break;
+        }
+      }
+      game->modal_press = 0u;
       uint32_t lane, col;
       /* Dragging a card onto the lawn plants where it is released. */
       if (game->pointer_down && game->drag_from_card &&
@@ -773,6 +886,7 @@ void h2_garden_guard_game_pointer(h2_garden_guard_game_t* game,
       break;
     }
     default:
+      game->modal_press = 0u;
       game->pointer_down = false;
       game->drag_from_card = false;
       clear_hover(game);
@@ -1156,6 +1270,7 @@ static void step_once(h2_garden_guard_game_t* game, uint32_t dt) {
 }
 
 void h2_garden_guard_game_step(h2_garden_guard_game_t* game, uint32_t dt_ms) {
+  if (h2_garden_guard_paused(game)) return;
   while (dt_ms > 0u) {
     const uint32_t dt = dt_ms > STEP_MAX_MS ? STEP_MAX_MS : dt_ms;
     step_once(game, dt);

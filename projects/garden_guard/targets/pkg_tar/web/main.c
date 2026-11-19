@@ -4,6 +4,8 @@
 #include "h2_pal_unsupported.h"
 #include "h2_web_platform.h"
 
+#include <emscripten/emscripten.h>
+#include <emscripten/proxying.h>
 #include <emscripten/threading.h>
 #include <stdio.h>
 
@@ -60,6 +62,24 @@ static h2_runtime_config_t runtime_config(h2_web_platform_t* platform) {
   return config;
 }
 
+/* clang-format off */
+EM_JS(void, apply_language_js, (const char* language_tag), {
+  if (Module['h2GardenLanguage'])
+    Module['h2GardenLanguage'](UTF8ToString(language_tag));
+});
+/* clang-format on */
+
+static void apply_language(void* language_tag) {
+  apply_language_js(language_tag);
+}
+
+static void language_changed(void* user, const char* language_tag) {
+  (void)user;
+  (void)emscripten_proxy_sync(emscripten_proxy_get_system_queue(),
+                              emscripten_main_runtime_thread_id(),
+                              apply_language, (void*)language_tag);
+}
+
 int main(void) {
   if (emscripten_is_main_runtime_thread()) return 2;
   const h2_web_platform_config_t surface = {.display_width = WIDTH,
@@ -72,7 +92,8 @@ int main(void) {
   const h2_runtime_config_t config = runtime_config(platform);
   h2_runtime_t* runtime = NULL;
   int rc = h2_runtime_init(&config, &runtime);
-  if (rc == H2_PAL_OK) rc = h2_garden_guard_run(runtime, NULL);
+  const h2_garden_guard_config_t game = {.language_changed = language_changed};
+  if (rc == H2_PAL_OK) rc = h2_garden_guard_run(runtime, &game);
   printf("H2_GARDEN_GUARD_WEB_EXIT rc=%d\n", rc);
   const int destroyed = runtime != NULL ? h2_runtime_destroy(&runtime) : 0;
   const int teardown =

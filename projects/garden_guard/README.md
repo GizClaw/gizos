@@ -22,7 +22,7 @@ The desktop launcher accepts an optional `WIDTHxHEIGHT`; click to tap, and press
 
 ## Play
 
-Tap the screen to start. Sun pays for plants: tap a falling or resting sun, or sweep across several, to collect it before it fades. Pick a card in the toolbar and tap a lawn tile, or drag the card onto the tile, to plant it. Tapping the selected card again cancels the choice.
+Choose **Tap to start** on the cover. During a run, **Menu** pauses the garden. Resume to continue the same run, or choose **Main menu** and confirm to abandon it. The result screen offers both **Play again** and **Main menu**. Sun pays for plants: tap a falling or resting sun, or sweep across several, to collect it before it fades. Pick a card in the toolbar and tap a lawn tile, or drag the card onto the tile, to plant it. Tapping the selected card again cancels the choice.
 
 | Card | Cost | Role |
 | --- | --- | --- |
@@ -46,3 +46,17 @@ Quiet leaves and blinks update on a 120 ms clock. Growth, bloom, shot recoil, ja
 The Field Journal and Plant Shop open from the title or result. The journal unlocks a card when that zombie first becomes visible. Every finished match adds its run score to the total once. Plant defeats earn 3 coins per 10 defense points, rounded up, with another 12 for a win with plant defeats. Carts still score, but their kills do not earn coins. Purchases permanently unlock cards while each new run begins with its ordinary sun allowance.
 
 The versioned `profile` blob in the `garden_guard` Pref namespace holds the journal, total score, coins, best and unlocks. The App also reads and preserves the legacy `best` key. The Web target saves in the current browser origin and uses a single writable tab where Web Locks are available. The ESP launchers use their board Runtime Pref. The desktop target and unsupported storage keep progress for the session. Runtime statistics are logged every 10 s as `H2_GARDEN_GUARD_STATS`.
+
+## Language
+
+The title and pause menus can switch between English and Simplified Chinese. The selection is a separate `language` preference in the `garden_guard` namespace. The title artwork is shared by both languages, and the software renderer draws the localized title and controls. The Web wrapper follows the game's current selection.
+
+The Chinese UI bitmap in `app/src/h2_garden_guard_zh.inc` uses the repository's shared [Noto Sans SC Bold](../../libs/ui/fonts/noto_sans_sc/) font under the [SIL Open Font License 1.1](tools/noto_sans_sc_bitmap_license.txt). The subset contains only the characters used by the canvas UI. Regenerate it from the repository root with a C compiler and FreeType development headers. The tool fails if the source font does not cover a character.
+
+```sh
+cc $(pkg-config --cflags freetype2) projects/garden_guard/tools/generate_han.c \
+  $(pkg-config --libs freetype2) -o /path/to/scratch/generate_han
+/path/to/scratch/generate_han libs/ui/fonts/noto_sans_sc/NotoSansSC-Bold.ttf \
+  projects/garden_guard/app/src/h2_garden_guard_render.c \
+  > projects/garden_guard/app/src/h2_garden_guard_zh.inc
+```

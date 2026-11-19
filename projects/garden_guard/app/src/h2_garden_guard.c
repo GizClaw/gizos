@@ -13,6 +13,7 @@
 #define DT_MAX_MS 100u
 #define STATS_PERIOD_MS 10000u
 #define PROFILE_KEY "profile"
+#define LANGUAGE_KEY "language"
 #define PROFILE_RETRY_MS 2000u
 #define PART_COUNT ((unsigned)H2_GARDEN_GUARD_PART_COUNT)
 
@@ -166,6 +167,45 @@ static void save_profile(session_t* s, uint64_t now) {
     s->game.save_state = state;
     s->profile_retry_ms = now + PROFILE_RETRY_MS;
   }
+}
+
+static void load_language(session_t* s) {
+  h2_pal_pref_namespace_t* ns = NULL;
+  uint32_t language = 0;
+  if (h2_pal_pref_open(s->runtime->pref, H2_GARDEN_GUARD_PREF_NAMESPACE,
+                       H2_PAL_PREF_OPEN_READ_ONLY, &ns) == H2_PAL_OK &&
+      ns != NULL) {
+    if (ns->get_u32 != NULL &&
+        ns->get_u32(ns, LANGUAGE_KEY, &language) == H2_PAL_OK &&
+        language == H2_GARDEN_GUARD_LANG_ZH)
+      s->game.language = H2_GARDEN_GUARD_LANG_ZH;
+    if (ns->close != NULL) (void)ns->close(ns);
+  }
+}
+
+static void notify_language(const session_t* s) {
+  if (s->config.language_changed != NULL)
+    s->config.language_changed(
+        s->config.user,
+        s->game.language == H2_GARDEN_GUARD_LANG_ZH ? "zh-CN" : "en");
+}
+
+static void save_language(session_t* s) {
+  if (!s->game.language_dirty) return;
+  s->game.language_dirty = false;
+  h2_pal_pref_namespace_t* ns = NULL;
+  int rc = h2_pal_pref_open(s->runtime->pref, H2_GARDEN_GUARD_PREF_NAMESPACE,
+                            H2_PAL_PREF_OPEN_READ_WRITE, &ns);
+  if (rc == H2_PAL_OK && ns != NULL) {
+    rc = ns->set_u32 != NULL ? ns->set_u32(ns, LANGUAGE_KEY, s->game.language)
+                             : H2_PAL_ERR_UNSUPPORTED;
+    if (rc == H2_PAL_OK && ns->commit != NULL) rc = ns->commit(ns);
+    if (ns->close != NULL) (void)ns->close(ns);
+  } else if (rc == H2_PAL_OK) {
+    rc = H2_PAL_ERR_UNSUPPORTED;
+  }
+  s->game.language_unsaved = rc != H2_PAL_OK;
+  notify_language(s);
 }
 
 static h2_pal_result_t drain_events(session_t* s) {
@@ -393,6 +433,7 @@ static h2_pal_result_t push_dirty(session_t* s, const dirty_t* dirty) {
  * displayed pixels alone unless the current or previous scene has effects
  * that can move at full speed. This includes the last frame of an exit. */
 static bool scene_has_transient(const h2_garden_guard_game_t* game) {
+  if (h2_garden_guard_paused(game)) return false;
   if (game->banner_ms != 0u || game->hover_lane >= 0) return true;
   for (unsigned i = 0; i < H2_GARDEN_GUARD_MAX_PARTICLES; ++i)
     if (game->particles[i].active) return true;
@@ -538,9 +579,11 @@ static h2_pal_result_t play(session_t* s) {
     if (dt > DT_MAX_MS) dt = DT_MAX_MS;
     last = now;
 
+    const bool was_paused = h2_garden_guard_paused(&s->game);
     rc = poll_touch(s);
     if (rc != H2_PAL_OK) return rc;
-    h2_garden_guard_game_step(&s->game, (uint32_t)dt);
+    if (!was_paused) h2_garden_guard_game_step(&s->game, (uint32_t)dt);
+    save_language(s);
     save_profile(s, now);
     rc = render_frame(s);
     if (rc != H2_PAL_OK) return rc;
@@ -613,6 +656,8 @@ static h2_pal_result_t prepare(session_t* s) {
   h2_garden_guard_game_init(&s->game, s->display.width, s->display.height, seed,
                             load_best(s));
   load_profile(s);
+  load_language(s);
+  notify_language(s);
   h2_garden_guard_canvas_t canvas = layer_canvas(s, s->background, false);
   h2_garden_guard_render_background(&canvas, &s->game);
   s->first_frame = true;

@@ -227,7 +227,27 @@ typedef enum h2_garden_guard_menu {
   H2_GARDEN_GUARD_MENU_NONE = 0,
   H2_GARDEN_GUARD_MENU_JOURNAL,
   H2_GARDEN_GUARD_MENU_SHOP,
+  H2_GARDEN_GUARD_MENU_PAUSE,
+  H2_GARDEN_GUARD_MENU_CONFIRM,
 } h2_garden_guard_menu_t;
+
+typedef enum h2_garden_guard_language {
+  H2_GARDEN_GUARD_LANG_EN = 0,
+  H2_GARDEN_GUARD_LANG_ZH = 1,
+} h2_garden_guard_language_t;
+
+typedef enum h2_garden_guard_action {
+  H2_GARDEN_GUARD_ACTION_START,
+  H2_GARDEN_GUARD_ACTION_PAUSE,
+  H2_GARDEN_GUARD_ACTION_LANGUAGE,
+  H2_GARDEN_GUARD_ACTION_RESUME,
+  H2_GARDEN_GUARD_ACTION_PAUSE_LANGUAGE,
+  H2_GARDEN_GUARD_ACTION_LEAVE,
+  H2_GARDEN_GUARD_ACTION_CANCEL,
+  H2_GARDEN_GUARD_ACTION_CONFIRM,
+  H2_GARDEN_GUARD_ACTION_RESULT_HOME,
+  H2_GARDEN_GUARD_ACTION_RESULT_AGAIN,
+} h2_garden_guard_action_t;
 
 typedef struct h2_garden_guard_rect {
   float x, y, w, h;
@@ -254,6 +274,8 @@ typedef struct h2_garden_guard_game {
   bool profile_dirty;
   uint8_t save_state;
   uint8_t menu;
+  uint8_t language, modal_press;
+  bool language_dirty, language_unsaved;
   uint16_t sighting_ms;
   uint8_t sighting_kind;
   uint32_t earned_coins, defense_score;
@@ -299,6 +321,10 @@ void h2_garden_guard_profile_encode(const h2_garden_guard_profile_t* profile,
                                     uint8_t out[H2_GARDEN_GUARD_SAVE_BYTES]);
 bool h2_garden_guard_profile_decode(h2_garden_guard_profile_t* profile,
                                     const void* data, size_t size);
+
+bool h2_garden_guard_paused(const h2_garden_guard_game_t* game);
+h2_garden_guard_rect_t h2_garden_guard_action_rect(
+    const h2_garden_guard_layout_t* layout, h2_garden_guard_action_t action);
 
 /** Shared screen-space rectangles for the menus and touch input. */
 h2_garden_guard_rect_t h2_garden_guard_menu_tab(

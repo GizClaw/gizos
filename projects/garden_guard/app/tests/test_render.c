@@ -41,9 +41,14 @@ static uint16_t at(const uint16_t* image, float x, float y) {
 }
 
 static void start_playing(void) {
-  h2_garden_guard_game_pointer(&game, H2_GARDEN_GUARD_POINTER_DOWN, 10.0f,
-                               10.0f);
-  h2_garden_guard_game_pointer(&game, H2_GARDEN_GUARD_POINTER_UP, 10.0f, 10.0f);
+  const h2_garden_guard_rect_t start =
+      h2_garden_guard_action_rect(&game.layout, H2_GARDEN_GUARD_ACTION_START);
+  h2_garden_guard_game_pointer(&game, H2_GARDEN_GUARD_POINTER_DOWN,
+                               start.x + start.w * 0.5f,
+                               start.y + start.h * 0.5f);
+  h2_garden_guard_game_pointer(&game, H2_GARDEN_GUARD_POINTER_UP,
+                               start.x + start.w * 0.5f,
+                               start.y + start.h * 0.5f);
   CHECK(game.phase == H2_GARDEN_GUARD_PHASE_PLAYING);
   game.banner_ms = 0;
 }
@@ -298,6 +303,11 @@ static void test_small_extent(void) {
 }
 
 int main(void) {
+  CHECK(h2_garden_guard_text_width("\xe4\xb8\xad"
+                                   "A",
+                                   1) == 16);
+  CHECK(h2_garden_guard_text_width("\xe4\xb8\xad\xe6\x96\x87", 2) == 29);
+  CHECK(h2_garden_guard_text_width("\xe4\xb8", 1) == 5);
   test_helpers();
   test_background();
   test_static_parts();

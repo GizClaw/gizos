@@ -341,6 +341,12 @@ static void script_tap(float x, float y) {
       (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_UP, tx, ty};
 }
 
+static void script_action(const h2_garden_guard_layout_t* l,
+                          h2_garden_guard_action_t action) {
+  const h2_garden_guard_rect_t r = h2_garden_guard_action_rect(l, action);
+  script_tap(r.x + r.w * 0.5f, r.y + r.h * 0.5f);
+}
+
 static void test_touch_starts_and_plants(void) {
   reset(24u, WIDTH, HEIGHT);
   /* Touch reports half the display resolution. */
@@ -351,7 +357,7 @@ static void test_touch_starts_and_plants(void) {
   const h2_garden_guard_layout_t* l = &layout_game.layout;
   float cell_x, cell_y;
   h2_garden_guard_field_point(l, 0u, 1.5f, &cell_x, &cell_y);
-  script_tap((float)WIDTH * 0.5f, (float)HEIGHT * 0.5f);
+  script_action(l, H2_GARDEN_GUARD_ACTION_START);
   script_tap(l->card_x[H2_GARDEN_GUARD_CARD_SHOOTER] + l->card_w * 0.5f,
              l->card_y + l->card_h * 0.5f);
   script_tap(cell_x, cell_y);
@@ -379,11 +385,11 @@ static void test_shovel_restores_raised_figure(void) {
   float x, y;
   h2_garden_guard_field_point(l, 4u, 0.5f, &x, &y);
   const float head_y = y - 0.75f * h2_garden_guard_lane_size(l, 4u);
-  script_tap(240.0f, 160.0f);
+  script_action(l, H2_GARDEN_GUARD_ACTION_START);
   script_tap(l->card_x[H2_GARDEN_GUARD_CARD_SUNFLOWER] + l->card_w * 0.5f,
              l->card_y + l->card_h * 0.5f);
   script_tap(x, y);
-  for (unsigned i = 0; i < 15u; ++i) script_tap(470.0f, 20.0f);
+  for (unsigned i = 0; i < 15u; ++i) script_tap(8.0f, 80.0f);
   script_tap(l->card_x[H2_GARDEN_GUARD_CARD_SHOVEL] + l->card_w * 0.5f,
              l->card_y + l->card_h * 0.5f);
   script_tap(x, head_y);
