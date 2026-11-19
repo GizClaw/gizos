@@ -972,350 +972,144 @@ static void draw_plant_kind(h2_garden_guard_canvas_t* canvas, uint8_t kind,
 }
 
 /* Side view of a beetle walking left; t is its animation clock in seconds. */
-/* The six joints and two moving face pieces share local coordinates. Fall
- * rotation is applied around the boots, so the exit stays in its lane. */
-typedef struct zombie_brush {
-  h2_garden_guard_canvas_t* canvas;
-  float x, y, size, edge, cos_angle, sin_angle;
-  uint16_t ink;
-  uint32_t flash;
-} zombie_brush_t;
+/* Packed world cels and journal portraits share the same original art. */
+typedef struct zombie_frame {
+  uint16_t offset, duration_ms;
+  uint8_t left, top, right, bottom;
+} zombie_frame_t;
 
-static void zombie_point(const zombie_brush_t* brush, float x, float y,
-                         float* px, float* py) {
-  *px = brush->x + (x * brush->cos_angle - y * brush->sin_angle) * brush->size;
-  *py = brush->y + (y * brush->cos_angle + x * brush->sin_angle) * brush->size;
+typedef struct zombie_sprite {
+  const uint16_t* palette;
+  const uint8_t* pixels;
+  const zombie_frame_t* frames;
+} zombie_sprite_t;
+
+#include "h2_garden_guard_zombies.inc"
+
+static const zombie_sprite_t k_zombies[] = {
+    {k_gardener_palette, k_gardener_pixels, k_gardener_frames},
+    {k_armored_palette, k_armored_pixels, k_armored_frames},
+    {k_runner_palette, k_runner_pixels, k_runner_frames},
+};
+
+enum {
+  ZOMBIE_ANCHOR_X = 32,
+  ZOMBIE_ANCHOR_Y = 64,
+  ZOMBIE_CHEW_FIRST = 8,
+  ZOMBIE_CHEW_CONTACT = 11,
+  ZOMBIE_HIT = 13,
+  ZOMBIE_DEFEAT = 14,
+  ZOMBIE_PORTRAIT = 16,
+};
+
+static uint16_t zombie_color(uint16_t color, bool broken_plate) {
+  // Scrape the blue glaze when the shellback loses its shoulder protection.
+  const unsigned blue = color & 31u;
+  const unsigned red = color >> 11;
+  if (broken_plate && blue >= red + 4u)
+    return blend(color, RGB(140, 103, 79), 156u);
+  return color;
 }
 
-static void zombie_limb(const zombie_brush_t* brush, float x0, float y0,
-                        float x1, float y1, float r, uint16_t fill) {
-  float ax, ay, bx, by;
-  zombie_point(brush, x0, y0, &ax, &ay);
-  zombie_point(brush, x1, y1, &bx, &by);
-  ocapsule(brush->canvas, ax, ay, bx, by, r * brush->size, brush->edge,
-           lighten(fill, brush->flash), brush->ink);
-}
-
-static void zombie_oval(const zombie_brush_t* brush, float x, float y, float rx,
-                        float ry, uint16_t fill, bool outlined) {
-  float px, py;
-  zombie_point(brush, x, y, &px, &py);
-  if (outlined)
-    oellipse(brush->canvas, px, py, rx * brush->size, ry * brush->size,
-             brush->edge, lighten(fill, brush->flash), brush->ink);
-  else
-    ellipse(brush->canvas, px, py, rx * brush->size, ry * brush->size,
-            lighten(fill, brush->flash), 256u);
-}
-
-#define ZOMBIE_SHAPE(brush, color, ...)                                       \
-  ART((brush)->canvas, (brush)->x, (brush)->y, (brush)->size,                 \
-      (brush)->cos_angle, (brush)->sin_angle, lighten(color, (brush)->flash), \
-      __VA_ARGS__)
-
-#define ZOMBIE_ROUND(brush, color, ...)                             \
-  ART_ROUND((brush)->canvas, (brush)->x, (brush)->y, (brush)->size, \
-            (brush)->cos_angle, (brush)->sin_angle,                 \
-            lighten(color, (brush)->flash), __VA_ARGS__)
-
-/* The shoulder, elbow and wrist are one quadratic contour. Different spans
- * of the same path form the cloth sleeve and the exposed wrist. */
-static void zombie_arm(const zombie_brush_t* brush, art_point_t shoulder,
-                       art_point_t elbow, art_point_t wrist, float width,
-                       uint16_t sleeve, uint16_t skin) {
-  enum { samples = 7, sleeve_samples = 5 };
-  art_point_t outline[2 * samples];
-  art_point_t cloth[2 * sleeve_samples];
-  for (unsigned i = 0; i < samples; ++i) {
-    const float t = (float)i / (float)(samples - 1), u = 1.0f - t;
-    const float x =
-        u * u * shoulder.x + 2.0f * u * t * elbow.x + t * t * wrist.x;
-    const float y =
-        u * u * shoulder.y + 2.0f * u * t * elbow.y + t * t * wrist.y;
-    const float dx = u * (elbow.x - shoulder.x) + t * (wrist.x - elbow.x);
-    const float dy = u * (elbow.y - shoulder.y) + t * (wrist.y - elbow.y);
-    const float length = fmaxf(0.028f, sqrtf(dx * dx + dy * dy));
-    const float radius = width * (1.0f - t * 0.64f);
-    const float nx = dy / length, ny = -dx / length;
-    outline[i] = (art_point_t){x + radius * nx, y + radius * ny};
-    outline[2 * samples - 1 - i] =
-        (art_point_t){x - radius * nx, y - radius * ny};
-    if (i < sleeve_samples) {
-      const float r =
-          i == sleeve_samples - 1 ? radius + 0.004f : radius * 0.89f;
-      cloth[i] = (art_point_t){x + r * nx, y + r * ny};
-      cloth[2 * sleeve_samples - 1 - i] = (art_point_t){x - r * nx, y - r * ny};
+static void draw_zombie_cel(h2_garden_guard_canvas_t* canvas,
+                            const zombie_sprite_t* sprite, unsigned cel,
+                            float x, float y, float scale, uint32_t opacity,
+                            bool broken_plate) {
+  const zombie_frame_t* frame = &sprite->frames[cel];
+  region_t bounds;
+  if (!region_begin(canvas, x + frame->left * scale, y + frame->top * scale,
+                    x + frame->right * scale, y + frame->bottom * scale,
+                    &bounds))
+    return;
+  const float inv = 1.0f / scale;
+  const uint8_t* data = sprite->pixels + frame->offset;
+  int32_t source_row = -1;
+  const uint8_t* run = data;
+  int32_t begin = 0, end = 0;
+  for (int32_t py = bounds.y0; py < bounds.y1; ++py) {
+    const int32_t sy = (int32_t)floorf(((float)py + 0.5f - y) * inv);
+    if (sy < frame->top || sy >= frame->bottom) continue;
+    while (source_row < sy) {
+      begin = *data++;
+      const uint8_t length = *data++;
+      end = begin + length;
+      run = data;
+      data += length;
+      ++source_row;
+    }
+    if (begin == end) continue;
+    uint16_t* row = row_at(canvas, py);
+    uint8_t* depth = depth_row(canvas, py);
+    const int32_t left =
+        (int32_t)fmaxf((float)bounds.x0, floorf(x + (float)begin * scale));
+    const int32_t right =
+        (int32_t)fminf((float)bounds.x1, ceilf(x + (float)end * scale));
+    for (int32_t px = left; px < right; ++px) {
+      const int32_t sx = (int32_t)floorf(((float)px + 0.5f - x) * inv);
+      if (sx < begin || sx >= end) continue;
+      const uint8_t sample = run[sx - begin];
+      if (sample == 0u) continue;
+      const uint32_t alpha = ((uint32_t)sample >> 6) * opacity / 3u;
+      plot(canvas, row, depth, px,
+           zombie_color(sprite->palette[sample & 63u], broken_plate), alpha);
     }
   }
-  art_round(brush->canvas, brush->x, brush->y, brush->size, brush->cos_angle,
-            brush->sin_angle, lighten(skin, brush->flash), outline,
-            2 * samples);
-  art_round(brush->canvas, brush->x, brush->y, brush->size, brush->cos_angle,
-            brush->sin_angle, lighten(sleeve, brush->flash), cloth,
-            2 * sleeve_samples);
 }
 
-static void zombie_leg(const zombie_brush_t* brush, float stance, float start_y,
-                       float stride, float lift, bool near, bool runner,
-                       bool armored, uint16_t cloth) {
-  const float foot = stance + stride;
-  const float knee = stance + stride * 0.56f - 0.038f;
-  const float knee_y = -0.225f - 0.39f * lift;
-  const float shoe_y = -0.065f - lift;
-  const uint16_t dungarees = near ? cloth : darken(cloth, 64u);
-  const float cuff = runner ? 0.048f : (armored ? 0.087f : 0.068f);
-  zombie_limb(brush, stance, start_y, knee, knee_y, cuff, dungarees);
-  zombie_limb(brush, knee, knee_y, foot, shoe_y - 0.012f, cuff * 0.76f,
-              dungarees);
-  const uint16_t boot = near ? RGB(152, 104, 75) : RGB(105, 88, 76);
-  const float toe = foot - (runner ? 0.152f : 0.157f);
-  const float heel = foot + (armored ? 0.113f : 0.083f);
-  ZOMBIE_ROUND(brush, brush->ink, {toe - 0.012f, shoe_y + 0.027f},
-               {toe, shoe_y - 0.039f}, {foot - 0.052f, shoe_y - 0.058f},
-               {foot - 0.027f, shoe_y - 0.10f},
-               {heel - 0.019f, shoe_y - 0.073f}, {heel, shoe_y + 0.034f},
-               {toe + 0.011f, shoe_y + 0.048f});
-  ZOMBIE_ROUND(
-      brush, boot, {toe + 0.019f, shoe_y + 0.023f},
-      {toe + 0.021f, shoe_y - 0.017f}, {foot - 0.033f, shoe_y - 0.032f},
-      {foot - 0.003f, shoe_y - 0.065f}, {heel - 0.031f, shoe_y - 0.047f},
-      {heel - 0.026f, shoe_y + 0.019f});
-  if (near) {
-    zombie_oval(brush, toe + 0.063f, shoe_y - 0.011f, 0.046f, 0.020f,
-                RGB(190, 135, 91), false);
-    zombie_oval(brush, toe + 0.085f, shoe_y + 0.014f, 0.072f, 0.017f,
-                runner ? RGB(232, 202, 153) : lighten(boot, 52u), false);
+static unsigned timed_zombie_cel(const zombie_sprite_t* sprite, unsigned first,
+                                 unsigned end, uint32_t phase) {
+  for (unsigned i = first; i + 1u < end; ++i) {
+    if (phase < sprite->frames[i].duration_ms) return i;
+    phase -= sprite->frames[i].duration_ms;
   }
+  return end - 1u;
 }
 
-static void zombie_head(const zombie_brush_t* brush, float x, float y,
-                        float jaw, uint8_t kind, bool plated, uint16_t skin) {
-  const bool runner = kind == H2_GARDEN_GUARD_PEST_RUNNER;
-  const bool armored = kind == H2_GARDEN_GUARD_PEST_SHELLBACK;
-  const float nape = armored ? 0.204f : runner ? 0.155f : 0.187f;
-  const float crown = runner ? 0.211f : 0.173f;
-  const float drop = jaw * 0.090f;
-  // The nose and the near cheek are the forward edge of one silhouette.
-  ZOMBIE_ROUND(brush, brush->ink, {x - 0.158f, y - 0.139f},
-               {x + 0.028f, y - crown}, {x + nape, y - 0.110f},
-               {x + nape + 0.023f, y + 0.035f}, {x + 0.115f, y + 0.150f},
-               {x - 0.049f, y + 0.218f + drop}, {x - 0.202f, y + 0.168f + drop},
-               {x - 0.234f, y + 0.102f + drop * 0.73f},
-               {x - 0.195f, y + 0.067f}, {x - 0.294f, y + 0.025f},
-               {x - 0.302f, y - 0.029f}, {x - 0.212f, y - 0.069f});
-  ZOMBIE_ROUND(
-      brush, skin, {x - 0.145f, y - 0.125f}, {x + 0.028f, y - crown + 0.018f},
-      {x + nape - 0.019f, y - 0.095f}, {x + nape + 0.004f, y + 0.03f},
-      {x + 0.103f, y + 0.127f}, {x - 0.041f, y + 0.196f + drop},
-      {x - 0.183f, y + 0.151f + drop}, {x - 0.213f, y + 0.101f + drop * 0.73f},
-      {x - 0.163f, y + 0.059f}, {x - 0.274f, y + 0.011f},
-      {x - 0.274f, y - 0.021f}, {x - 0.196f, y - 0.053f});
-  zombie_oval(brush, x + nape - 0.034f, y + 0.035f, 0.055f, 0.071f,
-              darken(skin, 22u), true);
-  zombie_oval(brush, x + nape - 0.029f, y + 0.033f, 0.029f, 0.036f,
-              lighten(skin, 38u), false);
-  zombie_oval(brush, x - 0.211f, y - 0.010f, 0.054f, 0.024f, lighten(skin, 61u),
-              false);
-  ZOMBIE_ROUND(brush, RGB(70, 60, 59), {x - 0.201f, y + 0.079f},
-               {x - 0.116f, y + 0.084f}, {x + 0.020f, y + 0.061f},
-               {x - 0.002f, y + 0.115f + drop}, {x - 0.104f, y + 0.142f + drop},
-               {x - 0.188f, y + 0.112f + drop * 0.79f});
-  zombie_oval(brush, x - 0.147f, y + 0.096f, 0.026f, 0.023f, RGB(245, 231, 178),
-              false);
-  // One open eye and a small brow give the gardener a puzzled side glance.
-  const float eye_y = y - (armored ? 0.035f : 0.057f);
-  zombie_oval(brush, x - 0.114f, eye_y, 0.074f, runner ? 0.065f : 0.078f,
-              RGB(244, 235, 191), false);
-  zombie_oval(brush, x - 0.144f, eye_y + 0.009f - 0.012f * jaw, 0.032f, 0.041f,
-              RGB(54, 69, 54), false);
-  zombie_oval(brush, x - 0.148f, eye_y - 0.013f, 0.012f, 0.012f,
-              RGB(253, 244, 219), false);
-  zombie_limb(brush, x - 0.164f, eye_y - 0.081f, x - 0.081f, eye_y - 0.091f,
-              0.015f, darken(skin, 51u));
-  if (armored) {
-    // Repurposed enamel bowl. The scuffed lid remains after the vest breaks.
-    ZOMBIE_ROUND(brush, brush->ink, {x - 0.239f, y - 0.112f},
-                 {x - 0.196f, y - 0.194f}, {x - 0.091f, y - 0.256f},
-                 {x + 0.082f, y - 0.265f}, {x + 0.201f, y - 0.189f},
-                 {x + 0.239f, y - 0.069f}, {x + 0.107f, y - 0.064f});
-    ZOMBIE_ROUND(brush, plated ? RGB(181, 209, 195) : RGB(108, 151, 132),
-                 {x - 0.198f, y - 0.126f}, {x - 0.159f, y - 0.179f},
-                 {x - 0.071f, y - 0.220f}, {x + 0.072f, y - 0.233f},
-                 {x + 0.181f, y - 0.171f}, {x + 0.203f, y - 0.092f});
-    zombie_limb(brush, x - 0.194f, y - 0.123f, x + 0.207f, y - 0.072f, 0.022f,
-                RGB(106, 154, 144));
-  } else if (runner) {
-    ZOMBIE_ROUND(brush, brush->ink, {x - 0.187f, y - 0.097f},
-                 {x - 0.122f, y - 0.191f}, {x - 0.012f, y - 0.215f},
-                 {x + 0.142f, y - 0.184f}, {x + 0.276f, y - 0.104f},
-                 {x + 0.23f, y - 0.064f}, {x + 0.119f, y - 0.08f},
-                 {x + 0.024f, y - 0.107f});
-    ZOMBIE_ROUND(brush, RGB(121, 142, 100), {x - 0.155f, y - 0.117f},
-                 {x - 0.105f, y - 0.170f}, {x + 0.013f, y - 0.183f},
-                 {x + 0.129f, y - 0.159f}, {x + 0.228f, y - 0.099f},
-                 {x + 0.129f, y - 0.104f}, {x + 0.021f, y - 0.131f});
-  } else {
-    // Tilted canvas sun hat, with a roomy brim and a moss-green crown band.
-    ZOMBIE_ROUND(brush, brush->ink, {x - 0.298f, y - 0.154f},
-                 {x - 0.195f, y - 0.19f}, {x - 0.028f, y - 0.165f},
-                 {x + 0.21f, y - 0.129f}, {x + 0.312f, y - 0.121f},
-                 {x + 0.273f, y - 0.059f}, {x + 0.072f, y - 0.089f},
-                 {x - 0.125f, y - 0.113f});
-    ZOMBIE_ROUND(brush, RGB(210, 155, 86), {x - 0.261f, y - 0.155f},
-                 {x - 0.188f, y - 0.17f}, {x - 0.028f, y - 0.148f},
-                 {x + 0.21f, y - 0.115f}, {x + 0.29f, y - 0.111f},
-                 {x + 0.258f, y - 0.080f}, {x + 0.07f, y - 0.104f},
-                 {x - 0.122f, y - 0.128f});
-    ZOMBIE_ROUND(brush, brush->ink, {x - 0.153f, y - 0.158f},
-                 {x - 0.084f, y - 0.261f}, {x + 0.028f, y - 0.287f},
-                 {x + 0.132f, y - 0.251f}, {x + 0.18f, y - 0.15f},
-                 {x + 0.058f, y - 0.119f});
-    ZOMBIE_ROUND(brush, RGB(217, 170, 97), {x - 0.115f, y - 0.162f},
-                 {x - 0.055f, y - 0.236f}, {x + 0.03f, y - 0.253f},
-                 {x + 0.104f, y - 0.224f}, {x + 0.151f, y - 0.161f},
-                 {x + 0.056f, y - 0.147f});
-    ZOMBIE_ROUND(brush, RGB(103, 133, 93), {x - 0.113f, y - 0.174f},
-                 {x + 0.04f, y - 0.168f}, {x + 0.148f, y - 0.183f},
-                 {x + 0.162f, y - 0.145f}, {x + 0.058f, y - 0.137f},
-                 {x - 0.142f, y - 0.151f});
-  }
+static unsigned chew_cel(const zombie_sprite_t* sprite, uint32_t phase) {
+  uint32_t lead = 0, recovery = 0;
+  for (unsigned i = ZOMBIE_CHEW_FIRST; i < ZOMBIE_CHEW_CONTACT; ++i)
+    lead += sprite->frames[i].duration_ms;
+  for (unsigned i = ZOMBIE_CHEW_CONTACT; i < ZOMBIE_HIT; ++i)
+    recovery += sprite->frames[i].duration_ms;
+  /* Map the authored timing onto the shared bite clock. The first closed
+   * jaw cel begins on the same tick as the contact and thorn recoil. */
+  const uint32_t hit = H2_GARDEN_GUARD_PEST_BITE_CONTACT_MS;
+  if (phase < hit)
+    return timed_zombie_cel(sprite, ZOMBIE_CHEW_FIRST, ZOMBIE_CHEW_CONTACT,
+                            phase * lead / hit);
+  return timed_zombie_cel(
+      sprite, ZOMBIE_CHEW_CONTACT, ZOMBIE_HIT,
+      (phase - hit) * recovery / (H2_GARDEN_GUARD_PEST_BITE_MS - hit));
 }
 
-/* The same figure can be posed for the title, a card or the field. */
 static void draw_zombie(h2_garden_guard_canvas_t* canvas, float gx, float gy,
                         float size, const h2_garden_guard_pest_t* pest) {
-  const bool armored = pest->kind == H2_GARDEN_GUARD_PEST_SHELLBACK;
-  const bool runner = pest->kind == H2_GARDEN_GUARD_PEST_RUNNER;
-  const bool plated = armored && pest->armor > 0;
-  const float s = size * (armored ? 1.07f : (runner ? 1.03f : 1.05f));
-  const uint32_t period = runner ? 600u : (armored ? 1400u : 1050u);
-  const float angle = (float)(pest->stride_ms % period) *
-                      (2.0f * H2_GARDEN_GUARD_PI / (float)period);
-  const float stride = sinf(angle), step = cosf(angle);
-  const float bite = (float)pest->chew_ms / H2_GARDEN_GUARD_PEST_BITE_MS;
-  const float open =
-      pest->eating
-          ? clampf(fminf(bite / 0.32f, (0.49f - bite) / 0.10f), 0.0f, 1.0f)
-          : 0.0f;
-  const float lunge =
-      pest->eating
-          ? 0.19f * clampf(1.0f - fabsf(bite - 0.48f) * 3.5f, 0.0f, 1.0f)
-          : 0.0f;
-  const float hit =
-      pest->active ? (float)pest->flash_ms / H2_GARDEN_GUARD_PEST_HIT_MS : 0.0f;
-  const float fall =
-      pest->exit_ms == 0u
-          ? 0.0f
-          : 1.0f - (float)pest->exit_ms / H2_GARDEN_GUARD_PEST_EXIT_MS;
-  const float tilt = 1.35f * fall * (2.0f - fall) +
-                     (runner ? -0.15f : (armored ? 0.047f : -0.023f));
-  const zombie_brush_t brush = {.canvas = canvas,
-                                .x = gx + 0.14f * hit * s,
-                                .y = gy + 0.05f * fall * s,
-                                .size = s * (1.0f - 0.38f * fall * fall),
-                                .edge = fmaxf(0.60f, s * 0.018f),
-                                .cos_angle = cosf(tilt),
-                                .sin_angle = sinf(tilt),
-                                .ink = RGB(65, 78, 69),
-                                .flash = (uint32_t)(165.0f * hit * hit)};
-  const bool gardener = !armored && !runner;
-  const float reach =
-      pest->eating ? 0.07f : (runner ? 0.29f : (armored ? 0.17f : 0.215f));
-  const float lift =
-      pest->eating ? 0.0f : (runner ? 0.21f : (armored ? 0.10f : 0.14f));
-  const uint16_t coat = armored
-                            ? RGB(81, 130, 121)
-                            : (runner ? RGB(181, 82, 59) : RGB(122, 104, 145));
-  const uint16_t skin = RGB(154, 181, 144);
-  const uint16_t pants = armored
-                             ? RGB(79, 110, 108)
-                             : (runner ? RGB(88, 115, 98) : RGB(88, 105, 129));
-  const float belt = runner ? -0.48f : -0.43f;
-  const float stance = armored ? 0.105f : 0.066f;
-  ground_shadow(canvas, gx + fall * 0.26f * s, gy, s * (0.34f + fall * 0.19f));
-  zombie_leg(&brush, stance, belt, stride * reach * (gardener ? 0.58f : 1.0f),
-             fmaxf(0.0f, step) * lift * (gardener ? 0.20f : 1.0f), false,
-             runner, armored, pants);
-  zombie_leg(&brush, -stance, belt, -stride * reach, fmaxf(0.0f, -step) * lift,
-             true, runner, armored, pants);
-
-  const float sx = -(runner ? 0.17f : (armored ? 0.018f : 0.08f)) -
-                   lunge * 0.75f + 0.08f * hit +
-                   (gardener ? 0.035f * step : 0.0f);
-  const float sy = (armored ? -0.62f : -0.71f) +
-                   (pest->eating ? 0.055f : -0.034f * fabsf(step));
-  const float hx = sx - (armored ? 0.067f : (runner ? 0.135f : 0.117f)) -
-                   lunge * 0.78f + 0.032f * hit -
-                   (gardener ? 0.047f * step : 0.0f);
-  const float hy =
-      sy - (runner ? 0.23f : 0.257f) + (pest->eating ? 0.037f : 0.0f);
-  const float hand_dx =
-      pest->eating ? 0.31f + lunge
-                   : (runner ? 0.05f - stride * 0.25f : 0.26f - 0.10f * stride);
-  const float hand_y = sy + (pest->eating ? 0.065f : 0.23f + 0.10f * stride);
-  zombie_arm(&brush, (art_point_t){sx - 0.06f, sy + 0.028f},
-             (art_point_t){sx - 0.18f, sy + 0.15f},
-             (art_point_t){sx - 0.14f - hand_dx * 0.51f, hand_y - 0.10f},
-             0.078f, darken(coat, 48u), darken(skin, 41u));
-  const float shoulder = armored ? 0.266f : (runner ? 0.106f : 0.182f);
-  ZOMBIE_ROUND(&brush, brush.ink, {sx - shoulder, sy - 0.016f},
-               {sx - 0.06f, sy - 0.101f}, {sx + shoulder, sy - 0.044f},
-               {sx + shoulder + 0.063f, sy + 0.12f}, {0.147f, belt + 0.035f},
-               {-0.079f, belt + 0.057f}, {sx - shoulder + 0.015f, sy + 0.13f});
-  ZOMBIE_SHAPE(&brush, coat, {sx - shoulder + 0.026f, sy + 0.001f},
-               {sx - 0.05f, sy - 0.071f}, {sx + shoulder - 0.018f, sy - 0.018f},
-               {sx + shoulder + 0.034f, sy + 0.12f}, {0.119f, belt + 0.012f},
-               {-0.058f, belt + 0.026f}, {sx - shoulder + 0.042f, sy + 0.12f});
-  if (plated) {
-    zombie_oval(&brush, sx + 0.225f, sy + 0.028f, 0.148f, 0.093f,
-                RGB(89, 138, 133), true);
-    zombie_oval(&brush, sx + 0.207f, sy + 0.007f, 0.102f, 0.04f,
-                RGB(178, 200, 164), false);
-    ZOMBIE_SHAPE(&brush, RGB(46, 87, 87), {sx - 0.172f, sy - 0.024f},
-                 {sx + 0.124f, sy - 0.009f}, {sx + 0.208f, sy + 0.101f},
-                 {sx + 0.137f, sy + 0.253f}, {sx + 0.01f, sy + 0.284f},
-                 {sx - 0.148f, sy + 0.212f});
-    ZOMBIE_SHAPE(&brush, RGB(151, 194, 183), {sx - 0.142f, sy + 0.005f},
-                 {sx + 0.108f, sy + 0.021f}, {sx + 0.17f, sy + 0.106f},
-                 {sx + 0.111f, sy + 0.225f}, {sx + 0.015f, sy + 0.249f},
-                 {sx - 0.122f, sy + 0.197f});
-    ZOMBIE_SHAPE(&brush, RGB(217, 218, 171), {sx - 0.121f, sy + 0.025f},
-                 {sx - 0.053f, sy + 0.044f}, {sx - 0.039f, sy + 0.123f},
-                 {sx - 0.121f, sy + 0.092f});
-  } else if (runner) {
-    ZOMBIE_SHAPE(&brush, RGB(197, 76, 57), {hx - 0.09f, hy + 0.128f},
-                 {sx + 0.22f, sy - 0.074f},
-                 {sx + 0.486f, sy - 0.156f - 0.077f * stride},
-                 {sx + 0.428f, sy - 0.037f - 0.077f * stride},
-                 {sx + 0.279f, sy + 0.014f}, {hx - 0.034f, hy + 0.218f});
-    ZOMBIE_SHAPE(&brush, RGB(244, 138, 75), {hx - 0.046f, hy + 0.15f},
-                 {sx + 0.22f, sy - 0.06f},
-                 {sx + 0.432f, sy - 0.129f - 0.077f * stride},
-                 {sx + 0.265f, sy - 0.023f});
+  if (pest->kind >= H2_GARDEN_GUARD_PEST_KIND_COUNT) return;
+  const zombie_sprite_t* sprite = &k_zombies[pest->kind];
+  const float scale = size / 45.0f;
+  unsigned cel;
+  uint32_t opacity = 256u;
+  if (pest->exit_ms != 0u) {
+    const uint32_t age = H2_GARDEN_GUARD_PEST_EXIT_MS - pest->exit_ms;
+    cel = timed_zombie_cel(sprite, ZOMBIE_DEFEAT, ZOMBIE_PORTRAIT, age);
+    const uint32_t fade_ms = H2_GARDEN_GUARD_PEST_EXIT_MS -
+                             sprite->frames[ZOMBIE_DEFEAT].duration_ms -
+                             sprite->frames[ZOMBIE_PORTRAIT - 1].duration_ms;
+    if (pest->exit_ms < fade_ms)
+      opacity = (uint32_t)pest->exit_ms * 256u / fade_ms;
+  } else if (pest->flash_ms != 0u) {
+    cel = ZOMBIE_HIT;
+  } else if (pest->eating) {
+    cel = chew_cel(sprite, pest->chew_ms);
   } else {
-    // Canvas work apron. A single bright sleeve balances the sagging shoulder.
-    ZOMBIE_SHAPE(&brush, RGB(162, 136, 184), {sx - 0.065f, sy - 0.043f},
-                 {sx + 0.042f, sy - 0.021f}, {sx + 0.139f, sy + 0.197f},
-                 {sx + 0.016f, sy + 0.243f}, {sx - 0.056f, sy + 0.173f});
-    ZOMBIE_SHAPE(&brush, RGB(209, 183, 136), {sx + 0.057f, sy - 0.038f},
-                 {sx + 0.132f, sy - 0.018f}, {sx + 0.185f, sy + 0.081f},
-                 {sx + 0.122f, sy + 0.107f});
-    zombie_oval(&brush, sx + 0.025f, sy + 0.106f, 0.034f, 0.031f,
-                RGB(230, 179, 104), false);
+    cel = timed_zombie_cel(sprite, 0u, ZOMBIE_CHEW_FIRST, pest->stride_ms);
   }
-  const float elbow =
-      sx + (runner ? 0.13f + 0.11f * stride : 0.075f - 0.07f * stride);
-  const float wrist = sx - hand_dx;
-  zombie_arm(&brush, (art_point_t){sx + shoulder * 0.64f, sy + 0.055f},
-             (art_point_t){elbow, sy + (pest->eating ? 0.14f : 0.29f)},
-             (art_point_t){wrist, hand_y}, armored ? 0.105f : 0.09f,
-             gardener ? RGB(196, 172, 124) : lighten(coat, 29u), skin);
-  ZOMBIE_ROUND(
-      &brush, lighten(skin, 32u), {wrist + 0.029f, hand_y - 0.023f},
-      {wrist - 0.049f, hand_y - 0.046f}, {wrist - 0.114f, hand_y - 0.018f},
-      {wrist - 0.108f, hand_y + 0.037f}, {wrist - 0.053f, hand_y + 0.065f},
-      {wrist + 0.002f, hand_y + 0.045f});
-  zombie_head(&brush, hx, hy, open, pest->kind, plated, skin);
+  ellipse(canvas, gx + 0.08f * size, gy, size * 0.31f, size * 0.093f,
+          RGB(18, 40, 14), opacity * 104u / 256u);
+  draw_zombie_cel(
+      canvas, sprite, cel, gx - ZOMBIE_ANCHOR_X * scale,
+      gy - ZOMBIE_ANCHOR_Y * scale, scale, opacity,
+      pest->kind == H2_GARDEN_GUARD_PEST_SHELLBACK && pest->armor <= 0);
 }
 
 void h2_garden_guard_render_zombie_portrait(h2_garden_guard_canvas_t* canvas,
@@ -1323,9 +1117,9 @@ void h2_garden_guard_render_zombie_portrait(h2_garden_guard_canvas_t* canvas,
                                             float x, float ground_y,
                                             float size) {
   if ((unsigned)kind >= H2_GARDEN_GUARD_PEST_KIND_COUNT) return;
-  const h2_garden_guard_pest_t zombie = {
-      .kind = (uint8_t)kind, .active = true, .armor = 1};
-  draw_zombie(canvas, x, ground_y, size, &zombie);
+  const float scale = size / 52.0f;
+  draw_zombie_cel(canvas, &k_zombies[kind], ZOMBIE_PORTRAIT, x - 32.0f * scale,
+                  ground_y - 62.0f * scale, scale, 256u, false);
 }
 
 static void draw_cart(h2_garden_guard_canvas_t* canvas, float gx, float gy,

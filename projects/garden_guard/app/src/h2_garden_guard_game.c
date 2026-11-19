@@ -50,6 +50,13 @@ static const pest_spec_t k_pests[H2_GARDEN_GUARD_PEST_KIND_COUNT] = {
     [H2_GARDEN_GUARD_PEST_RUNNER] = {110, 0, 0.42f, 40.0f, 15u},
 };
 
+/* Must match the durations of the generated walk groups. */
+static const uint16_t k_walk_period_ms[H2_GARDEN_GUARD_PEST_KIND_COUNT] = {
+    1050u,
+    1320u,
+    580u,
+};
+
 typedef struct wave_spec {
   uint8_t count[H2_GARDEN_GUARD_PEST_KIND_COUNT];
   uint16_t gap_min_ms, gap_max_ms;
@@ -924,7 +931,7 @@ static void spawn_pest(h2_garden_guard_game_t* game) {
       .x = PEST_ENTRY_X,
       .hp = k_pests[kind].hp,
       .armor = k_pests[kind].armor,
-      .stride_ms = (uint16_t)random_below(game, 1000u)};
+      .stride_ms = (uint16_t)random_below(game, k_walk_period_ms[kind])};
 }
 
 static void step_waves(h2_garden_guard_game_t* game) {
@@ -1127,7 +1134,8 @@ static bool step_pests(h2_garden_guard_game_t* game, uint32_t dt,
       pest->eating = true;
       pest->chew_ms = after % H2_GARDEN_GUARD_PEST_BITE_MS;
       /* Keep continuous combat damage; the pose marks the jaw closing. */
-      if (before < 350u && after >= 350u) {
+      if (before < H2_GARDEN_GUARD_PEST_BITE_CONTACT_MS &&
+          after >= H2_GARDEN_GUARD_PEST_BITE_CONTACT_MS) {
         plant->impact_ms = H2_GARDEN_GUARD_BITE_IMPACT_MS;
         if (plant->kind == H2_GARDEN_GUARD_PLANT_BRAMBLE) {
           pest->flash_ms = H2_GARDEN_GUARD_PEST_HIT_MS;
@@ -1157,8 +1165,9 @@ static bool step_pests(h2_garden_guard_game_t* game, uint32_t dt,
     }
     pest->eating = false;
     pest->chew_ms = 0u;
-    // All gait periods divide 8400 ms, keeping the cycle seamless at wrap.
-    pest->stride_ms = (uint16_t)((pest->stride_ms + dt) % 8400u);
+    const uint32_t stride_dt = pest->slow_ms != 0u ? (dt + 1u) / 2u : dt;
+    pest->stride_ms = (uint16_t)((pest->stride_ms + stride_dt) %
+                                 k_walk_period_ms[pest->kind]);
     pest->x -= spec->speed * seconds * (pest->slow_ms != 0u ? 0.49f : 1.0f);
     if (pest->x >= -0.15f) continue;
     h2_garden_guard_cart_t* cart = &game->carts[pest->lane];

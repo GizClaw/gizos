@@ -269,6 +269,42 @@ static void test_depth_and_dirty_coverage(void) {
 }
 
 /* Pests entering from the right are clipped away from the toolbar. */
+static void test_zombie_sprite_states(void) {
+  init(480, 320);
+  start_playing();
+  for (unsigned variant = 0; variant < H2_GARDEN_GUARD_PEST_KIND_COUNT;
+       ++variant) {
+    h2_garden_guard_pest_t* pest = &game.pests[0];
+    *pest = (h2_garden_guard_pest_t){.active = true,
+                                     .kind = (uint8_t)variant,
+                                     .lane = 4u,
+                                     .x = 6.25f,
+                                     .hp = 100,
+                                     .armor = 100};
+    paint_scene(static_pixels);
+    pest->stride_ms = 425u;
+    paint_scene(pixels);
+    CHECK(memcmp(static_pixels, pixels, sizeof(pixels)) != 0);
+    pest->eating = true;
+    pest->chew_ms = H2_GARDEN_GUARD_PEST_BITE_CONTACT_MS - 20u;
+    paint_scene(static_pixels);
+    pest->chew_ms = H2_GARDEN_GUARD_PEST_BITE_CONTACT_MS;
+    paint_scene(pixels);
+    CHECK(memcmp(static_pixels, pixels, sizeof(pixels)) != 0);
+    pest->flash_ms = H2_GARDEN_GUARD_PEST_HIT_MS;
+    paint_scene(far_pixels);
+    CHECK(memcmp(far_pixels, pixels, sizeof(pixels)) != 0);
+    pest->active = false;
+    pest->exit_ms = 160u;
+    check_coverage(H2_GARDEN_GUARD_PART_FIELD, true);
+    paint_scene(pixels);
+    CHECK(memcmp(far_pixels, pixels, sizeof(pixels)) != 0);
+    pest->exit_ms = 0u;
+    paint_scene(pixels);
+    CHECK(memcmp(background, pixels, sizeof(pixels)) == 0);
+  }
+}
+
 static void test_portrait_clip(void) {
   init(480, 800);
   const h2_garden_guard_layout_t* l = &game.layout;
@@ -314,6 +350,7 @@ int main(void) {
   test_scene();
   test_depth_and_dirty_coverage();
   test_portrait_clip();
+  test_zombie_sprite_states();
   test_small_extent();
   puts("garden guard render tests passed");
   return 0;

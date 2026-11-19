@@ -60,3 +60,5 @@ cc $(pkg-config --cflags freetype2) projects/garden_guard/tools/generate_han.c \
   projects/garden_guard/app/src/h2_garden_guard_render.c \
   > projects/garden_guard/app/src/h2_garden_guard_zh.inc
 ```
+
+The zombie sprites and journal portraits are generated from the original drawing paths. See the [sprite sources](tools/zombie_art/) for the format and regeneration command.
