@@ -33,6 +33,11 @@ enum {
 static int emi_handle, iic_handle, close_error, flush_error, iic_error,
     gpio_error;
 static int closes, stops, dma_pending, rs, check_rs, stale_flush, lost_irq;
+static int complete_small, ramwr_flush_error, ramwr_lost_irq;
+static int model_panel;
+static const uint8_t* dma_source;
+static uint32_t dma_length;
+static uint8_t small_packet[4];
 static uint32_t clock_ms;
 static void complete_transfer(void);
 static h2_atomic_int_t adc_calls, adc_result, pause_adc, pause_draw,
@@ -118,6 +123,20 @@ static int dev_write(void* device, void* buffer, uint32_t length) {
   dma_pending = 0;
   if (length == 2u && h2_atomic_load(&pause_draw)) pause_operation();
   dma_pending = 1;
+  dma_length = length;
+  dma_source = buffer;
+  if (length <= sizeof(small_packet)) {
+    memcpy(small_packet, buffer, length);
+    dma_source = small_packet;
+  }
+  if (length == 1u && rs == 0 && *(const uint8_t*)buffer == 0x2cu) {
+    if (ramwr_flush_error) flush_error = 1;
+    if (ramwr_lost_irq) lost_irq = 1;
+  }
+  if (complete_small && length <= 4u) {
+    dma_pending = 0;
+    complete_transfer();
+  }
   return (int)length;
 }
 static uint32_t adc_add_sample_ch(uint32_t channel) {
@@ -131,7 +150,52 @@ static uint32_t adc_get_value(uint32_t channel) {
   return 0;
 }
 /* PROVIDER */
-static void complete_transfer(void) { /* COMPLETE */ ; }
+static uint16_t model_pixels[H2_LCD_WIDTH * H2_LCD_HEIGHT];
+static uint16_t model_x0, model_x1, model_y0, model_y1;
+static uint8_t model_command, model_parameters[4];
+static unsigned model_parameter_count, model_cursor;
+static void complete_transfer(void) {
+  /* An 8080 receiver samples RS with the bytes, not when DMA was submitted.
+   * Delay that sampling until completion to expose the permitted late-send
+   * schedule. Extra address parameters are ignored until another command. */
+  if (model_panel && dma_length != 0u) {
+    if (rs == 0) {
+      assert(dma_length == 1u);
+      model_command = dma_source[0];
+      model_parameter_count = model_cursor = 0u;
+    } else if (model_command == 0x2au || model_command == 0x2bu) {
+      for (uint32_t i = 0u; i < dma_length && model_parameter_count < 4u; ++i)
+        model_parameters[model_parameter_count++] = dma_source[i];
+      if (model_parameter_count == 4u) {
+        uint16_t start = (uint16_t)((uint16_t)model_parameters[0] << 8u) |
+                         model_parameters[1];
+        uint16_t end = (uint16_t)((uint16_t)model_parameters[2] << 8u) |
+                       model_parameters[3];
+        if (model_command == 0x2au) {
+          model_x0 = start;
+          model_x1 = end;
+        } else {
+          model_y0 = start;
+          model_y1 = end;
+        }
+      }
+    } else if (model_command == 0x2cu) {
+      assert(dma_length % 2u == 0u && model_x1 >= model_x0 &&
+             model_y1 >= model_y0);
+      const unsigned width = model_x1 - model_x0 + 1u;
+      for (uint32_t i = 0u; i < dma_length; i += 2u) {
+        unsigned x = model_x0 + model_cursor % width;
+        unsigned y = model_y0 + model_cursor / width;
+        assert(x < H2_LCD_WIDTH && y <= model_y1 && y < H2_LCD_HEIGHT);
+        model_pixels[y * H2_LCD_WIDTH + x] =
+            (uint16_t)((uint16_t)dma_source[i] << 8u) | dma_source[i + 1u];
+        ++model_cursor;
+      }
+    }
+    dma_length = 0u;
+  }
+  /* COMPLETE */;
+}
 static void* draw_thread(void* unused) {
   (void)unused;
   uint16_t pixel = 0;
@@ -263,6 +327,68 @@ int main(int argc, char** argv) {
     assert(lcd_command(0x2a) == 0);
     assert(lcd_data(0x11) == 0);
     assert(lcd_command(0x2c) == 0);
+  } else if (strncmp(argv[1], "draw_rs_", 8u) == 0) {
+    check_rs = 1;
+    complete_small = strcmp(argv[1], "draw_rs_immediate") == 0;
+    stale_flush = strcmp(argv[1], "draw_rs_stale") == 0;
+    ramwr_flush_error = strcmp(argv[1], "draw_rs_flush_error") == 0;
+    ramwr_lost_irq = strcmp(argv[1], "draw_rs_lost_irq") == 0;
+    uint16_t pixels[4] = {0x1234u, 0x5678u, 0x9abcu, 0xdef0u};
+    const uint8_t expected[8] = {0x12u, 0x34u, 0x56u, 0x78u,
+                                 0x9au, 0xbcu, 0xdeu, 0xf0u};
+    const h2_display_rect_t rect = {2, 3, 2, 2};
+    if (ramwr_flush_error || ramwr_lost_irq) {
+      memset(display_state.frame, 0x5a, sizeof(expected));
+      assert(display->vtable->draw_bitmap(display->user, &rect, pixels, 4u,
+                                          H2_DISPLAY_PIXEL_RGB565) ==
+             H2_DISPLAY_ERR_IO);
+      assert(rs == 0 && dma_pending && display_state.pending &&
+             display_state.open && display_state.device == &emi_handle);
+      for (size_t i = 0u; i < sizeof(expected); ++i)
+        assert(display_state.frame[i] == 0x5a);
+      if (ramwr_lost_irq) assert(clock_ms >= 2000u);
+      ramwr_flush_error = ramwr_lost_irq = flush_error = lost_irq = 0;
+    }
+    assert(display->vtable->draw_bitmap(display->user, &rect, pixels, 4u,
+                                        H2_DISPLAY_PIXEL_RGB565) ==
+           H2_DISPLAY_OK);
+    assert(rs == 1 && dma_pending && display_state.pending);
+    /* Caller storage may change immediately after draw returns. DMA owns
+     * the board staging copy until the following flush/close completes. */
+    memset(pixels, 0, sizeof(pixels));
+    assert(memcmp(display_state.frame, expected, sizeof(expected)) == 0);
+    assert(display->vtable->close(display->user) == H2_DISPLAY_OK);
+    assert(!dma_pending && !display_state.open && closes == 1);
+  } else if (strncmp(argv[1], "partial_pixels_", 15u) == 0) {
+    model_panel = complete_small = 1;
+    uint16_t first[4] = {0xf800u, 0xf800u, 0xf800u, 0xf800u};
+    const uint16_t second[8] = {0u, 0u, 0x07e0u, 0x07e0u,
+                                0u, 0u, 0x07e0u, 0x07e0u};
+    const uint16_t third[8] = {0u, 0u, 0x001fu, 0x001fu,
+                               0u, 0u, 0x001fu, 0x001fu};
+    const h2_display_rect_t a = {0, 0, 2, 2}, b = {0, 0, 4, 2},
+                            c = {2, 0, 4, 2};
+    assert(display->vtable->draw_bitmap(display->user, &a, first, 4u,
+                                        H2_DISPLAY_PIXEL_RGB565) ==
+           H2_DISPLAY_OK);
+    memset(first, 0, sizeof(first)); /* The caller may immediately reuse it. */
+    complete_small = strcmp(argv[1], "partial_pixels_immediate") == 0;
+    assert(display->vtable->draw_bitmap(display->user, &b, second, 8u,
+                                        H2_DISPLAY_PIXEL_RGB565) ==
+           H2_DISPLAY_OK);
+    complete_small = 1;
+    assert(display->vtable->draw_bitmap(display->user, &c, third, 8u,
+                                        H2_DISPLAY_PIXEL_RGB565) ==
+           H2_DISPLAY_OK);
+    assert(display->vtable->close(display->user) == H2_DISPLAY_OK);
+    /* Frame B clears A. Frame C never touches A again: losing B's RAMWR can
+     * leave persistent old pixels even after later transfers succeed. */
+    for (unsigned y = 0u; y < 2u; ++y) {
+      for (unsigned x = 0u; x < 4u; ++x)
+        assert(model_pixels[y * H2_LCD_WIDTH + x] == 0u);
+      for (unsigned x = 4u; x < 6u; ++x)
+        assert(model_pixels[y * H2_LCD_WIDTH + x] == 0x001fu);
+    }
   } else if (strncmp(argv[1], "iic_", 4) == 0) {
     iic_error =
         strstr(argv[1], "start") != NULL ? IIC_IOCTL_START : IIC_IOCTL_STOP;
