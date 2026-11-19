@@ -35,6 +35,17 @@ extern const tp_sensor_config_t* tp_get_sensor_auto_detect(
 /* Some vendor readers index by hardware tracking ID rather than max_num. */
 #define TOUCH_SAMPLE_COUNT 11u
 
+/* Session totals for GT911 reports. A retry is a new status transaction on
+ * the reader task. PAL polls may coalesce several failed transactions. */
+typedef struct {
+  const char *first, *last;
+  int first_raw, last_raw, delay_rc;
+  int int_in, rst_out; /* Pin samples at the last failed transfer. */
+  unsigned failed, status_failed, retries, retry_idle, retry_ready;
+  unsigned io_polls, releases;
+  bool retry_in_flight;
+} touch_stats_t;
+
 static struct {
   const tp_sensor_config_t* sensor;
   h2_pal_task_t* task;
@@ -50,7 +61,9 @@ static struct {
   const char* pending_io; /* Delivered before any subsequent gesture. */
   bool discard_contact, fault_reported;
   unsigned sync_logs;
+  touch_stats_t stats;
   /* Written only by the worker during a GT911 SDK report read. */
+  int report_raw;
   uint8_t report_status;
   const char* report_stage;
   bool opened;
@@ -119,11 +132,21 @@ static int touch_coordinate(uint16_t value, uint16_t source_size,
 /* Called under the queue lock. Invalidate both halves of any queued gesture.
  * The consumer gets an I/O error to cancel even if recovery wins the race to
  * its next poll. Only another failed transaction can publish another error. */
-static void touch_report_fault(const char* stage) {
+static void touch_report_fault(const char* stage, int raw, int int_in,
+                               int rst_out) {
   if (s_touch.sensor->id != TP_ID_GT911) {
     s_touch.error = H2_PAL_ERR_IO;
     return;
   }
+  if (s_touch.stats.first == NULL) {
+    s_touch.stats.first = stage;
+    s_touch.stats.first_raw = raw;
+  }
+  s_touch.stats.last = stage;
+  s_touch.stats.last_raw = raw;
+  s_touch.stats.int_in = int_in;
+  s_touch.stats.rst_out = rst_out;
+  ++s_touch.stats.failed;
   if (s_touch.pending_io == NULL) s_touch.pending_io = stage;
   s_touch.count = 0u;
   s_touch.pressed = false;
@@ -139,7 +162,7 @@ static void touch_record_locked(const tp_data_t* sample) {
   if (!s_touch.pressed && sample->event == TP_EVENT_TYPE_UP) return;
   if (sample->x_coordinate >= s_touch.source_width ||
       sample->y_coordinate >= s_touch.source_height) {
-    touch_report_fault("bounds");
+    touch_report_fault("bounds", BK_OK, -1, -1);
     return;
   }
   if (s_touch.discard_contact) return;
@@ -178,6 +201,7 @@ static void touch_record_locked(const tp_data_t* sample) {
 static int gt911_report_read(uint8_t addr, uint16_t reg, uint8_t* data,
                              uint16_t len) {
   int rc = tp_i2c_read_uint16(addr, reg, data, len);
+  s_touch.report_raw = rc;
   if (reg == TOUCH_STATUS_REG && len == 1u) {
     s_touch.report_stage = "report-status";
     if (rc == BK_OK) {
@@ -194,32 +218,66 @@ static int gt911_report_read(uint8_t addr, uint16_t reg, uint8_t* data,
   return rc;
 }
 
-static bool touch_read_report(const tp_i2c_callback_t* reader) {
+static int gt911_report_write(uint8_t addr, uint16_t reg, uint8_t* data,
+                              uint16_t len) {
+  int rc = tp_i2c_write_uint16(addr, reg, data, len);
+  /* The SDK also clears status on a failed read. Preserve the earlier bus
+   * failure if both transfers fail. */
+  if (rc != BK_OK && s_touch.report_raw == BK_OK) {
+    s_touch.report_raw = rc;
+    s_touch.report_stage = "ack";
+  }
+  return rc;
+}
+
+static bool touch_read_report(const tp_i2c_callback_t* reader, bool retry) {
   uint8_t status = 0;
   tp_data_t samples[TOUCH_SAMPLE_COUNT] = {0};
   const char* fault = NULL;
-  if (s_touch_i2c.read_uint16(s_touch.sensor->address, TOUCH_STATUS_REG,
-                              &status, sizeof(status)) != BK_OK) {
+  int probe_rc = s_touch_i2c.read_uint16(s_touch.sensor->address,
+                                         TOUCH_STATUS_REG, &status, 1u);
+  int raw = probe_rc;
+  bool ready = (status & TOUCH_READY) != 0u;
+  if (probe_rc != BK_OK) {
     fault = "status";
-  } else if (!(status & TOUCH_READY)) {
-    return true; /* Idle says nothing about physical release. */
-  } else {
+  } else if (ready) {
+    s_touch.report_raw = BK_OK;
     s_touch.report_status = 0;
     s_touch.report_stage = "report";
     if (s_touch.sensor->read_tp_info(reader, TP_SUPPORT_MAX_NUM,
-                                     (uint8_t*)samples) != BK_OK)
+                                     (uint8_t*)samples) != BK_OK) {
       fault = s_touch.report_stage;
+      raw = s_touch.report_raw;
+    }
+  } else if (!retry) {
+    return true;
   }
 
+  int int_in = -1, rst_out = -1;
+  if (fault != NULL && s_touch.sensor->id == TP_ID_GT911) {
+    int_in = bk_gpio_get_input(CONFIG_TP_INT_GPIO_ID);
+    rst_out = bk_gpio_get_output(CONFIG_TP_RST_GPIO_ID);
+  }
   uint32_t flags = rtos_enter_critical();
-  if (!s_touch.stop && s_touch.error == H2_PAL_OK) {
+  if (retry) {
+    s_touch.stats.retry_in_flight = false;
+    if (fault == NULL) {
+      if (ready)
+        ++s_touch.stats.retry_ready;
+      else
+        ++s_touch.stats.retry_idle;
+    }
+  }
+  if (!s_touch.stop && s_touch.error == H2_PAL_OK && (fault || ready)) {
     if (fault != NULL) {
-      touch_report_fault(fault);
+      if (probe_rc != BK_OK) ++s_touch.stats.status_failed;
+      touch_report_fault(fault, raw, int_in, rst_out);
     } else if (s_touch.discard_contact &&
                (s_touch.report_status & (TOUCH_READY | TOUCH_CONTACTS)) ==
                    TOUCH_READY) {
       /* Discard this ACKed release too, including any stale UP coordinates. */
       s_touch.discard_contact = false;
+      ++s_touch.stats.releases;
     } else {
       for (size_t i = 0u; i < TOUCH_SAMPLE_COUNT; ++i)
         touch_record_locked(&samples[i]);
@@ -233,21 +291,30 @@ static void touch_worker(void* ctx) {
   (void)ctx;
   const bool gt911 = s_touch.sensor->id == TP_ID_GT911;
   tp_i2c_callback_t reader = s_touch_i2c;
-  if (gt911) reader.read_uint16 = gt911_report_read;
+  if (gt911) {
+    reader.read_uint16 = gt911_report_read;
+    reader.write_uint16 = gt911_report_write;
+  }
   bool retry = false;
   for (;;) {
     uint32_t flags = rtos_enter_critical();
     bool stop = s_touch.stop;
     bool pending = s_touch.pending;
     s_touch.pending = false;
+    if (!stop && retry) {
+      ++s_touch.stats.retries;
+      s_touch.stats.retry_in_flight = true;
+    }
     rtos_exit_critical(flags);
     if (stop) return;
     /* A failed status read or ACK can leave INT asserted without a new edge.
      * Retry on the existing reader task. Resume IRQ-only sampling on success.
      */
-    if (pending || retry) retry = !touch_read_report(&reader) && gt911;
-    if (rtos_delay_milliseconds(retry ? TOUCH_RETRY_MS : 5u) != BK_OK) {
+    if (pending || retry) retry = !touch_read_report(&reader, retry) && gt911;
+    int delayed = rtos_delay_milliseconds(retry ? TOUCH_RETRY_MS : 5u);
+    if (delayed != BK_OK) {
       flags = rtos_enter_critical();
+      if (gt911) s_touch.stats.delay_rc = delayed;
       if (s_touch.error == H2_PAL_OK) s_touch.error = H2_PAL_ERR_IO;
       rtos_exit_critical(flags);
       return;
@@ -255,11 +322,33 @@ static void touch_worker(void* ctx) {
   }
 }
 
+/* Caller-task snapshots. INT is an input, RST is the output latch. The I2C
+ * data/clock pins are driven by the SDK and are left untouched. */
+static void touch_log_sync(const char* stage, const touch_stats_t* s,
+                           bool gated) {
+  printf(
+      "H2_BK_TOUCH_SYNC stage=%s t_ms=%lu first=%s first_raw=%d "
+      "last=%s last_raw=%d failed=%u status_failed=%u retries=%u "
+      "retry_idle=%u retry_ready=%u in_flight=%u io_polls=%u releases=%u "
+      "gated=%u delay_rc=%d int_in=%d rst_out=%d\r\n",
+      stage, (unsigned long)rtos_get_time(), s->first ? s->first : "none",
+      s->first_raw, s->last ? s->last : "none", s->last_raw, s->failed,
+      s->status_failed, s->retries, s->retry_idle, s->retry_ready,
+      (unsigned)s->retry_in_flight, s->io_polls, s->releases, (unsigned)gated,
+      s->delay_rc, s->last ? s->int_in : -1, s->last ? s->rst_out : -1);
+}
+
 static h2_pal_result_t touch_cleanup(void) {
   uint32_t flags = rtos_enter_critical();
+  bool summary = s_touch.opened && (s_touch.stats.first != NULL ||
+                                    s_touch.stats.delay_rc != BK_OK);
+  touch_stats_t stats = s_touch.stats;
+  bool gated = s_touch.discard_contact;
   s_touch.stop = true;
   s_touch.opened = false;
   rtos_exit_critical(flags);
+  /* Keep the last counts observable even if teardown waits for a bus owner. */
+  if (summary) touch_log_sync("close", &stats, gated);
   if (s_touch.interrupt_owned &&
       bk_gpio_disable_interrupt(CONFIG_TP_INT_GPIO_ID) != BK_OK)
     return H2_PAL_ERR_IO;
@@ -458,6 +547,8 @@ static h2_pal_result_t touch_poll_event(void* user,
   (void)user;
   if (out_event == NULL) return H2_PAL_ERR_INVALID_ARG;
   bool report = false;
+  bool gated = false;
+  touch_stats_t stats;
   const char* sync_stage = NULL;
   uint32_t flags = rtos_enter_critical();
   h2_pal_result_t result = H2_PAL_ERR_WOULD_BLOCK;
@@ -466,7 +557,9 @@ static h2_pal_result_t touch_poll_event(void* user,
   else if (s_touch.error != H2_PAL_OK)
     result = s_touch.error;
   else if (s_touch.pending_io != NULL) {
-    if (!s_touch.fault_reported) sync_stage = s_touch.pending_io;
+    ++s_touch.stats.io_polls;
+    if (!s_touch.fault_reported || s_touch.stats.io_polls % 16u == 0u)
+      sync_stage = s_touch.pending_io;
     s_touch.pending_io = NULL;
     s_touch.fault_reported = true;
     result = H2_PAL_ERR_IO;
@@ -486,13 +579,16 @@ static h2_pal_result_t touch_poll_event(void* user,
     sync_stage = "released";
     s_touch.fault_reported = false;
   }
-  if (sync_stage != NULL && s_touch.sync_logs < 16u)
+  if (sync_stage != NULL && s_touch.sync_logs < 16u) {
     ++s_touch.sync_logs;
-  else
+    stats = s_touch.stats;
+    gated = s_touch.discard_contact;
+  } else {
     sync_stage = NULL;
+  }
   rtos_exit_critical(flags);
   /* Log on the caller task, never in the ISR or the small reader stack. */
-  if (sync_stage != NULL) printf("H2_BK_TOUCH_SYNC stage=%s\r\n", sync_stage);
+  if (sync_stage != NULL) touch_log_sync(sync_stage, &stats, gated);
   if (report)
     printf("H2_BK_TOUCH_POINT kind=%s x=%ld y=%ld\r\n",
            out_event->kind == H2_PAL_TOUCH_EVENT_DOWN ? "down" : "up",

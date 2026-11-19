@@ -4,8 +4,10 @@
 
 #include <assert.h>
 #include <pthread.h>
+#include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 
 static pthread_mutex_t critical = PTHREAD_MUTEX_INITIALIZER;
 static gpio_isr_t interrupt_callback;
@@ -27,8 +29,10 @@ static enum fault {
   BAD_COUNT,
   PROBE_SAYS_RELEASE,
   STUCK_BUS,
-  WORKER_DIES
+  WORKER_DIES,
+  STATUS_BURST
 } fault;
+static unsigned nacks_left, diagnostic_pin_reads;
 static bool in_reader, fail_status, sdk_pressed;
 static uint16_t expected_range_register = 0x8048;
 static uint16_t display_width = 480, display_height = 800;
@@ -43,6 +47,11 @@ struct h2_pal_task {
 static struct h2_pal_task task;
 static const h2_pal_touch_api_t* touch;
 
+uint32_t rtos_get_time(void) {
+  struct timespec now;
+  assert(clock_gettime(CLOCK_MONOTONIC, &now) == 0);
+  return (uint32_t)((uint64_t)now.tv_sec * 1000u + now.tv_nsec / 1000000u);
+}
 uint32_t rtos_enter_critical(void) {
   assert(pthread_mutex_lock(&critical) == 0);
   return 0;
@@ -81,6 +90,18 @@ int bk_gpio_set_config(gpio_id_t id, const gpio_config_t* config) {
     if (!interrupt_input) input_settled = false;
   }
   return BK_OK;
+}
+bool bk_gpio_get_input(gpio_id_t id) {
+  assert(id == CONFIG_TP_INT_GPIO_ID);
+  uint32_t flags = rtos_enter_critical();
+  ++diagnostic_pin_reads;
+  bool high = next_sample.event == TP_EVENT_TYPE_NONE;
+  rtos_exit_critical(flags);
+  return high;
+}
+bool bk_gpio_get_output(gpio_id_t id) {
+  assert(id == CONFIG_TP_RST_GPIO_ID);
+  return true;
 }
 int bk_gpio_set_output_high(gpio_id_t id) {
   (void)id;
@@ -153,8 +174,13 @@ int tp_i2c_read_uint16(uint8_t addr, uint16_t reg, uint8_t* data,
     ++status_reads;
     sampled = submitted;
     if (fault == STUCK_BUS) fail_status = true;
+    if (fault == STATUS_BURST) nacks_left = 8u;
     bool failed = fail_status || (in_reader && fault == READER_STATUS_IO) ||
                   (!in_reader && fault == PROBE_IO);
+    if (!in_reader && nacks_left != 0u) {
+      --nacks_left;
+      failed = true;
+    }
     data[0] = next_sample.event == TP_EVENT_TYPE_NONE ? 0
               : next_sample.event == TP_EVENT_TYPE_UP ? 0x80
                                                       : 0x81;
@@ -163,7 +189,7 @@ int tp_i2c_read_uint16(uint8_t addr, uint16_t reg, uint8_t* data,
     if (!in_reader && fault == PROBE_SAYS_RELEASE) data[0] = 0x80;
     if (failed && !in_reader) fault = HEALTHY;
     rtos_exit_critical(flags);
-    return failed ? -1 : BK_OK;
+    return failed ? 1 : BK_OK; /* V3 returns !I2cMemRead(). */
   }
   if (reg == 0x814f) {
     assert(len == 8u);
@@ -517,6 +543,59 @@ static void report_recovery_tests(void) {
   clean();
 }
 
+static void diagnostic_totals_test(void) {
+  int channel[2];
+  assert(pipe(channel) == 0 && fflush(stdout) == 0);
+  int saved = dup(STDOUT_FILENO);
+  assert(saved >= 0 && dup2(channel[1], STDOUT_FILENO) >= 0);
+  assert(close(channel[1]) == 0);
+
+  unsigned pin_reads_before = diagnostic_pin_reads;
+  assert(h2_pal_touch_open(touch) == H2_PAL_OK);
+  emit(TP_EVENT_TYPE_DOWN, 0, 20, 30);
+  expect(H2_PAL_TOUCH_EVENT_DOWN, 20, 30);
+  assert(diagnostic_pin_reads == pin_reads_before);
+  emit_with_fault(STATUS_BURST, TP_EVENT_TYPE_UP, 0, 20, 30);
+  /* One IRQ, eight actual outer-probe NACKs. The next automatic retry
+   * ACKs the release before the consumer ever asks for another event. */
+  bool acked = false;
+  for (unsigned i = 0; i < 1000 && !acked; ++i) {
+    uint32_t flags = rtos_enter_critical();
+    acked = next_sample.event == TP_EVENT_TYPE_NONE;
+    rtos_exit_critical(flags);
+    if (!acked) pause_thread();
+  }
+  assert(acked);
+  expect_result(H2_PAL_ERR_IO);
+  fresh_tap();
+  clean();
+  assert(diagnostic_pin_reads - pin_reads_before == 8u);
+  clean(); /* A repeated close cannot duplicate the terminal summary. */
+  assert(fflush(stdout) == 0 && dup2(saved, STDOUT_FILENO) >= 0);
+  assert(close(saved) == 0);
+  FILE* lines = fdopen(channel[0], "r");
+  assert(lines != NULL);
+  unsigned summaries = 0u;
+  char line[512];
+  while (fgets(line, sizeof(line), lines) != NULL) {
+    if (strstr(line, "H2_BK_TOUCH_SYNC stage=close t_ms=") == NULL) continue;
+    ++summaries;
+    assert(strstr(line, "first=status first_raw=1 last=status last_raw=1 ") !=
+           NULL);
+    assert(
+        strstr(
+            line,
+            "failed=8 status_failed=8 retries=8 retry_idle=0 retry_ready=1 ") !=
+        NULL);
+    assert(
+        strstr(
+            line,
+            "in_flight=0 io_polls=1 releases=1 gated=0 delay_rc=0 int_in=0 rst_out=1") !=
+        NULL);
+  }
+  assert(summaries == 1u && fclose(lines) == 0);
+}
+
 static void persistent_fault_tests(void) {
   int delays_before = retry_delays;
   assert(h2_pal_touch_open(touch) == H2_PAL_OK);
@@ -642,6 +721,7 @@ int main(void) {
   clean();
 
   report_recovery_tests();
+  diagnostic_totals_test();
   persistent_fault_tests();
 
   assert(h2_pal_touch_open(touch) == H2_PAL_OK);
