@@ -22,6 +22,8 @@ typedef struct h2_display_bench_profile {
   const char* version;
   const char* bus;
   const char* panel_config;
+  /* Optional result name for a synchronous transfer. */
+  const char* transfer_metric;
   h2_display_bench_mode_t mode;
   const h2_pal_display_api_t* display;
   const h2_pal_mem_api_t* memory;

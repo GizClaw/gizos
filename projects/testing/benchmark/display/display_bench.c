@@ -128,7 +128,10 @@ static int run_shape(const h2_display_bench_profile_t* profile,
   const bool transfer = profile->mode == H2_DISPLAY_BENCH_SYNC_TRANSFER;
   const bool copying = profile->mode == H2_DISPLAY_BENCH_COPY;
   const bool close_fence = profile->mode == H2_DISPLAY_BENCH_CLOSE_FENCE;
-  const char* metric = transfer  ? "qspi_dma_complete"
+  const char* transfer_metric = profile->transfer_metric != NULL
+                                    ? profile->transfer_metric
+                                    : "qspi_dma_complete";
+  const char* metric = transfer  ? transfer_metric
                        : copying ? "framebuffer_copy"
                                  : "app_draw_present";
   const char* completed_rate = full ? "fps" : "updates_hz";
