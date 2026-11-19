@@ -40,7 +40,7 @@ typedef struct session {
   h2_fruit_slice_sprites_t* sprites;
   h2_fruit_slice_static_key_t static_key;
   dirty_t static_cover, previous;
-  bool first_frame;
+  bool first_frame, failure_reported;
   unsigned touch_failures;
   uint32_t frames, frames_since_stats;
   uint64_t stats_started_ms;
@@ -67,6 +67,26 @@ typedef struct session {
 static void log_line(const session_t* s, h2_pal_log_level_t level,
                      const char* message) {
   (void)h2_pal_log_write(s->runtime->log, level, LOG_TAG, message);
+}
+
+/* Report the first terminal boundary once, without adding a clock read,
+ * retry, recovery attempt or a different result/teardown path. */
+static int failure_at(session_t* s, const char* operation, int rc) {
+  if (rc != H2_PAL_OK && !s->failure_reported) {
+    s->failure_reported = true;
+    char message[224];
+    (void)snprintf(
+        message, sizeof(message),
+        "H2_FRUIT_SLICE_FAILURE op=%s rc=%d phase=%u frames=%u "
+        "reveal=%u game_ms=%llu size=%dx%d touch_failures=%u save_pending=%u",
+        operation, rc, (unsigned)s->game.phase, (unsigned)s->frames,
+        (unsigned)s->game.cards.reveal_active,
+        (unsigned long long)s->game.time_ms, (int)s->display.width,
+        (int)s->display.height, s->touch_failures,
+        (unsigned)(s->save_worker.task != NULL));
+    log_line(s, H2_PAL_LOG_ERROR, message);
+  }
+  return rc;
 }
 
 static uint32_t load_best(session_t* s) {
@@ -341,7 +361,7 @@ static h2_pal_result_t drain_events(session_t* s) {
     const h2_pal_result_t rc = h2_runtime_poll_event(s->runtime, &event);
     if (rc == H2_PAL_ERR_WOULD_BLOCK || rc == H2_PAL_ERR_TIMEOUT)
       return H2_PAL_OK;
-    if (rc != H2_PAL_OK) return rc;
+    if (rc != H2_PAL_OK) return failure_at(s, "poll_event", rc);
   }
   /* Bounded: the remainder is drained after the next frame's wait. */
   return H2_PAL_OK;
@@ -363,9 +383,11 @@ static h2_pal_result_t poll_touch(session_t* s) {
       /* Abandon the stroke rather than slicing along a stale segment. */
       h2_fruit_slice_game_pointer(&s->game, H2_FRUIT_SLICE_POINTER_CANCEL, 0.0f,
                                   0.0f);
-      return s->touch_failures >= TOUCH_FAILURE_LIMIT ? rc : H2_PAL_OK;
+      return s->touch_failures >= TOUCH_FAILURE_LIMIT
+                 ? failure_at(s, "touch_poll", rc)
+                 : H2_PAL_OK;
     }
-    if (rc != H2_PAL_OK) return rc;
+    if (rc != H2_PAL_OK) return failure_at(s, "touch_poll", rc);
     if (s->touch_failures != 0u) {
       s->touch_failures = 0u;
       log_line(s, H2_PAL_LOG_INFO, "H2_FRUIT_SLICE_TOUCH_RECOVERED");
@@ -420,7 +442,7 @@ static h2_pal_result_t service_audio(session_t* s, uint64_t now) {
   log_line(s, H2_PAL_LOG_WARN, message);
   const int rc = h2_fruit_slice_audio_suspend(&s->audio);
   s->audio.available = false;
-  return rc;
+  return failure_at(s, "audio_suspend", rc);
 }
 
 static void dirty_from_canvas(dirty_t* out,
@@ -533,14 +555,17 @@ static h2_pal_result_t push_dirty(session_t* s, const dirty_t* dirty) {
         s->runtime->display, &rect,
         s->frame + (size_t)y0 * (size_t)width + (size_t)x0,
         (size_t)width * sizeof(uint16_t), H2_DISPLAY_PIXEL_RGB565);
+    if (rc != H2_PAL_OK) (void)failure_at(s, "display_draw", rc);
     s->pixels_pushed += (uint64_t)(x1 - x0) * (uint64_t)(y1 - y0);
     /* A panel may synchronously wait for its preceding DMA here. Do not
      * postpone every PCM deadline until all dirty bands have been sent. */
     if (rc == H2_PAL_OK && s->audio_unlocked)
       rc = service_audio(s, clock_ms(s));
   }
-  if (rc == H2_PAL_OK && dirty->bands != 0u)
+  if (rc == H2_PAL_OK && dirty->bands != 0u) {
     rc = h2_pal_display_present(s->runtime->display);
+    if (rc != H2_PAL_OK) (void)failure_at(s, "display_present", rc);
+  }
   return rc;
 }
 
@@ -583,7 +608,7 @@ static h2_pal_result_t wait_frame(session_t* s, uint64_t deadline_ms) {
   for (;;) {
     uint64_t now = 0;
     h2_pal_result_t rc = h2_pal_time_get_monotonic_ms(s->runtime->time, &now);
-    if (rc != H2_PAL_OK) return rc;
+    if (rc != H2_PAL_OK) return failure_at(s, "clock_wait", rc);
     const uint64_t remaining = now < deadline_ms ? deadline_ms - now : 0u;
     if (remaining == 0u && waited) return H2_PAL_OK;
     rc = service_audio(s, now);
@@ -594,7 +619,8 @@ static h2_pal_result_t wait_frame(session_t* s, uint64_t deadline_ms) {
       wait_ms = 10u;
     rc = h2_runtime_wait_notify(s->runtime, wait_ms);
     waited = true;
-    if (rc != H2_PAL_OK && rc != H2_PAL_ERR_TIMEOUT) return rc;
+    if (rc != H2_PAL_OK && rc != H2_PAL_ERR_TIMEOUT)
+      return failure_at(s, "wait_notify", rc);
     const h2_pal_result_t drained = drain_events(s);
     if (drained != H2_PAL_OK) return drained;
     /* SDK tick-rounded waits may return before the millisecond deadline.
@@ -688,7 +714,7 @@ static h2_pal_result_t play(session_t* s) {
                               : H2_FRUIT_SLICE_DEFAULT_FRAME_PERIOD_MS;
   uint64_t last = 0;
   h2_pal_result_t rc = h2_pal_time_get_monotonic_ms(s->runtime->time, &last);
-  if (rc != H2_PAL_OK) return rc;
+  if (rc != H2_PAL_OK) return failure_at(s, "clock_start", rc);
   s->stats_started_ms = last;
   bool ready = false;
   for (;;) {
@@ -696,7 +722,7 @@ static h2_pal_result_t play(session_t* s) {
       return H2_PAL_OK;
     uint64_t now = 0;
     rc = h2_pal_time_get_monotonic_ms(s->runtime->time, &now);
-    if (rc != H2_PAL_OK) return rc;
+    if (rc != H2_PAL_OK) return failure_at(s, "clock_frame", rc);
     const uint64_t frame_start = now;
     if (s->frames != 0u && !s->audio_paused) {
       const uint64_t gap =
@@ -713,7 +739,7 @@ static h2_pal_result_t play(session_t* s) {
     if (s->config.is_paused != NULL && s->config.is_paused(s->config.user)) {
       if (!s->audio_paused) {
         rc = h2_fruit_slice_audio_suspend(&s->audio);
-        if (rc != H2_PAL_OK) return rc;
+        if (rc != H2_PAL_OK) return failure_at(s, "audio_pause", rc);
         h2_fruit_slice_game_pointer(&s->game, H2_FRUIT_SLICE_POINTER_CANCEL, 0,
                                     0);
         s->game.sound_count = 0;
@@ -749,7 +775,7 @@ static h2_pal_result_t play(session_t* s) {
     rc = service_audio(s, clock_ms(s));
     if (rc != H2_PAL_OK) return rc;
     rc = render_frame(s);
-    if (rc != H2_PAL_OK) return rc;
+    if (rc != H2_PAL_OK) return failure_at(s, "render", rc);
     ++s->frames;
     ++s->frames_since_stats;
 
@@ -775,7 +801,7 @@ static h2_pal_result_t play(session_t* s) {
       log_line(s, H2_PAL_LOG_INFO, message);
       if (s->config.ready != NULL) {
         rc = s->config.ready(s->config.user);
-        if (rc != H2_PAL_OK) return rc;
+        if (rc != H2_PAL_OK) return failure_at(s, "ready", rc);
       }
     }
 
@@ -802,7 +828,7 @@ static h2_pal_result_t play(session_t* s) {
 static h2_pal_result_t prepare(session_t* s) {
   h2_pal_result_t rc =
       h2_pal_display_get_info(s->runtime->display, &s->display);
-  if (rc != H2_PAL_OK) return rc;
+  if (rc != H2_PAL_OK) return failure_at(s, "display_info", rc);
   if (s->display.native_format != H2_DISPLAY_PIXEL_RGB565 ||
       s->display.width < H2_FRUIT_SLICE_MIN_EXTENT ||
       s->display.width > H2_FRUIT_SLICE_MAX_EXTENT ||
@@ -811,7 +837,7 @@ static h2_pal_result_t prepare(session_t* s) {
     return H2_PAL_ERR_UNSUPPORTED;
   h2_pal_touch_info_t touch = {0};
   rc = h2_pal_touch_get_info(s->runtime->touch, &touch);
-  if (rc != H2_PAL_OK) return rc;
+  if (rc != H2_PAL_OK) return failure_at(s, "touch_info", rc);
   s->touch_scale_x =
       touch.width != 0u ? (float)s->display.width / (float)touch.width : 1.0f;
   s->touch_scale_y = touch.height != 0u
@@ -846,7 +872,7 @@ static h2_pal_result_t prepare(session_t* s) {
   if (seed == 0u) {
     uint64_t now = 0;
     rc = h2_pal_time_get_monotonic_ms(s->runtime->time, &now);
-    if (rc != H2_PAL_OK) return rc;
+    if (rc != H2_PAL_OK) return failure_at(s, "clock_seed", rc);
     seed = (uint32_t)(now ^ (now >> 32)) * 2654435761u ^ 0xA511E9B3u;
     if (seed == 0u) seed = 1u;
   }
@@ -891,7 +917,7 @@ static h2_pal_result_t prepare(session_t* s) {
              message);
     if (prepared != H2_PAL_OK) {
       rc = h2_fruit_slice_audio_suspend(&s->audio);
-      if (rc != H2_PAL_OK) return rc;
+      if (rc != H2_PAL_OK) return failure_at(s, "audio_prepare_close", rc);
       s->audio.available = false;
     }
   }
@@ -902,7 +928,8 @@ static h2_pal_result_t prepare(session_t* s) {
       if (rc != H2_PAL_OK) {
         log_line(s, H2_PAL_LOG_WARN, "H2_FRUIT_SLICE_AUDIO_WORKER_FAILED");
         const int stopped = h2_fruit_slice_audio_suspend(&s->audio);
-        if (stopped != H2_PAL_OK) return stopped;
+        if (stopped != H2_PAL_OK)
+          return failure_at(s, "audio_start_close", stopped);
         s->audio.available = false;
       }
     }
@@ -923,22 +950,23 @@ h2_pal_result_t h2_fruit_slice_run(h2_runtime_t* runtime,
   if (config != NULL) s->config = *config;
 
   bool display_open = false, touch_open = false;
-  h2_pal_result_t rc = h2_pal_display_open(runtime->display);
+  h2_pal_result_t rc =
+      failure_at(s, "display_open", h2_pal_display_open(runtime->display));
   if (rc == H2_PAL_OK) {
     display_open = true;
-    rc = h2_pal_touch_open(runtime->touch);
+    rc = failure_at(s, "touch_open", h2_pal_touch_open(runtime->touch));
   }
   if (rc == H2_PAL_OK) {
     touch_open = true;
-    rc = prepare(s);
+    rc = failure_at(s, "prepare", prepare(s));
   }
-  if (rc == H2_PAL_OK) rc = play(s);
+  if (rc == H2_PAL_OK) rc = failure_at(s, "play", play(s));
   /* The final write cannot race an older in-flight checkpoint. Retain the
    * Runtime and copied arguments through failed joins before flushing newer
    * state once, using the same optional-storage failure behavior as before. */
   int save_closed;
   while ((save_closed = collect_saves(s, clock_ms(s), true)) != H2_PAL_OK) {
-    if (rc == H2_PAL_OK) rc = save_closed;
+    if (rc == H2_PAL_OK) rc = failure_at(s, "save_join", save_closed);
     log_line(s, H2_PAL_LOG_WARN, "H2_FRUIT_SLICE_SAVE_JOIN_RETRY");
     (void)h2_runtime_wait_notify(runtime, 50u);
   }
@@ -952,7 +980,7 @@ h2_pal_result_t h2_fruit_slice_run(h2_runtime_t* runtime,
   int audio_closed;
   while ((audio_closed = h2_fruit_slice_audio_close_with_mute(
               &s->audio, s->game.audio_mute)) != H2_PAL_OK) {
-    if (rc == H2_PAL_OK) rc = audio_closed;
+    if (rc == H2_PAL_OK) rc = failure_at(s, "audio_close", audio_closed);
     log_line(s, H2_PAL_LOG_WARN, "H2_FRUIT_SLICE_AUDIO_CLOSE_RETRY");
     (void)h2_runtime_wait_notify(runtime, 50u);
   }
@@ -965,11 +993,11 @@ h2_pal_result_t h2_fruit_slice_run(h2_runtime_t* runtime,
 
   if (touch_open) {
     const h2_pal_result_t closed = h2_pal_touch_close(runtime->touch);
-    if (rc == H2_PAL_OK) rc = closed;
+    if (rc == H2_PAL_OK) rc = failure_at(s, "touch_close", closed);
   }
   if (display_open) {
     const int closed = h2_pal_display_close(runtime->display);
-    if (rc == H2_PAL_OK) rc = closed;
+    if (rc == H2_PAL_OK) rc = failure_at(s, "display_close", closed);
   }
   h2_fruit_slice_sprites_destroy(s->sprites);
   h2_pal_mem_free(allocator, s->static_layer);

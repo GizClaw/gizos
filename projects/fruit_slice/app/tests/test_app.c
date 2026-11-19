@@ -26,7 +26,8 @@
 
 typedef struct fake_display {
   h2_display_info_t info;
-  int open_result;
+  int open_result, draw_result, present_result;
+  unsigned fail_from_frame;
   int opened, open_calls, close_calls;
   size_t draws, presents, rows_drawn, pixels_drawn, full_frames;
   uint32_t brightness;
@@ -64,6 +65,11 @@ typedef struct fixture {
   unsigned autoplay_from, autoplay_until, autoplay_pause_from,
       autoplay_pause_until, reveal_until;
   uint64_t clock_ms;
+  int clock_error;
+  uint64_t clock_fail_after_ms;
+  unsigned failure_count;
+  bool failure_before_close;
+  char failure_message[224];
   uint32_t seed;
   uint32_t earned_fruit_credit;
   const char* capture_name;
@@ -85,6 +91,24 @@ typedef struct fixture {
 } fixture_t;
 
 static fixture_t fx;
+
+static int capture_log(void* user, h2_pal_log_level_t level, const char* scope,
+                       const char* message) {
+  (void)user;
+  const char prefix[] = "H2_FRUIT_SLICE_FAILURE ";
+  if (scope != NULL && !strcmp(scope, "fruit-slice") &&
+      !strncmp(message, prefix, sizeof(prefix) - 1u)) {
+    CHECK(level == H2_PAL_LOG_ERROR);
+    ++fx.failure_count;
+    (void)snprintf(fx.failure_message, sizeof(fx.failure_message), "%s",
+                   message);
+    fx.failure_before_close = fx.display.opened && fx.touch.opened;
+  }
+  return h2_pal_log_write(h2_desktop_platform_log_api(), level, scope, message);
+}
+static const h2_pal_log_vtable_t capture_log_vtable = {.write = capture_log};
+static const h2_pal_log_api_t captured_log = {.vtable = &capture_log_vtable};
+
 static struct {
   uint8_t saved[H2_FRUIT_SLICE_PROGRESS_BYTES];
   uint8_t staged[H2_FRUIT_SLICE_PROGRESS_BYTES];
@@ -212,6 +236,8 @@ static int display_draw(void* user, const h2_display_rect_t* rect,
                         h2_display_pixel_format_t format) {
   fake_display_t* d = user;
   CHECK(d->opened);
+  if (d->draw_result != H2_PAL_OK && fx.frames >= d->fail_from_frame)
+    return d->draw_result;
   CHECK(format == H2_DISPLAY_PIXEL_RGB565);
   /* Partial rectangles start and end on even columns. */
   CHECK(rect->x >= 0 && rect->width > 0 && rect->x % 2 == 0 &&
@@ -235,6 +261,8 @@ static int display_present(void* user) {
   fake_display_t* d = user;
   CHECK(d->opened);
   ++d->presents;
+  if (d->present_result != H2_PAL_OK && fx.frames >= d->fail_from_frame)
+    return d->present_result;
   if (fx.paced_clock) fx.clock_ms += fx.present_cost_ms;
   return H2_PAL_OK;
 }
@@ -547,6 +575,8 @@ static void reset(unsigned exit_after) {
 
 static h2_pal_result_t accelerated_clock(void* user, uint64_t* out_ms) {
   (void)user;
+  if (fx.clock_error != H2_PAL_OK && fx.clock_ms >= fx.clock_fail_after_ms)
+    return fx.clock_error;
   if (!fx.paced_clock) fx.clock_ms += 10u;
   *out_ms = fx.clock_ms;
   return H2_PAL_OK;
@@ -583,7 +613,7 @@ static h2_pal_result_t run(void) {
   config.chip = "host";
   config.firmware_info = h2_pal_unsupported_firmware_info_api();
   config.mem = &fx.mem_api;
-  config.log = h2_desktop_platform_log_api();
+  config.log = &captured_log;
   config.time = fx.fast_clock || fx.paced_clock ? &time_api : real_time;
   config.timer = h2_pal_unsupported_timer_api();
   config.task = fx.task_override != NULL ? fx.task_override
@@ -710,6 +740,9 @@ static void test_persistent_touch_failure(void) {
   CHECK(run() == H2_PAL_ERR_IO);
   CHECK(fx.frames == 30u);
   CHECK(fx.touch.close_calls == 1);
+  CHECK(fx.failure_count == 1u && fx.failure_before_close);
+  CHECK(strstr(fx.failure_message, "op=touch_poll rc=-4") != NULL);
+  CHECK(strstr(fx.failure_message, "touch_failures=30") != NULL);
 }
 
 static void test_ready_failure_stops(void) {
@@ -2251,7 +2284,56 @@ static void test_background_sqlite_save(unsigned failure, bool hold_cards) {
   h2_sqlite_destroy(storage);
 }
 
+static void test_terminal_failure_markers(void) {
+  reset(10u);
+  fx.display.fail_from_frame = 5u;
+  fx.display.draw_result = H2_PAL_ERR_TIMEOUT;
+  CHECK(run() == H2_PAL_ERR_TIMEOUT);
+  CHECK(fx.failure_count == 1u && fx.failure_before_close);
+  CHECK(strstr(fx.failure_message, "op=display_draw rc=-6") != NULL);
+  CHECK(strstr(fx.failure_message, "phase=0 frames=4") != NULL);
+  CHECK(strstr(fx.failure_message, "size=480x480") != NULL);
+  CHECK(fx.display.close_calls == 1 && fx.touch.close_calls == 1);
+
+  reset(10u);
+  fx.display.fail_from_frame = 5u;
+  fx.display.present_result = H2_PAL_ERR_TIMEOUT;
+  CHECK(run() == H2_PAL_ERR_TIMEOUT);
+  CHECK(fx.failure_count == 1u && fx.failure_before_close);
+  CHECK(strstr(fx.failure_message, "op=display_present rc=-6") != NULL);
+  CHECK(strstr(fx.failure_message, "phase=0 frames=4") != NULL);
+  CHECK(fx.display.close_calls == 1 && fx.touch.close_calls == 1);
+
+  reset(40u);
+  fx.touch.poll_error = H2_PAL_ERR_TIMEOUT;
+  CHECK(run() == H2_PAL_ERR_TIMEOUT);
+  CHECK(fx.failure_count == 1u && fx.failure_before_close);
+  CHECK(strstr(fx.failure_message, "op=touch_poll rc=-6") != NULL);
+  CHECK(strstr(fx.failure_message, "touch_failures=30") != NULL);
+
+  reset(20u);
+  fx.paced_clock = true;
+  fx.clock_error = H2_PAL_ERR_TIMEOUT;
+  fx.clock_fail_after_ms = 100u;
+  CHECK(run() == H2_PAL_ERR_TIMEOUT);
+  CHECK(fx.failure_count == 1u && fx.failure_before_close);
+  CHECK(strstr(fx.failure_message, "op=clock_wait rc=-6") != NULL);
+
+  reset(10u);
+  fx.ready_result = H2_PAL_ERR_TIMEOUT;
+  CHECK(run() == H2_PAL_ERR_TIMEOUT);
+  CHECK(fx.failure_count == 1u && fx.failure_before_close);
+  CHECK(strstr(fx.failure_message, "op=ready rc=-6") != NULL);
+
+  /* Normal empty Runtime waits return TIMEOUT; they are not run failures. */
+  reset(8u);
+  fx.paced_clock = true;
+  CHECK(run() == H2_PAL_OK);
+  CHECK(fx.clock_ms >= 200u && fx.failure_count == 0u);
+}
+
 int main(void) {
+  test_terminal_failure_markers();
   test_background_sqlite_save(0u, false);
   test_background_sqlite_save(0u, true);
   for (unsigned failure = 1u; failure <= 4u; ++failure)
