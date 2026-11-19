@@ -1,0 +1,13 @@
+load("//tools/bazel/firmware:firmware.bzl", "firmware_version")
+
+package(default_visibility = ["//projects/testing:__subpackages__"])
+
+exports_files([
+    "display_bench.c",
+    "display_bench.h",
+])
+
+firmware_version(
+    name = "version",
+    value = "0.1.1-display-bench",
+)
