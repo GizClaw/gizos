@@ -9,7 +9,7 @@ import cairosvg
 from PIL import Image, PngImagePlugin
 
 from service_layers import service_layers
-from cutouts import Cast
+from cutouts import Visitor
 from shop import DEFS, crest, mat, meter, path, group, rect
 
 HERE = Path(__file__).resolve().parent
@@ -49,16 +49,15 @@ def main():
     for name, body, box in [('gauge',meter(False),(0,0,154,29)), ('gauge_full',meter(True),(0,0,154,29)),
                             ('cloth',mat(),(0,0,800,480)), ('mark',crest('#f3ddb0'),(-36,-20,66,40))]:
         save(paint(body, box, (box[2]*2,box[3]*2)), name, 'shop.py / '+name, args.out)
-    cast=Cast(HERE/'painting')
-    sheet = Image.new('RGBA',(9*136,12*192))
-    for kind in range(3):
-        for face in range(4):
-            for pose in range(9):
-                tile=cast.frame(kind,face,pose).resize((136,192),Image.Resampling.LANCZOS)
-                sheet.paste(tile,(pose*136,(kind*4+face)*192))
-    save(sheet,'cast','cutouts.py, four facings and nine poses per diner',args.out)
-    save(cast.frame(0,0,0),'guest','painting/visitor/front.png, welcome pose',args.out)
-    save(cast.frame(0,0,7),'rest','painting/visitor/savor-right.png, resting pose',args.out)
+    visitor=Visitor(HERE/'service'/'stations'/'player')
+    sheet = Image.new('RGBA',(9*128,4*144))
+    for face in range(4):
+        for pose in range(9):
+            tile=visitor.frame(face,pose).resize((128,144),Image.Resampling.LANCZOS)
+            sheet.paste(tile,(pose*128,face*144))
+    save(sheet,'cast','stations/player, four directions and a common sole anchor',args.out)
+    save(visitor.frame(0,0),'guest','stations/player/front.png',args.out)
+    save(visitor.frame(1,7),'rest','stations/player/savor.png',args.out)
     triptych=Image.open(HERE/'painting'/'collectibles.png').convert('RGBA')
     # Ema-size collector prints, each with an illustrated subject and its
     # own plate glaze. Text remains live in both languages outside the art.

@@ -1,19 +1,15 @@
-"""Prepare the restaurant's independent painted layers and dish mipmaps."""
+"""Export the three sushi tables and their menu at the game's display density."""
 from array import array
-from pathlib import Path
 import struct
 import sys
 import zlib
-
-from PIL import Image, ImageOps
+from PIL import Image
 
 NAMES = ('salmon', 'tamago', 'tuna', 'shrimp', 'maki', 'inari')
 DITHER = (0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5)
 
 
 def rgb565(image):
-    # Dither only at the final pixel density, with the same threshold for
-    # each colour channel to keep the sunlit timber and glaze neutral.
     image = image.convert('RGB')
     words = array('H')
     for i, (r, g, b) in enumerate(image.getdata()):
@@ -37,32 +33,26 @@ def texture(image, out, name, size=None):
 
 
 def service_layers(source, out):
-    room = source / 'room'
-    floor = Image.open(room/'architecture.png')
+    stations = source/'stations'
+    floor = Image.open(stations/'room.png')
     if floor.size != (1600, 960):
-        raise ValueError('the room must match the native framebuffer')
+        raise ValueError('The room must use the native framebuffer extent.')
     (out/'room.rgb565z').write_bytes(zlib.compress(rgb565(floor), 9))
-    for name, path, size in (
-        ('counter', 'island.png', None), ('counter_shade', 'island-shadow.png', None),
-        ('steel', 'belt-slat.png', None), ('mat', 'props/mat.png', (404, 124)),
-        ('yuzu', 'props/yuzu.png', (134, 162)), ('tea', 'props/tea.png', (86, 48)),
-        ('condiments', 'props/condiments.png', (84, 62)),
-        ('booth', 'props/booth.png', (260, 226)),
-    ):
-        texture(Image.open(room/path), out, name, size)
-
-    menu = source/'menu'
-    texture(Image.open(menu/'ground'/'plate-shadow.png'), out, 'plate_shade', (160, 104))
+    for name in ('wave','leaf','sun','shadow'):
+        key = 'table_shadow' if name == 'shadow' else name
+        texture(Image.open(stations/'tables'/f'{name}.png'),out,key,(320,220))
+    for name in ('next', 'fullness', 'clock-bg', 'clock', 'plates', 'arrival', 'berth', 'selected', 'wave', 'leaf', 'sun'):
+        texture(Image.open(stations/'hud'/f'{name}.png'),out,'hud_'+name.replace('-','_'))
+    menu = stations/'menu'
+    texture(Image.open(menu/'plate-shadow.png'),out,'plate_shade',(128,102))
     for name in NAMES:
         plate = Image.open(menu/'ceramics'/f'{name}.png').convert('RGBA')
         ingredient = Image.open(menu/'ingredients'/f'{name}.png').convert('RGBA')
         plated = plate.copy()
-        plated.alpha_composite(Image.open(menu/'food-contact'/f'{name}.png').convert('RGBA'))
+        plated.alpha_composite(Image.open(menu/'contact'/f'{name}.png').convert('RGBA'))
         plated.alpha_composite(ingredient)
-        texture(plated, out, name)
-        texture(plated, out, name+'_belt', (160, 104))
-        texture(plate, out, name+'_cleared', (160, 104))
-        # A food-only cutout travels from the serving to the character's hand.
-        texture(ingredient.crop(ingredient.getbbox()), out, name+'_bite', (80, 48))
-        if name == 'salmon':
-            texture(plate, out, 'empty')
+        texture(plated,out,name)
+        texture(plated,out,name+'_table',(128,102))
+        texture(Image.open(menu/'held'/f'{name}.png'),out,name+'_bite',(60,44))
+        if name=='salmon':
+            texture(plate,out,'empty')

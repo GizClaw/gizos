@@ -11,15 +11,9 @@ static const uint16_t ink = C(0x273d3c), paper = C(0xf3e3bf),
                       mute = C(0x536457);
 static const bf_paint_t* const detail[] = {&bf_salmon, &bf_tamago, &bf_tuna,
                                            &bf_shrimp, &bf_maki,   &bf_inari};
-static const bf_paint_t* const small[] = {&bf_salmon_belt, &bf_tamago_belt,
-                                          &bf_tuna_belt,   &bf_shrimp_belt,
-                                          &bf_maki_belt,   &bf_inari_belt};
-static const bf_paint_t* const clear[] = {
-    &bf_salmon_cleared, &bf_tamago_cleared, &bf_tuna_cleared,
-    &bf_shrimp_cleared, &bf_maki_cleared,   &bf_inari_cleared};
-static const bf_paint_t* const bites[] = {&bf_salmon_bite, &bf_tamago_bite,
-                                          &bf_tuna_bite,   &bf_shrimp_bite,
-                                          &bf_maki_bite,   &bf_inari_bite};
+static const bf_paint_t* const small[] = {&bf_salmon_table, &bf_tamago_table,
+                                          &bf_tuna_table,   &bf_shrimp_table,
+                                          &bf_maki_table,   &bf_inari_table};
 static const bf_sprite_t* const prints[] = {&bf_card_bite, &bf_card_close,
                                             &bf_card_rest};
 static const bf_text_t card_names[] = {
@@ -27,8 +21,8 @@ static const bf_text_t card_names[] = {
     {"顺利吃到打烊", "Made It to Closing"},
     {"第一次进病房", "First Trip to the Hospital"}};
 static const bf_text_t card_notes[] = {
-    {"在带边吃一份菜，顺利吃到打烊。",
-     "Eat a serving from the belt, then stay until closing."},
+    {"在餐桌旁吃一份菜，顺利吃到打烊。",
+     "Eat a serving at a table, then stay until closing."},
     {"凭票入座，等到餐厅收盘。",
      "Stay for a paid meal until the restaurant closes."},
     {"首次因持续超过危险线而住院。",
@@ -54,16 +48,6 @@ static void dotted(bf_canvas_t c, int x, int end, int y, uint16_t color) {
 static void clock_string(char* s, size_t n, int ms) {
   int t = (ms + 999) / 1000;
   snprintf(s, n, "%d:%02d", t / 60, t % 60);
-}
-static const bf_rect_t island = {136, 168, 528, 140};
-void bf_paint_ground(bf_canvas_t c, bool dining) {
-  if (dining) {
-    memcpy(c.pixels, bf_floor_pixels, sizeof(bf_floor_pixels));
-    bf_layer(c, &bf_mat, (bf_rect_t){299, 412, 202, 62}, false);
-    bf_layer(c, &bf_counter_shade, island, false);
-  } else {
-    bf_image(c, &bf_cloth, 0, 0, 800, 480);
-  }
 }
 static void ticket(bf_canvas_t c) {
   bf_box(c, 482, 59, 280, 376, C(0x244c4b));
@@ -130,233 +114,14 @@ static void foyer(bf_canvas_t c, const bf_game_t* g) {
   bf_text(c, BF_SMALL, 502, 288, mute,
           g->keyboard ? T("点地面或方向键行走，点吃或按空格。",
                           "Walk by tap or arrow keys. Eat with Space.")
-                      : T("点地面行走，在带边点吃。",
-                          "Tap the floor to walk. Eat at the belt."));
+                      : T("点地面行走，靠近餐桌点吃。",
+                          "Tap to walk. Eat beside a table."));
   bf_text(c, BF_SMALL, 502, 311, mute,
           T("米碗白线是吃饱，尖格亮起就歇口。",
             "The white notch is full. Rest at the points."));
   snprintf(s, sizeof(s), T("买票入座   %d 币", "Buy ticket   %d coins"),
            bf_rules.ticket);
   btn(c, bf_ticket_button, clay, s);
-}
-static void hud(bf_canvas_t c, const bf_game_t* g) {
-  char s[64];
-  bf_rect_t tag = {10, 5, 129, 25};
-  slab(c, tag, C(0x4e5143));
-  bf_ellipse(c, 23, 17, 7, 7, C(0xd9bd87), 255);
-  bf_ellipse(c, 23, 17, 5, 5, C(0x4e5143), 255);
-  bf_line(c, 23, 13, 23, 17, light);
-  bf_line(c, 23, 17, 26, 18, light);
-  clock_string(s, sizeof(s), bf_rules.duration_ms - g->elapsed_ms);
-  bf_text(c, BF_BODY, 36, 23, light, s);
-  if (g->tasting) {
-    bf_ellipse(c, 83, 17, 7, 4, C(0xcfddbd), 255);
-    bf_ellipse(c, 83, 16, 5, 2, C(0x839e87), 255);
-    snprintf(s, sizeof(s), "%d/6", g->varieties);
-  } else {
-    bf_ellipse(c, 83, 18, 6, 6, C(0xb18851), 255);
-    bf_ellipse(c, 82, 16, 5, 5, C(0xf1ce85), 255);
-    bf_box(c, 81, 15, 3, 3, C(0x93754d));
-    snprintf(s, sizeof(s), "%d/%d", g->value, bf_rules.ticket);
-  }
-  bf_text(c, BF_SMALL, 94, 22, light, s);
-  /* The bowl lip marks capacity, and the pointed reserve is danger. Fill
-   * uses the same continuous value as digestion, with a short bite rise. */
-  int gx = 637, gy = 2;
-  bf_image(c, &bf_gauge, gx, gy, 154, 29);
-  int fill = (int)(112 * fminf(1, g->gauge_milli / 160000.f));
-  if (fill > 0) {
-    bf_rect_t r = {72, 16, fill * 2, 28};
-    bf_blit(c, &bf_gauge_full, r, (bf_rect_t){gx + 36, gy + 8, fill, 14});
-  }
-  if (g->bite_ms > 470) {
-    int tip = gx + 36 + fill;
-    bf_box(c, tip - 1, gy + 10, 1, 9, C(0xf7e4ae));
-  }
-  if (g->fullness_milli > bf_rules.red_line * 1000) {
-    snprintf(s, sizeof(s),
-             T("停口休息   %d 秒后送医", "Rest now   Hospital in %ds"),
-             (bf_rules.tolerance_ms - g->red_ms + 999) / 1000);
-    int w = bf_width(c.en, BF_SMALL, s) + 22;
-    slab(c, (bf_rect_t){788 - w, 35, w, 23}, C(0x903e30));
-    right(c, BF_SMALL, 777, 51, light, s);
-  } else if (g->recovered_ms) {
-    const char* msg = T("已经脱险", "All clear");
-    int w = bf_width(c.en, BF_SMALL, msg) + 20;
-    slab(c, (bf_rect_t){788 - w, 35, w, 22}, sea);
-    right(c, BF_SMALL, 778, 50, light, msg);
-  }
-}
-static void person(bf_canvas_t c, const bf_game_t* g, const bf_actor_t* a,
-                   int kind) {
-  int x = (int)lroundf(a->pos.x), y = (int)lroundf(a->pos.y);
-  float size = .85f + fminf(.22f, fmaxf(0, (a->pos.y - 145.f) / 680.f));
-  int w = (int)(68 * size), h = (int)(96 * size);
-  int pose = a->walking ? 1 + (int)a->stride % 4
-                        : (a->face == BF_DOWN &&
-                                   (g->ambient_ms + kind * 680) % 4200 > 4050
-                               ? 8
-                               : 0);
-  if (!kind && a->walking && g->turn_ms &&
-      (a->face == BF_RIGHT || a->face == BF_LEFT))
-    pose = 8;
-  if (!kind && g->bite_ms)
-    pose = g->bite_ms > 494 ? 5 : g->bite_ms > 220 ? 6 : 7;
-  if (!kind && g->turn_ms) w -= (int)(4 * sinf(g->turn_ms * 3.14159f / 115.f));
-  bf_face_t face = !kind && g->bite_ms && a->face == BF_UP ? BF_RIGHT : a->face;
-  bf_ellipse(c, x + 3, y + 2, (int)(13 * size), (int)(4 * size), C(0x705640),
-             63);
-  bf_ellipse(c, x + 1, y + 1, (int)(8 * size), 2, C(0x51443a), 63);
-  int breath = !a->walking && sinf(g->ambient_ms * .0034f + kind) > 0;
-  bf_blit(c, &bf_cast,
-          (bf_rect_t){pose * 136, (kind * 4 + (int)face) * 192, 136, 192},
-          (bf_rect_t){x - w / 2, y - (int)(89 * size) + breath, w, h - breath});
-  if (!kind && g->elapsed_ms < 3100 && !g->eaten) {
-    int top = y - (int)(86 * size) - 7;
-    bf_line(c, x - 3, top - 2, x, top + 1, C(0x733f31));
-    bf_line(c, x, top + 1, x + 3, top - 2, C(0x733f31));
-    bf_box(c, x - 2, top - 3, 5, 2, C(0xffdc8c));
-  }
-}
-static void lit_rim(bf_canvas_t c, int x, int y, int width, int height) {
-  const float rx = width * .47f, ry = height * .28f;
-  int px = x + (int)rx, py = y;
-  for (int i = 1; i <= 48; i++) {
-    const float angle = i * .130899694f;
-    int nx = x + (int)lroundf(rx * cosf(angle)),
-        ny = y + (int)lroundf(ry * sinf(angle));
-    bf_line(c, px, py + 1, nx, ny + 1, C(0x665540));
-    bf_line(c, px, py, nx, ny, C(0xffe1a2));
-    px = nx;
-    py = ny;
-  }
-}
-static void plates(bf_canvas_t c, const bf_game_t* g, int near, bool front) {
-  for (int i = 0; i < BF_SLOTS; i++) {
-    bf_place_t b = bf_place(g, i);
-    if ((b.pos.y >= 225) != front) continue;
-    float depth = (b.pos.y - 194) / 62.f;
-    int x = (int)lroundf(b.pos.x), y = (int)lroundf(b.pos.y);
-    int w = 43 + (int)lroundf(depth * 5), h = 28 + (int)lroundf(depth * 3);
-    bf_rect_t bounds = {x - w / 2, y - (h * 300 + 208) / 416, w, h};
-    bf_layer(c, &bf_plate_shade, bounds, false);
-    if (i == near) lit_rim(c, x, y - h * 50 / 416, w, h);
-    int d = bf_serving(g, i);
-    bf_layer(c, g->empty[i] ? clear[d] : small[d], bounds, false);
-    if (i == near) {
-      int tip = y + 7 + (int)lroundf(sinf(g->ambient_ms * .006f));
-      bf_line(c, x - 3, tip + 3, x, tip, C(0x5e4d38));
-      bf_line(c, x, tip, x + 3, tip + 3, C(0x5e4d38));
-      bf_line(c, x - 3, tip + 2, x, tip - 1, C(0xffdf94));
-      bf_line(c, x, tip - 1, x + 3, tip + 2, C(0xffdf94));
-    }
-  }
-}
-static void service_tag(bf_canvas_t c, const bf_game_t* g, int near) {
-  if (near < 0 && !g->bite_ms) return;
-  int d = g->bite_ms ? g->last_dish : bf_serving(g, near);
-  char s[64];
-  const char* dish = local(c, bf_menu[d].name);
-  int w = bf_width(c.en, BF_BODY, dish);
-  if (w < 114) w = 114;
-  int x = 685 - w - 53;
-  slab(c, (bf_rect_t){x, 415, w + 51, 46}, C(0xf2e1b9));
-  bf_layer(c, small[d], (bf_rect_t){x + 2, 423, 45, 30}, false);
-  bf_text(c, BF_BODY, x + 48, 434, ink, dish);
-  snprintf(s, sizeof(s), T("%d 币   饱腹 +%d%%", "%d coins   +%d%% full"),
-           bf_menu[d].coins, bf_menu[d].fullness);
-  bf_text(c, BF_SMALL, x + 49, 453, mute, s);
-  btn(c, bf_eat_button, g->bite_ms ? C(0x62746a) : clay,
-      g->bite_ms ? T("品尝中", "Tasting") : T("吃这盘", "Eat plate"));
-}
-static void pick_up(bf_canvas_t c, const bf_game_t* g) {
-  if (!g->bite_ms || g->last_dish < 0) return;
-  float age = (float)(680 - g->bite_ms);
-  if (age > 420) return;
-  /* The plate starts its empty return immediately. Its food follows the
-   * player's palm, contacts the mouth on the audible bite frame, and settles.
-   */
-  float t = fminf(1.f, age / 185.f), travel = t * t * (3.f - 2.f * t);
-  float size = .85f + fminf(.22f, fmaxf(0, (g->player.pos.y - 145.f) / 680.f));
-  bool left = g->player.face == BF_LEFT;
-  float hand_x = g->player.pos.x + (left ? -9.5f : 9.5f) * size;
-  float hand_y = g->player.pos.y - 55.8f * size;
-  float x = g->bite_source.x + (hand_x - g->bite_source.x) * travel;
-  float y = g->bite_source.y - 8 + (hand_y - g->bite_source.y + 8) * travel -
-            11 * sinf(t * 3.14159f);
-  float settle = fminf(1.f, fmaxf(0, (age - 340) / 80));
-  int w = (int)lroundf((26 - 14 * travel) * (1 - .65f * settle));
-  int h = (int)lroundf((14 - 6.5f * travel) * (1 - .65f * settle));
-  bf_layer(c, bites[g->last_dish],
-           (bf_rect_t){(int)lroundf(x) - w / 2, (int)lroundf(y) - h / 2, w, h},
-           left);
-}
-
-typedef struct {
-  int foot;
-  const bf_paint_t* paint;
-  bf_rect_t bounds;
-  bool mirror;
-} furniture_t;
-/* The service island occupies its own depth position between both aisles.
- * Its top is composed in the same order a diner sees across the belt. */
-static void draw_island(bf_canvas_t c, const bf_game_t* g, int near) {
-  bf_layer(c, &bf_counter, island, false);
-  bf_steel_track(c, g->elapsed_ms);
-  plates(c, g, near, false);
-  bf_layer(c, &bf_condiments, (bf_rect_t){287, 197, 42, 31}, false);
-  bf_layer(c, &bf_tea, (bf_rect_t){477, 209, 43, 24}, false);
-  plates(c, g, near, true);
-}
-static void dining(bf_canvas_t c, const bf_game_t* g) {
-  const bf_actor_t* actors[] = {&g->player, &g->diners[0], &g->diners[1]};
-  int order[] = {0, 1, 2};
-  for (int i = 1; i < 3; i++)
-    for (int j = i;
-         j > 0 && actors[order[j]]->pos.y < actors[order[j - 1]]->pos.y; j--) {
-      int old = order[j];
-      order[j] = order[j - 1];
-      order[j - 1] = old;
-    }
-  int near = bf_nearest(g);
-  if (g->route_at < g->route_len) {
-    bf_point_t d = g->route[g->route_len - 1];
-    bf_ellipse(c, (int)d.x, (int)d.y, 6, 3, C(0x47786b), 172);
-    bf_ellipse(c, (int)d.x, (int)d.y, 3, 1, light, 255);
-  }
-  static const furniture_t furniture[] = {
-      {227, &bf_booth, {696, 139, 106, 92}, true},
-      {238, NULL, {0, 0, 0, 0}, false},
-      {311, &bf_booth, {-32, 219, 103, 88}, false},
-      {424, &bf_yuzu, {6, 344, 67, 81}, false},
-      {431, &bf_booth, {693, 323, 130, 113}, true}};
-  int next = 0;
-  for (size_t i = 0; i < sizeof(furniture) / sizeof(furniture[0]); i++) {
-    const furniture_t* prop = &furniture[i];
-    while (next < 3 && actors[order[next]]->pos.y < prop->foot) {
-      int k = order[next++];
-      person(c, g, actors[k], k);
-    }
-    if (prop->paint)
-      bf_layer(c, prop->paint, prop->bounds, prop->mirror);
-    else
-      draw_island(c, g, near);
-  }
-  while (next < 3) {
-    int k = order[next++];
-    person(c, g, actors[k], k);
-  }
-  pick_up(c, g);
-  if (g->feedback_ms && g->last_dish >= 0) {
-    char s[16];
-    snprintf(s, sizeof(s), "+%d", bf_menu[g->last_dish].coins);
-    int x = (int)g->player.pos.x + 17,
-        y = (int)g->player.pos.y - 56 - (1020 - g->feedback_ms) / 100;
-    bf_text(c, BF_SMALL, x + 1, y + 1, C(0x6c4a36), s);
-    bf_text(c, BF_SMALL, x, y, C(0xffe2a0), s);
-  }
-  hud(c, g);
-  service_tag(c, g, near);
 }
 static void row(bf_canvas_t c, int y, const char* name, int value,
                 bool signed_value) {
@@ -405,7 +170,7 @@ static void receipt(bf_canvas_t c, const bf_game_t* g) {
   btn(c, bf_ticket_button, clay,
       revealing ? T("收下新卡", "Collect cards") : T("再来一局", "Play again"));
   bf_ellipse(c, 157, 287, 66, 9, C(0x163d3c), 82);
-  bf_image(c, hospital ? &bf_rest : &bf_guest, 72, 73, 164, 232);
+  bf_image(c, hospital ? &bf_rest : &bf_guest, 44, 82, 207, 232);
   bf_text(c, BF_HEAD, 239, 130, light,
           hospital ? T("这顿吃撑了", "A little too full")
                    : T("打烊收盘", "Last plates home"));
@@ -516,7 +281,7 @@ void bf_paint_scene(bf_canvas_t c, const bf_game_t* g) {
   if (g->album.open)
     album(c, g);
   else if (g->phase == BF_DINING)
-    dining(c, g);
+    bf_paint_dining(c, g);
   else if (g->phase == BF_TICKET)
     foyer(c, g);
   else

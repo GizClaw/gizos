@@ -18,7 +18,6 @@ void bf_line(bf_canvas_t c, int x1, int y1, int x2, int y2, uint16_t color);
 void bf_blit(bf_canvas_t c, const bf_sprite_t* s, bf_rect_t src, bf_rect_t dst);
 void bf_layer(bf_canvas_t c, const bf_paint_t* layer, bf_rect_t dst,
               bool mirrored);
-void bf_steel_track(bf_canvas_t c, int elapsed_ms);
 void bf_image(bf_canvas_t c, const bf_sprite_t* image, int x, int y, int w,
               int h);
 int bf_text(bf_canvas_t c, bf_size_t size, int x, int baseline, uint16_t color,

@@ -95,25 +95,6 @@ void bf_layer(bf_canvas_t c, const bf_paint_t* layer, bf_rect_t dst,
   }
 }
 
-/* The registered UV runs visit the steel ribbon in display coordinates.
- * All 64 links revolve with the same fractional lap as the plate slots. */
-void bf_steel_track(bf_canvas_t c, int elapsed_ms) {
-  unsigned phase =
-      (unsigned)(((uint64_t)elapsed_ms * 64 * 128 + bf_rules.lap_ms / 2) /
-                 bf_rules.lap_ms);
-  const uint16_t* run = bf_belt_runs;
-  for (unsigned i = 0; i < bf_belt_run_count; i++) {
-    int y = *run++, x = *run++, length = *run++;
-    uint16_t* dst = c.pixels + (y + 168 * D) * W + x + 136 * D;
-    for (int p = 0; p < length; p++) {
-      unsigned uv = *run++;
-      unsigned texel = (uv & 0xf80u) | ((uv - phase) & 127u);
-      unsigned alpha = (bf_steel.alpha[texel] * (uv >> 12) + 7u) / 15u;
-      if (alpha) dst[p] = blend(dst[p], bf_steel.rgb[texel], alpha);
-    }
-  }
-}
-
 void bf_image(bf_canvas_t c, const bf_sprite_t* s, int x, int y, int w, int h) {
   bf_blit(c, s, (bf_rect_t){0, 0, s->w, s->h}, (bf_rect_t){x, y, w, h});
 }

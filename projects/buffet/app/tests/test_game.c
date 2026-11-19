@@ -64,56 +64,46 @@ static void clock_and_stomach(void) {
 }
 static void play_and_route(void) {
   bf_game_t g = paid();
-  bf_point_t spawn = g.player.pos;
-  int slot = 0;
-  bf_place_t p = bf_place(&g, slot);
-  CHECK(bf_walkable(p.station));
-  g.player.pos = (bf_point_t){109, 349};
-  bf_action(&g, H2_BUFFET_CONFIRM);
-  CHECK(!g.eaten);
-  bf_tap(&g, p.pos.x, p.pos.y - 6);
+  CHECK(bf_nearest(&g) < 0);
+  bf_place_t p = bf_place(&g, 1);
+  bf_tap(&g, p.pos.x, p.pos.y);
   CHECK(g.eaten == 0 && g.route_len > 0);
-  g.player.pos = p.station;
-  int dish = bf_serving(&g, slot);
-  bf_tap(&g, p.pos.x, p.pos.y - 6);
-  CHECK(g.eaten == 1 && g.empty[slot] && g.varieties == 1);
-  CHECK(g.value == bf_menu[dish].coins &&
-        g.fullness_milli == bf_menu[dish].fullness * 1000);
-  bf_action(&g, H2_BUFFET_CONFIRM);
-  CHECK(g.eaten == 1);
-  bf_step(&g, bf_rules.lap_ms, 0, 0);
-  CHECK(!g.empty[slot] && g.returned == 1 && g.fullness_milli == 0);
-  g.player.pos = spawn;
-  bf_tap(&g, 402, 159);
-  CHECK(g.route_len >= 2);
-  for (int i = 0; i < 650 && g.route_at < g.route_len; i++) {
+  for (int i = 0; i < 220 && g.route_at < g.route_len; i++) {
     bf_step(&g, 33, 0, 0);
     CHECK(bf_walkable(g.player.pos));
   }
-  CHECK(hypotf(g.player.pos.x - 402, g.player.pos.y - 159) < 1);
+  CHECK(bf_can_take(&g, 1) && g.eaten == 0);
+  bf_tap(&g, p.pos.x, p.pos.y);
+  CHECK(g.eaten == 1 && g.returned == 1 && g.settings[1].dish < 0);
+  CHECK(g.value == bf_menu[0].coins &&
+        g.fullness_milli == bf_menu[0].fullness * 1000);
+  bf_action(&g, H2_BUFFET_CONFIRM);
+  CHECK(g.eaten == 1);
+  bf_step(&g, 1000, 0, 0);
+  bf_rect_t table = bf_table_footprint(0);
+  g.player.pos = (bf_point_t){table.x + table.w * .5f, table.y + table.h + 8};
+  for (int i = 0; i < 24; i++) bf_step(&g, 33, 0, -1);
+  CHECK(g.player.pos.y >= table.y + table.h + 6 && bf_walkable(g.player.pos));
+  bf_point_t rear = {table.x + table.w * .5f, table.y - 9};
+  bf_tap(&g, rear.x, rear.y - 24);
+  CHECK(g.route_len >= 2);
+  for (int i = 0; i < 220 && g.route_at < g.route_len; i++) {
+    bf_step(&g, 33, 0, 0);
+    CHECK(bf_walkable(g.player.pos));
+  }
+  CHECK(hypotf(g.player.pos.x - rear.x, g.player.pos.y - rear.y + 24) < 1);
   bf_point_t before = g.player.pos;
   bf_step(&g, 60, 1, 0);
-  CHECK(g.player.pos.x > before.x + 5 && g.player.face == BF_RIGHT);
-  /* A guest occupies the aisle momentarily and the player can move out
-   * again. Advancing time also opens the original route. */
-  bf_step(&g, 1, 0, 0);
-  bf_point_t npc = g.diners[0].pos;
-  g.player.pos = (bf_point_t){npc.x - 24, npc.y};
-  bf_step(&g, 3, 1, 0);
-  CHECK(g.obstructed);
-  bf_step(&g, 40, -1, 0);
-  CHECK(g.player.walking);
+  CHECK(g.player.pos.x > before.x && g.player.face == BF_RIGHT);
   bf_step(&g, bf_rules.duration_ms, 0, 0);
-  CHECK(g.phase == BF_CLOSING);
-  bf_action(&g, H2_BUFFET_CONFIRM);
   CHECK(g.phase == BF_CLOSING);
   bf_step(&g, 700, 0, 0);
   bf_action(&g, H2_BUFFET_CONFIRM);
   CHECK(g.phase == BF_TICKET && g.purse == bf_rules.purse);
   bf_action(&g, H2_BUFFET_LANGUAGE | H2_BUFFET_GOAL);
   bf_action(&g, H2_BUFFET_CONFIRM);
-  CHECK(g.tasting && g.en && g.elapsed_ms == 0 && g.value == 0 &&
-        g.varieties == 0 && g.purse == bf_rules.purse - bf_rules.ticket);
+  CHECK(g.en && g.tasting && g.eaten == 0 && g.elapsed_ms == 0 &&
+        g.purse == bf_rules.purse - bf_rules.ticket);
 }
 static void fonts_and_servings(void) {
   bf_game_t g = paid();
@@ -130,15 +120,17 @@ static void fonts_and_servings(void) {
     CHECK(bf_width(true, BF_HEAD, bf_menu[i].name.en) <= 430);
   }
   unsigned seen = 0;
-  for (int ms = 0; ms < 2 * bf_rules.lap_ms; ms += 47) {
-    g.elapsed_ms = ms;
-    for (int i = 0; i < BF_SLOTS; i++) {
-      int d = bf_serving(&g, i);
+  for (int t = 0; t < BF_TABLES; t++) {
+    CHECK(bf_font_covers(false, BF_SMALL, bf_tables[t].name.zh));
+    for (int i = 0; i < 4; i++) {
+      g.service[t].course = i;
+      int d = bf_next_dish(&g, t);
       CHECK(d >= 0 && d < BF_DISHES);
       seen |= 1u << d;
-      CHECK(bf_walkable(bf_place(&g, i).station));
     }
   }
+  for (int i = 0; i < BF_SLOTS; i++)
+    CHECK(bf_walkable(bf_place(&g, i).station));
   CHECK(seen == (1u << BF_DISHES) - 1);
 }
 int main(void) {

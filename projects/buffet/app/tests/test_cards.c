@@ -115,7 +115,7 @@ int main(void) {
   bf_game_t g;
   bf_init(&g, false);
   bf_action(&g, H2_BUFFET_CONFIRM);
-  g.player.pos = bf_place(&g, 0).station;
+  g.player.pos = bf_place(&g, 1).station;
   bf_action(&g, H2_BUFFET_CONFIRM);
   assert(g.eaten == 1);
   bf_step(&g, bf_rules.duration_ms, 0, 0);

@@ -1,24 +1,25 @@
 ---
 version: 1
-slug: "app-src-buffet-render-c"
-primary_target: "app/src/buffet_render.c"
-related_targets: []
+slug: app-src-buffet-render-c
+primary_target: app/src/buffet_render.c
+related_targets:
+  - app/src/buffet_room.c
 ---
 
 # Tidewheel Sushi
 
-Experience · English and Simplified Chinese · landscape Display/Touch. Buy a ticket, circle the counter, make a local choice and read the bill.
+Experience · one human visitor choosing dishes in a timed sushi buffet. The player's fixed high-angle reference directs the room composition.
 
 ## Direction contract
 
-THESIS — A small working sushi counter seen at two distances. A dish has the same cut, silhouette and glaze in the hand as it has on the belt.
+THESIS — A miniature dining room that you can read from above. Each setting has a real position, a serving time, a dish and a route to its table.
 
-OWN-WORLD — Deep tide-blue shop cloth, persimmon accents, honey cypress boards, celadon footed pottery and indigo brush marks. Warm light comes from the upper left. The house mark is a curling tide and grains of rice.
+OWN-WORLD — Glazed ceramics, small square tiles, wood with visible thickness, deep tide-blue cloth and the house rice mark. The floor, raised tabletops, elbows, plates and slippers follow the same camera.
 
-STORY — Choose a meal goal at the door. Step to either side of the oval with a blue-haired visitor with a cream hoodie and twin ponytails. A passing dish comes into focus. One deliberate bite leaves an empty saucer in motion. Closing tears off the receipt.
+STORY — Buy the ticket. Notice the next serving and its table emblem. Walk around the stands and choose a plate. A successful pickup carries the morsel into the visitor's hands. Finish the meal and collect its prints.
 
-FIRST VIEWPORT — A large salmon plate sits on a patterned cloth at the left. The small brush mark and house name anchor the upper field. The perforated admission ticket on the right holds duration, goal, price and punch. The plated tasting strip lets the player turn through the menu before paying.
+FIRST VIEWPORT — The ticket offers six dish portraits and one admission punch. In play, a succession of small serving slips occupies the upper left. Portions and the rice-bowl meter share the lower left. The round clock sits at the lower right. The main field belongs to the three stations and the visitor.
 
-FORM — Fifth grounded form, a dyer's shop cloth and punched meal ticket, seed:253d02592f2cdd7a. The player lifts, holds, then releases a bite. The other diners borrow the same footfall tempo at different speeds.
+FORM — Brief-pinned high three-quarter dining room, expanding the original house identity, seed:253d02592f2cdd7a. A plate enters from a short lift, lands and leaves a brief glint. A lifted bite follows a low arc into the near hand with the eyes visible. The visitor can interrupt walking and change destination before each bite.
 
 FINISH — unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, DESIGN.md, and every shipping raster carrying its provenance

@@ -28,7 +28,7 @@ static void alarm_edges(void) {
   bf_action(&g, H2_BUFFET_CONFIRM);
   g.fullness_milli = 120010;
   g.red_ms = 6000;
-  g.player.pos = bf_place(&g, 0).station;
+  g.player.pos = bf_place(&g, 1).station;
   bf_sound_state_t before = bf_sound_state(&g);
   bf_step(&g, 33, 0, 0);
   assert(g.fullness_milli == 119944 && g.red_ms == 0);
@@ -101,7 +101,8 @@ int main(void) {
   assert(g.muted);
   bf_action(&g, H2_BUFFET_CONFIRM);
   assert(g.muted && g.phase == BF_DINING);
-  bf_tap(&g, 617, 14);
+  bf_rect_t toggle = bf_sound_bounds(&g);
+  bf_tap(&g, toggle.x + 10, toggle.y + 10);
   assert(!g.muted && !g.eaten);
   return 0;
 }
