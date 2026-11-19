@@ -250,10 +250,18 @@ void bf_award(bf_game_t* g) {
   unsigned earned = g->phase == BF_HOSPITAL  ? 4u
                     : g->phase == BF_CLOSING ? (2u | (g->eaten ? 1u : 0u))
                                              : 0;
-  g->album.fresh = earned & ~g->album.owned;
+  g->album.awaiting = earned & ~g->album.owned;
   g->album.owned |= earned;
-  g->album.selected = first_card(g->album.fresh);
-  g->album.reveal_ms = g->album.reduced_motion ? bf_reveal_duration(g) : 0;
+}
+void bf_confirm_cards(bf_album_t* album, unsigned new_in_store) {
+  unsigned fresh = album->awaiting & new_in_store;
+  album->awaiting = 0;
+  if (!fresh) return;
+  album->fresh = fresh;
+  album->selected = first_card(fresh);
+  album->reveal_ms = (album->reduced_motion || album->open)
+                         ? bf_card_count(fresh) * BF_REVEAL_MS
+                         : 0;
 }
 static void open_album(bf_game_t* g, bool this_meal) {
   g->album.open = true;
@@ -309,7 +317,10 @@ static void eat(bf_game_t* g, int slot) {
   g->empty[slot] = true;
   if (g->bites[dish]++ == 0) g->varieties++;
   g->value += d->coins;
+  const int line = bf_rules.red_line * 1000;
+  const bool was_safe = g->fullness_milli <= line;
   g->fullness_milli += d->fullness * 1000;
+  if (was_safe && g->fullness_milli > line) ++g->red_entries;
   g->eaten++;
   g->last_dish = dish;
   g->route_at = g->route_len;
@@ -347,6 +358,7 @@ void bf_action(bf_game_t* g, unsigned actions) {
       g->album.reveal_ms = bf_reveal_duration(g);
     } else if (g->receipt_ms >= 650) {
       g->phase = BF_TICKET;
+      g->album.awaiting = 0;
       g->purse = bf_rules.purse;
     }
   }

@@ -1,7 +1,11 @@
+#define _DARWIN_C_SOURCE
 #define _POSIX_C_SOURCE 200809L
 #include "buffet_desktop_pref.h"
 #include "h2_buffet.h"
 #include <errno.h>
+#include <fcntl.h>
+#include <sys/file.h>
+#include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -28,8 +32,18 @@ static int mkdir_tree(char* path) {
   }
 }
 
-int buffet_desktop_pref_create(const char* root, h2_sqlite_t** out) {
-  if (!out) return H2_PAL_ERR_INVALID_ARG;
+int buffet_desktop_with_card_lock(int fd, h2_buffet_card_work_fn work,
+                                  void* context) {
+  if (flock(fd, LOCK_EX | LOCK_NB) != 0)
+    return errno == EWOULDBLOCK ? H2_PAL_ERR_WOULD_BLOCK : H2_PAL_ERR_IO;
+  int rc = work(context);
+  return flock(fd, LOCK_UN) == 0 ? rc : H2_PAL_ERR_IO;
+}
+
+int buffet_desktop_pref_create(const char* root, h2_sqlite_t** out,
+                               int* lock_fd) {
+  if (!out || !lock_fd) return H2_PAL_ERR_INVALID_ARG;
+  *lock_fd = -1;
   *out = NULL;
   char directory[PREF_PATH_MAX];
   int length;
@@ -73,6 +87,11 @@ int buffet_desktop_pref_create(const char* root, h2_sqlite_t** out) {
   if (rc != H2_PAL_OK) {
     h2_sqlite_destroy(provider);
     return rc;
+  }
+  *lock_fd = open(directory, O_RDONLY | O_CLOEXEC);
+  if (*lock_fd < 0) {
+    h2_sqlite_destroy(provider);
+    return H2_PAL_ERR_IO;
   }
   *out = provider;
   return H2_PAL_OK;

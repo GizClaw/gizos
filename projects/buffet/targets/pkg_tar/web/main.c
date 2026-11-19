@@ -1,6 +1,7 @@
 /* Web PAL owns the Canvas display and pointer Touch on the browser thread.
  * Key transitions cross to the App's pthread through atomic masks. */
 #include "h2_buffet.h"
+#include "card_lock.h"
 #include "h2_pal_unsupported.h"
 #include "h2_web_platform.h"
 
@@ -107,6 +108,7 @@ int main(void) {
   int rc = h2_runtime_init(&config, &runtime);
   const h2_buffet_config_t game = {
       .poll = poll,
+      .with_card_lock = buffet_web_with_card_lock,
       .reduced_motion = atomic_load(&reduced_motion),
       .keyboard = atomic_load(&fine_pointer)};
   if (rc == H2_PAL_OK) rc = h2_buffet_run(runtime, &game);

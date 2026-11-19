@@ -16,7 +16,8 @@ bf_sound_state_t bf_sound_state(const bf_game_t* g) {
                             g->album.reveal_ms,
                             bf_reveal_duration(g),
                             g->fullness_milli > bf_rules.red_line * 1000,
-                            g->muted};
+                            g->muted,
+                            g->red_entries};
 }
 void bf_mix_emit(bf_mix_t* m, unsigned cue, unsigned delay_ms) {
   if (!m->rate || cue == BF_MUSIC || cue >= BF_SOUND_COUNT) return;
@@ -220,12 +221,17 @@ void bf_audio_update(bf_audio_t* a, bf_sound_state_t old, const bf_game_t* g,
       emit(a, BF_PLATE, 0);
       emit(a, BF_BITE, 185);
     }
-    if (old.red != next.red) emit(a, next.red ? BF_RED : BF_RECOVER, 0);
+    /* Digestion precedes input. A new bite can start another red episode
+     * in the very frame that brought the previous episode to safety. */
+    if (next.red && old.red_entries != next.red_entries)
+      emit(a, BF_RED, 0);
+    else if (old.red && !next.red)
+      emit(a, BF_RECOVER, 0);
   }
   bool settled = old.phase == BF_DINING && next.phase != BF_DINING;
   if (settled && next.phase == BF_CLOSING) emit(a, BF_CLOSE, 0);
   if (next.phase == BF_CLOSING || next.phase == BF_HOSPITAL)
-    card_edges(a, old, next, settled);
+    card_edges(a, old, next, settled || !old.queue);
   if (next.phase == BF_TICKET && old.phase != BF_TICKET) {
     (void)stop(a);
     return;

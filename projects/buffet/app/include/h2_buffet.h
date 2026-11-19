@@ -30,11 +30,19 @@ typedef struct h2_buffet_input {
   bool inactive, close;
 } h2_buffet_input_t;
 
+typedef h2_pal_result_t (*h2_buffet_card_work_fn)(void* context);
+
 typedef struct h2_buffet_config {
   void* user;
   void (*poll)(void* user, h2_buffet_input_t* input);
   bool keyboard;
   bool reduced_motion;
+  /** Optional host serialization for a shared Pref save. Invoke work once
+   * while holding the save's exclusive card lock and return its result, or
+   * return an acquisition error. Both borrows end before this call returns.
+   * A NULL hook selects direct Pref access for an exclusively owned save. */
+  h2_pal_result_t (*with_card_lock)(void* user, h2_buffet_card_work_fn work,
+                                    void* context);
 } h2_buffet_config_t;
 
 /** Run the buffet on the calling thread. Borrow an initialized Runtime and

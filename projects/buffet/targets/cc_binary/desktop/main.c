@@ -7,12 +7,20 @@
 #include "h2_portaudio.h"
 
 #include <stdio.h>
+#include <unistd.h>
 
 typedef struct window {
   h2_sdl3_t* sdl;
   bool inactive;
   bool held[4];
+  int card_lock;
 } window_t;
+
+static int with_card_lock(void* user, h2_buffet_card_work_fn work,
+                          void* context) {
+  window_t* window = user;
+  return buffet_desktop_with_card_lock(window->card_lock, work, context);
+}
 
 static void poll(void* user, h2_buffet_input_t* input) {
   window_t* window = user;
@@ -138,20 +146,27 @@ int main(void) {
                                                 .require_real_devices = 1};
   if (h2_portaudio_create(&speaker_config, &speaker) == H2_PAL_OK)
     config.audio = h2_portaudio_audio(speaker);
-  if (buffet_desktop_pref_create(NULL, &storage) == H2_PAL_OK)
+  if (buffet_desktop_pref_create(NULL, &storage, &window.card_lock) ==
+      H2_PAL_OK)
     config.pref = h2_sqlite_pref_api(storage);
   h2_runtime_t* runtime = NULL;
   int rc = h2_runtime_init(&config, &runtime);
   if (rc == H2_PAL_OK) {
     const h2_buffet_config_t game = {
-        .poll = poll, .user = &window, .keyboard = true};
+        .poll = poll,
+        .user = &window,
+        .keyboard = true,
+        .with_card_lock = storage ? with_card_lock : NULL};
     rc = h2_buffet_run(runtime, &game);
   }
   const int destroyed = runtime != NULL ? h2_runtime_destroy(&runtime) : 0;
   if (destroyed == H2_PAL_OK) {
     h2_sdl3_destroy(window.sdl);
     if (speaker) h2_portaudio_destroy(speaker);
-    if (storage) h2_sqlite_destroy(storage);
+    if (storage) {
+      h2_sqlite_destroy(storage);
+      (void)close(window.card_lock);
+    }
   }
   if (rc != H2_PAL_OK || destroyed != H2_PAL_OK) {
     fprintf(stderr, "buffet: rc=%d destroy=%d\n", rc, destroyed);

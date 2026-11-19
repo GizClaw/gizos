@@ -11,7 +11,7 @@ enum {
   BF_REVEAL_MS = 1000
 };
 typedef struct {
-  unsigned owned, fresh;
+  unsigned owned, fresh, awaiting;
   int reveal_ms, selected;
   bool open, this_meal, reduced_motion, unsaved;
 } bf_album_t;
@@ -52,6 +52,7 @@ typedef struct {
   bool en, tasting, keyboard, muted;
   int cover, elapsed_ms, ambient_ms, receipt_ms, red_ms, recovered_ms,
       fullness_milli, value, purse, eaten, returned;
+  unsigned red_entries;
   int bites[BF_DISHES], varieties, last_dish, bite_ms, turn_ms, feedback_ms;
   bool empty[BF_SLOTS], obstructed;
   bf_actor_t player, diners[2];
@@ -64,6 +65,7 @@ extern const bf_dish_t bf_menu[BF_DISHES];
 extern const bf_rect_t bf_language_button, bf_goal_button, bf_ticket_button,
     bf_eat_button;
 void bf_award(bf_game_t* g);
+void bf_confirm_cards(bf_album_t* album, unsigned new_in_store);
 unsigned bf_visible_cards(const bf_game_t* g);
 int bf_card_position(const bf_game_t* g, int index);
 int bf_card_count(unsigned mask);

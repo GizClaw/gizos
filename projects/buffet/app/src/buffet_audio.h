@@ -34,6 +34,7 @@ typedef struct {
   bf_phase_t phase;
   int eaten, reveal, queue;
   bool red, muted;
+  unsigned red_entries;
 } bf_sound_state_t;
 typedef struct {
   h2_runtime_t* rt;

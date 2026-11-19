@@ -118,7 +118,7 @@ static int run(h2_runtime_t* rt, bf_session_t* s,
   bf_init(&s->game, cfg && cfg->keyboard);
   bf_audio_init(&s->audio, rt, &s->game);
   s->game.album.reduced_motion = cfg && cfg->reduced_motion;
-  (void)bf_cards_sync(rt->pref, &s->game.album, &s->pending_cards);
+  (void)bf_cards_sync(rt->pref, &s->game.album, &s->pending_cards, cfg);
   s->first = true;
   bool inactive = false;
   uint64_t last = 0;
@@ -130,7 +130,7 @@ static int run(h2_runtime_t* rt, bf_session_t* s,
     if (cfg && cfg->poll) cfg->poll(cfg->user, &input);
     if (input.close) {
       if (s->pending_cards)
-        (void)bf_cards_sync(rt->pref, &s->game.album, &s->pending_cards);
+        (void)bf_cards_sync(rt->pref, &s->game.album, &s->pending_cards, cfg);
       return H2_PAL_OK;
     }
     uint64_t now = 0;
@@ -153,10 +153,11 @@ static int run(h2_runtime_t* rt, bf_session_t* s,
     rc = touches(rt, s, accept);
     if (rc != H2_PAL_OK) return rc;
     bool settled = phase == BF_DINING && s->game.phase != BF_DINING;
-    if (settled) s->pending_cards |= s->game.album.fresh;
+    if (settled) s->pending_cards |= s->game.album.awaiting;
     if (settled || (s->pending_cards && now >= s->pref_retry_ms)) {
-      (void)bf_cards_sync(rt->pref, &s->game.album, &s->pending_cards);
-      s->pref_retry_ms = now + 2400;
+      int saved =
+          bf_cards_sync(rt->pref, &s->game.album, &s->pending_cards, cfg);
+      s->pref_retry_ms = now + (saved == H2_PAL_ERR_WOULD_BLOCK ? 50u : 2400u);
     }
     bf_audio_update(&s->audio, sound, &s->game, now, input.inactive);
     if (s->first || sound.muted != s->game.muted || s->game.phase != phase ||
@@ -164,6 +165,7 @@ static int run(h2_runtime_t* rt, bf_session_t* s,
         album.this_meal != s->game.album.this_meal ||
         album.selected != s->game.album.selected ||
         album.reveal_ms != s->game.album.reveal_ms ||
+        album.fresh != s->game.album.fresh ||
         album.unsaved != s->game.album.unsaved || en != s->game.en ||
         tasting != s->game.tasting ||
         (s->game.phase == BF_DINING && !input.inactive)) {

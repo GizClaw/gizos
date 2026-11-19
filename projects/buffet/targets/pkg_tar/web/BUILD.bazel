@@ -15,7 +15,11 @@ _HOST = select({
 
 cc_binary(
     name = "_wasm/index",
-    srcs = ["main.c"],
+    srcs = [
+        "card_lock.c",
+        "card_lock.h",
+        "main.c",
+    ],
     additional_linker_inputs = ["shell.html"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
