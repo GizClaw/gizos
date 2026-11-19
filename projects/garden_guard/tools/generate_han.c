@@ -47,6 +47,45 @@ static void print_rows(const uint32_t* rows, unsigned side) {
   }
 }
 
+/* The cover title and controls use their own 4-bit master bitmaps. */
+static bool print_cover(FT_Face face, const char* name, unsigned side,
+                        const unsigned* glyphs, size_t count) {
+  printf("static const uint8_t %s[%zu][%u] = {\n", name, count,
+         side * side / 2u);
+  for (size_t i = 0; i < count; ++i) {
+    if (FT_Set_Pixel_Sizes(face, 0, side) ||
+        FT_Load_Char(face, glyphs[i], FT_LOAD_RENDER | FT_LOAD_NO_HINTING))
+      return false;
+    const FT_Bitmap* b = &face->glyph->bitmap;
+    if (b->width > side || b->rows > side || b->pitch < 0 ||
+        b->pixel_mode != FT_PIXEL_MODE_GRAY)
+      return false;
+    const unsigned top = (side - b->rows) / 2u;
+    const unsigned left = (side - b->width) / 2u;
+    uint8_t packed[32u * 32u / 2u] = {0};
+    for (unsigned y = 0; y < b->rows; ++y) {
+      for (unsigned x = 0; x < b->width; ++x) {
+        const unsigned pixel = (top + y) * side + left + x;
+        const unsigned coverage =
+            (b->buffer[y * (unsigned)b->pitch + x] * 15u + 127u) / 255u;
+        packed[pixel / 2u] |= (uint8_t)(coverage << ((pixel & 1u) * 4u));
+      }
+    }
+    printf("    { /* U+%04X */\n", glyphs[i]);
+    for (unsigned j = 0; j < side * side / 2u; ++j) {
+      if (j % 12u == 0u) fputs("      ", stdout);
+      printf("0x%02xu,", (unsigned)packed[j]);
+      if (j % 12u == 11u || j + 1u == side * side / 2u)
+        putchar('\n');
+      else
+        putchar(' ');
+    }
+    puts("    },");
+  }
+  puts("};");
+  return true;
+}
+
 int main(int argc, char** argv) {
   if (argc != 3) return 2;
   FILE* input = fopen(argv[2], "rb");
@@ -110,7 +149,11 @@ int main(int argc, char** argv) {
     puts("}},");
   }
   puts("};");
+  static const unsigned title[] = {0x690du, 0x7269u, 0x5b88u, 0x536bu};
+  static const unsigned start[] = {0x5f00u, 0x59cbu, 0x6e38u, 0x620fu};
+  const bool cover = print_cover(face, "k_cover_title", 32u, title, 4u) &&
+                     print_cover(face, "k_cover_start", 18u, start, 4u);
   FT_Done_Face(face);
   FT_Done_FreeType(library);
-  return ferror(stdout) ? EXIT_FAILURE : EXIT_SUCCESS;
+  return !cover || ferror(stdout) ? EXIT_FAILURE : EXIT_SUCCESS;
 }

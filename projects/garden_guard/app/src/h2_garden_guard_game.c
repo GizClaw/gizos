@@ -660,14 +660,14 @@ h2_garden_guard_rect_t h2_garden_guard_action_rect(
     const h2_garden_guard_layout_t* l, h2_garden_guard_action_t action) {
   switch (action) {
     case H2_GARDEN_GUARD_ACTION_START:
-      return menu_rect(l, 148.0f, 264.0f, 184.0f, 34.0f);
+      return menu_rect(l, 157.0f, 250.0f, 166.0f, 38.0f);
     case H2_GARDEN_GUARD_ACTION_PAUSE: {
       const float width = fminf(68.0f, (float)l->width * 0.145f);
       return (h2_garden_guard_rect_t){(float)l->width - width - l->card_y,
                                       l->card_y, width, l->card_h};
     }
     case H2_GARDEN_GUARD_ACTION_LANGUAGE:
-      return menu_rect(l, 390.0f, 5.0f, 84.0f, 32.0f);
+      return menu_rect(l, 398.0f, 6.0f, 74.0f, 29.0f);
     case H2_GARDEN_GUARD_ACTION_RESUME:
       return menu_rect(l, 126.0f, 106.0f, 228.0f, 42.0f);
     case H2_GARDEN_GUARD_ACTION_PAUSE_LANGUAGE:
@@ -690,7 +690,7 @@ h2_garden_guard_rect_t h2_garden_guard_menu_tab(
     const h2_garden_guard_layout_t* l, bool result, unsigned tab) {
   if (result)
     return menu_rect(l, tab == 0u ? 55.0f : 243.0f, 278.0f, 182.0f, 28.0f);
-  return menu_rect(l, tab == 0u ? 28.0f : 344.0f, 267.0f, 108.0f, 28.0f);
+  return menu_rect(l, tab == 0u ? 135.0f : 246.0f, 291.0f, 99.0f, 26.0f);
 }
 
 h2_garden_guard_rect_t h2_garden_guard_menu_back(

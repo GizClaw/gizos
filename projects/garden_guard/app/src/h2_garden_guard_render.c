@@ -2022,47 +2022,105 @@ static void draw_collection(h2_garden_guard_canvas_t* canvas,
   }
 }
 
+static void cover_type(h2_garden_guard_canvas_t* canvas, const uint8_t* glyphs,
+                       unsigned side, float cx, float cy, float scale,
+                       uint16_t color) {
+  const float gap = side >= 24u ? 2.0f : 1.0f;
+  const float width = (4.0f * (float)side + 3.0f * gap) * scale;
+  const float x = cx - width * 0.5f, y = cy - (float)side * scale * 0.5f;
+  region_t bounds;
+  if (!region_begin(canvas, x, y, x + width, y + (float)side * scale, &bounds))
+    return;
+  const unsigned pitch = side * side / 2u;
+  const float advance = (float)side + gap;
+  for (int32_t py = bounds.y0; py < bounds.y1; ++py) {
+    const int32_t sy = (int32_t)floorf(((float)py + 0.5f - y) / scale);
+    if (sy < 0 || (unsigned)sy >= side) continue;
+    uint16_t* row = row_at(canvas, py);
+    for (int32_t px = bounds.x0; px < bounds.x1; ++px) {
+      const float u = ((float)px + 0.5f - x) / scale;
+      const unsigned glyph = (unsigned)fmaxf(0.0f, floorf(u / advance));
+      const int32_t sx = (int32_t)floorf(u - (float)glyph * advance);
+      if (glyph >= 4u || sx < 0 || (unsigned)sx >= side) continue;
+      const unsigned i = (unsigned)sy * side + (unsigned)sx;
+      const uint8_t packed = glyphs[glyph * pitch + i / 2u];
+      const uint32_t alpha = (packed >> ((i & 1u) * 4u)) & 15u;
+      if (alpha != 0u) plot(canvas, row, NULL, px, color, alpha * 256u / 15u);
+    }
+  }
+}
+
 static void draw_title(h2_garden_guard_canvas_t* canvas,
                        const h2_garden_guard_game_t* game) {
   const h2_garden_guard_layout_t* l = &game->layout;
-  const float s =
-      fminf((float)l->width / TITLE_ART_WIDTH, (float)l->height / 320.0f);
+  const float s = fminf((float)l->width / 480.0f, (float)l->height / 320.0f);
   const float cx = (float)l->width * 0.5f;
   const float y = ((float)l->height - 320.0f * s) * 0.5f;
-  const uint16_t cover_ink = RGB(20, 39, 35);
-  fill_rect(canvas, 0.0f, 0.0f, (float)l->width, (float)l->height, cover_ink,
-            256u);
-  draw_title_art(canvas, cx - 0.5f * TITLE_ART_WIDTH * s, y + 40.0f * s, s);
-
-  const char* title = L("GARDEN GUARD", "植物守卫");
-  const int32_t name_scale = fit_scale(title, 346.0f * s, text_scale(s, 3.9f));
-  text_centered(canvas, title, cx - 15.0f * s,
-                y + 17.0f * s - 1.0f * (float)name_scale, name_scale,
-                RGB(255, 232, 164), 256u);
-
-  const char* action = L("TAP TO START", "开始游戏");
-  const int32_t action_scale =
-      fit_scale(action, 226.0f * s, text_scale(s, 2.0f));
-  rounded_rect(canvas, cx - 92.0f * s, y + 264.0f * s, cx + 92.0f * s,
-               y + 298.0f * s, 9.0f * s, cover_ink, 256u);
-  rounded_rect(canvas, cx - 89.0f * s, y + 267.0f * s, cx + 89.0f * s,
-               y + 294.0f * s, 7.0f * s, RGB(250, 209, 112), 256u);
-  text_centered(
-      canvas, action, cx,
-      y + 280.5f * s - 0.5f * (float)label_height(action, action_scale),
-      action_scale, cover_ink, 256u);
-  const char* hint =
-      s < 0.52f ? L("COLLECT SUN AND PLANT", "收集阳光并种植")
-                : L("COLLECT SUN, PICK A CARD, PLANT", "收集阳光，选卡种植");
-  text_centered(canvas, hint, cx, y + 304.0f * s,
-                fit_scale(hint, 460.0f * s, 1), RGB(211, 219, 186), 256u);
-  if (game->language_unsaved)
-    text_centered(canvas, L("LANGUAGE FOR THIS SESSION", "语言仅本次有效"), cx,
-                  y + 244.0f * s, 1, RGB(255, 225, 160), 256u);
-  menu_tabs(canvas, game, false);
+  const float left = cx - 240.0f * s;
+  const uint16_t dark = RGB(19, 37, 31), cream = RGB(255, 229, 165);
+  fill_rect(canvas, 0.0f, 0.0f, (float)l->width, (float)l->height, dark, 256u);
+  // These narrow tonal fades bridge the cover crop into the surrounding garden.
+  draw_title_art(canvas, left, y + 19.0f * s, s);
+  for (int i = 0; i < 32; ++i) {
+    const float py = y + (19.0f + (float)i) * s;
+    fill_rect(canvas, left, py, left + 480.0f * s, py + s, dark,
+              (uint32_t)(32 - i) * 8u);
+  }
+  for (int i = 0; i < 26; ++i) {
+    const float py = y + (222.0f + (float)i) * s;
+    fill_rect(canvas, left, py, left + 480.0f * s, py + s, dark,
+              (uint32_t)(i + 1) * 256u / 26u);
+  }
+  const h2_garden_guard_rect_t start =
+      h2_garden_guard_action_rect(l, H2_GARDEN_GUARD_ACTION_START);
+  rounded_rect(canvas, start.x, start.y + 2.0f * s, start.x + start.w,
+               start.y + start.h + 2.0f * s, 8.0f * s, RGB(12, 27, 22), 256u);
+  rounded_rect(canvas, start.x, start.y, start.x + start.w, start.y + start.h,
+               8.0f * s, RGB(243, 194, 95), 256u);
+  rounded_rect(canvas, start.x + 2.0f * s, start.y + 2.0f * s,
+               start.x + start.w - 2.0f * s, start.y + start.h - 3.0f * s,
+               6.0f * s, RGB(255, 221, 140), 256u);
+  if (game->language == H2_GARDEN_GUARD_LANG_ZH) {
+    cover_type(canvas, &k_cover_title[0][0], 32u, cx, y + 28.0f * s, s, cream);
+    cover_type(canvas, &k_cover_start[0][0], 18u, cx, start.y + start.h * 0.5f,
+               s, dark);
+  } else {
+    const char* title = "GARDEN GUARD";
+    const int32_t scale = fit_scale(title, 308.0f * s, text_scale(s, 4.0f));
+    text_layer(
+        canvas, title,
+        (int32_t)(cx - 0.5f * (float)h2_garden_guard_text_width(title, scale)),
+        (int32_t)(y + 28.0f * s - 3.5f * (float)scale), scale, cream, 256u);
+    const char* action = "START GAME";
+    const int32_t button_scale =
+        fit_scale(action, start.w * 0.9f, text_scale(s, 2.0f));
+    text_layer(
+        canvas, action,
+        (int32_t)(cx - 0.5f * (float)h2_garden_guard_text_width(action,
+                                                                button_scale)),
+        (int32_t)(start.y + (start.h - 7.0f * (float)button_scale) * 0.5f),
+        button_scale, dark, 256u);
+  }
+  for (unsigned i = 0; i < 2u; ++i) {
+    const h2_garden_guard_rect_t r = h2_garden_guard_menu_tab(l, false, i);
+    const char* label = i == 0u ? L("JOURNAL", "图鉴") : L("SHOP", "商店");
+    const int32_t scale = fit_scale(label, r.w, text_scale(s, 2.0f));
+    text_layer(
+        canvas, label,
+        (int32_t)(r.x +
+                  (r.w - (float)h2_garden_guard_text_width(label, scale)) *
+                      0.5f),
+        (int32_t)(r.y + (r.h - (float)label_height(label, scale)) * 0.5f),
+        scale, RGB(209, 219, 179), 256u);
+  }
+  disc(canvas, cx, y + 304.0f * s, fmaxf(1.0f, 1.5f * s), RGB(151, 140, 88),
+       256u);
   menu_button(canvas,
               h2_garden_guard_action_rect(l, H2_GARDEN_GUARD_ACTION_LANGUAGE),
-              L("中文", "ENGLISH"), RGB(50, 93, 78), RGB(253, 235, 182));
+              L("中文", "ENGLISH"), RGB(31, 61, 51), cream);
+  if (game->language_unsaved)
+    text_centered(canvas, L("LANGUAGE FOR THIS SESSION", "语言仅本次有效"), cx,
+                  y + 235.0f * s, 1, cream, 256u);
 }
 
 static void draw_result(h2_garden_guard_canvas_t* canvas,
