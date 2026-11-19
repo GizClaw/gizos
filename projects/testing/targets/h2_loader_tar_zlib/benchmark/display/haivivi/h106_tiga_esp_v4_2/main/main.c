@@ -1,6 +1,8 @@
 #include "display_bench.h"
 #include "esp_app_desc.h"
 #include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "h2_device_service.h"
 #include "h2_esp_board.h"
 #include "h2_esp_target_task_policy.h"
@@ -40,10 +42,9 @@ static void on_deadline(void* user) {
 }
 
 static int start(void) {
-  int rc = h2_esp_target_task_policy_install();
-  if (rc != H2_PAL_OK) return rc;
   h2_runtime_config_t config = {0};
-  rc = h2_esp_board_runtime_config(&config);
+  int rc = h2_esp_board_runtime_config(&config);
+  printf("H2_DISPLAY_BENCH_START stage=board_runtime rc=%d\n", rc);
   if (rc != H2_PAL_OK) return rc;
   const h2_device_app_commands_config_t commands = {
       .active_name = "display-bench",
@@ -54,16 +55,19 @@ static int start(void) {
       .identity_policy = H2_DEVICE_IDENTITY_NATIVE,
       .digest_yield_ms = 1u,
       .serial_post_write_poll_ms = 1u,
+      .command_stack_size = 49152u,
   };
   rc = h2_device_app_commands_prepare_serial(&management, &config, &commands,
                                              NULL);
+  printf("H2_DISPLAY_BENCH_START stage=serial rc=%d\n", rc);
   if (rc != H2_PAL_OK) return rc;
   rc = h2_runtime_init(&config, &runtime);
+  printf("H2_DISPLAY_BENCH_START stage=runtime rc=%d\n", rc);
   if (rc != H2_PAL_OK) return rc;
   return h2_device_app_confirm(&management, runtime);
 }
 
-void app_main(void) {
+static void run_benchmark(void) {
   const int rc = start();
   printf("H2_DISPLAY_BENCH_CONFIRM rc=%d\n", rc);
   if (rc != H2_PAL_OK) return;
@@ -103,4 +107,24 @@ void app_main(void) {
   (void)esp_timer_stop(timer);
   (void)esp_timer_delete(timer);
   h2_esp_board_display_set_transfer_capture(NULL, NULL);
+}
+
+static void image_entry(void* user) {
+  (void)user;
+  run_benchmark();
+  /* Keep the board's Runtime and H2Loader serial service alive after the run.
+   */
+  for (;;) vTaskDelay(portMAX_DELAY);
+}
+
+void app_main(void) {
+  int rc = h2_pal_power_set_hold(h2_esp_board_power(), 1);
+  printf("H2_DISPLAY_BENCH_START stage=power_hold rc=%d\n", rc);
+  if (rc != H2_PAL_OK) return;
+  rc = h2_esp_target_task_policy_install_with_configure(
+      h2_esp_board_task_configure);
+  printf("H2_DISPLAY_BENCH_START stage=task_policy rc=%d\n", rc);
+  if (rc != H2_PAL_OK) return;
+  rc = h2_esp_board_start_entry_task("h106/entry", image_entry, NULL);
+  printf("H2_DISPLAY_BENCH_START stage=entry rc=%d\n", rc);
 }
