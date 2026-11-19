@@ -96,6 +96,16 @@ static int update(const h2_display_bench_profile_t* profile,
   return rc;
 }
 
+static void fill_checkerboard(uint16_t* pixels, const h2_display_rect_t* rect,
+                              uint16_t dark, uint16_t light) {
+  for (int y = 0; y < rect->height; ++y) {
+    for (int x = 0; x < rect->width; ++x) {
+      const bool stripe = ((x / 32) ^ (y / 32)) & 1;
+      pixels[(size_t)y * rect->width + x] = stripe ? dark : light;
+    }
+  }
+}
+
 static int run_shape(const h2_display_bench_profile_t* profile,
                      const h2_display_info_t* panel, bool full) {
   const char* shape = full ? "full" : "region";
@@ -116,14 +126,8 @@ static int run_shape(const h2_display_bench_profile_t* profile,
   int rc = H2_PAL_ERR_NO_MEMORY;
   if (pixels == NULL) goto failed;
 
-  for (int y = 0; y < rect.height; ++y) {
-    for (int x = 0; x < rect.width; ++x) {
-      const size_t index = (size_t)y * rect.width + x;
-      const bool stripe = ((x / 32) ^ (y / 32)) & 1;
-      pixels[index] = stripe ? 0x7800u : 0x03e0u;
-      pixels[pixel_count + index] = stripe ? 0x001fu : 0x7befu;
-    }
-  }
+  fill_checkerboard(pixels, &rect, 0x7800u, 0x03e0u);
+  fill_checkerboard(pixels + pixel_count, &rect, 0x001fu, 0x7befu);
 
   stage = "open";
   rc = h2_pal_display_open(profile->display);
@@ -243,6 +247,60 @@ int h2_display_bench_run(const h2_display_bench_profile_t* profile) {
   unavailable(profile, "full", "scanout", "no_public_signal",
               H2_PAL_ERR_UNSUPPORTED, 0u);
   snprintf(line, sizeof(line), "H2_DISPLAY_BENCH_END rc=%d", rc);
+  profile->line(line);
+  return rc;
+}
+
+int h2_display_bench_show_preview(const h2_display_bench_profile_t* profile) {
+  const char* stage = "open";
+  h2_display_info_t info = {0};
+  uint16_t* pixels = NULL;
+  int rc = h2_pal_display_open(profile->display);
+  if (rc != H2_DISPLAY_OK) goto done;
+
+  stage = "get_info";
+  rc = h2_pal_display_get_info(profile->display, &info);
+  if (rc != H2_DISPLAY_OK) goto done;
+  if (info.native_format != H2_DISPLAY_PIXEL_RGB565 || info.width <= 0 ||
+      info.height <= 0 || info.width > 4096 || info.height > 4096) {
+    rc = H2_DISPLAY_ERR_UNSUPPORTED;
+    goto done;
+  }
+
+  const h2_display_rect_t rect = {0, 0, info.width, info.height};
+  const size_t stride = (size_t)info.width * sizeof(uint16_t);
+  stage = "allocation";
+  pixels = h2_pal_mem_alloc(profile->memory, stride * (size_t)info.height);
+  if (pixels == NULL) {
+    rc = H2_DISPLAY_ERR_NO_MEMORY;
+    goto done;
+  }
+  fill_checkerboard(pixels, &rect, 0x7800u, 0x03e0u);
+  stage = "brightness";
+  rc = h2_pal_display_set_brightness_percent(profile->display, 100u);
+  if (rc != H2_DISPLAY_OK) goto done;
+  stage = "draw";
+  rc = h2_pal_display_draw_bitmap(profile->display, &rect, pixels, stride,
+                                  H2_DISPLAY_PIXEL_RGB565);
+  if (rc != H2_DISPLAY_OK) goto done;
+  stage = "present";
+  rc = h2_pal_display_present(profile->display);
+
+done:
+  /* Display PAL borrows the input for the draw call. Retained DMA storage
+   * belongs to the provider, and the display remains open after submission. */
+  h2_pal_mem_free(profile->memory, pixels);
+  char line[192];
+  if (rc == H2_DISPLAY_OK) {
+    snprintf(line, sizeof(line),
+             "H2_DISPLAY_BENCH_PREVIEW status=submitted w=%d h=%d "
+             "pattern=checkerboard_rgb565 brightness=100 rc=0",
+             info.width, info.height);
+  } else {
+    snprintf(line, sizeof(line),
+             "H2_DISPLAY_BENCH_PREVIEW status=unavailable stage=%s rc=%d",
+             stage, rc);
+  }
   profile->line(line);
   return rc;
 }

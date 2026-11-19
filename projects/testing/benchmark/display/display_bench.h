@@ -34,4 +34,8 @@ typedef struct h2_display_bench_profile {
 
 int h2_display_bench_run(const h2_display_bench_profile_t* profile);
 
+/* After the measured suite, submit one full checkerboard and leave Display
+ * open. The caller remains the exclusive Display owner. */
+int h2_display_bench_show_preview(const h2_display_bench_profile_t* profile);
+
 #endif

@@ -54,7 +54,13 @@ static void run(void* user) {
       .line = print_line,
       .clock_tick_ns = osc_hz > 0 ? (unsigned)(8192000000000ull / osc_hz) : 0u,
   };
-  (void)h2_display_bench_run(&profile);
+  const int rc = h2_display_bench_run(&profile);
+  if (rc == H2_DISPLAY_OK) {
+    (void)h2_display_bench_show_preview(&profile);
+  } else {
+    printf("H2_DISPLAY_BENCH_PREVIEW status=skipped stage=benchmark rc=%d\r\n",
+           rc);
+  }
 }
 
 static int start(void) {

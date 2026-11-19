@@ -11,3 +11,8 @@ firmware_version(
     name = "version",
     value = "0.1.1-display-bench",
 )
+
+firmware_version(
+    name = "version_jieli_preview",
+    value = "0.1.2-display-bench",
+)

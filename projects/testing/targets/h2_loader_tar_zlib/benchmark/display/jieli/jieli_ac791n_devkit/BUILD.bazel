@@ -98,7 +98,7 @@ h2loader_jieli_firmware(
     tags = ["manual"],
     target = "wl82",
     task_policy = ":task_policy",
-    version = BENCH + ":version",
+    version = BENCH + ":version_jieli_preview",
 )
 
 h2loader_tar_zlib(
