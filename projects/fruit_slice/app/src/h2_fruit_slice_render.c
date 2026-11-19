@@ -455,13 +455,17 @@ static void text_layer(h2_fruit_slice_canvas_t* canvas, const char* value,
     const lv_font_fmt_txt_glyph_dsc_t* g =
         h2_fruit_slice_font_glyph(strike, cp);
     if (g == NULL) {
-      /* Missing/malformed input is visible and occupies the measured cell. */
+      /* Keep the replacement mark inside the same measured cell, even
+       * when the largest native strike caps the CJK size. */
+      const int32_t max_scale = strike->width / 5;
+      const int32_t mark_scale = scale < max_scale ? scale : max_scale;
+      const int32_t left = x + (strike->width - 5 * mark_scale) / 2;
+      const int32_t top = y + (height - 7 * mark_scale) / 2;
       for (int32_t row = 0; row < 7; ++row)
         for (int32_t col = 0; col < 5; ++col)
           if (k_question[row] & (0x10u >> col))
-            fill_rect(canvas, x + col * scale,
-                      y + (height - 7 * scale) / 2 + row * scale, scale, scale,
-                      color, alpha);
+            fill_rect(canvas, left + col * mark_scale, top + row * mark_scale,
+                      mark_scale, mark_scale, color, alpha);
       continue;
     }
     if (!palette_ready) {

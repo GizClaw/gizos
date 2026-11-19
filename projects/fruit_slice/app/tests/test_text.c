@@ -94,7 +94,7 @@ static void test_utf8(void) {
 static void test_measure_and_draw(void) {
   const char* values[] = {"切水果", "金币 999999", "翡翠太刀", "\xE4", "AB"};
   for (unsigned v = 0; v < sizeof(values) / sizeof(values[0]); ++v) {
-    for (int scale = 1; scale <= 5; ++scale) {
+    for (int scale = 1; scale <= 9; ++scale) {
       memset(pixels, 0, sizeof(pixels));
       h2_fruit_slice_canvas_t c = {
           .pixels = pixels, .width = 256, .height = 64, .stride_pixels = 256};
