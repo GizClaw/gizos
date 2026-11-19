@@ -365,7 +365,8 @@ static void test_touch_starts_and_plants(void) {
   /* The title gave way to the lawn, and the shooter now stands in the cell. */
   CHECK(shadow_at(fx.probes[0].x, fx.probes[0].y) != fx.probes[0].value);
   CHECK(shadow_at(cell_x, cell_y) != fx.probes[1].value);
-  CHECK(fx.display.full_frames == 1u);
+  /* The cover and the switch to the lawn each present a full frame. */
+  CHECK(fx.display.full_frames == 2u);
 }
 
 static void test_shovel_restores_raised_figure(void) {
@@ -392,7 +393,7 @@ static void test_shovel_restores_raised_figure(void) {
   CHECK(fx.touch.script_next == fx.touch.script_count);
   CHECK(fx.probes[0].value != fx.probes[1].value);
   CHECK(shadow_at(x, head_y) == fx.probes[0].value);
-  CHECK(fx.display.full_frames == 1u);
+  CHECK(fx.display.full_frames == 2u);
   CHECK(fx.display.pixels_drawn < (size_t)WIDTH * HEIGHT * fx.frames / 2u);
 }
 

@@ -20,6 +20,7 @@ cc_library(
         "src/h2_garden_guard.c",
         "src/h2_garden_guard_game.c",
         "src/h2_garden_guard_render.c",
+        "src/h2_garden_guard_title.inc",
     ],
     hdrs = ["include/h2_garden_guard.h"],
     conlyopts = H2_C11_OPTS,

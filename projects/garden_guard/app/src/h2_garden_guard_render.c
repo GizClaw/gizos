@@ -1625,45 +1625,81 @@ static void panel(h2_garden_guard_canvas_t* canvas,
   *out_h = h;
 }
 
+#include "h2_garden_guard_title.inc"
+
+/* Expand a single source row when the scale needs it. The illustration uses
+ * flash plus a scanline on the stack. No extra framebuffer or codec is needed.
+ */
+static void draw_title_art(h2_garden_guard_canvas_t* canvas, float x, float y,
+                           float scale) {
+  region_t bounds;
+  if (!region_begin(canvas, x, y, x + TITLE_ART_WIDTH * scale,
+                    y + TITLE_ART_HEIGHT * scale, &bounds))
+    return;
+  const float inverse = 1.0f / scale;
+  uint8_t line[TITLE_ART_WIDTH];
+  int32_t decoded = -1;
+  for (int32_t py = bounds.y0; py < bounds.y1; ++py) {
+    const int32_t sy = (int32_t)clampf(((float)py + 0.5f - y) * inverse, 0.0f,
+                                       (float)(TITLE_ART_HEIGHT - 1));
+    if (decoded != sy) {
+      const uint8_t* data = &k_title_art[k_title_row_offsets[sy]];
+      int32_t sx = 0;
+      while (sx < TITLE_ART_WIDTH) {
+        const uint8_t token = *data++;
+        if ((token & 128u) == 0u) {
+          line[sx++] = token;
+        } else {
+          const size_t count = (token & 127u) + 3u;
+          memset(&line[sx], *data++, count);
+          sx += (int32_t)count;
+        }
+      }
+      decoded = sy;
+    }
+    uint16_t* row = row_at(canvas, py);
+    for (int32_t px = bounds.x0; px < bounds.x1; ++px) {
+      const int32_t sx = (int32_t)clampf(((float)px + 0.5f - x) * inverse, 0.0f,
+                                         (float)(TITLE_ART_WIDTH - 1));
+      row[px] = k_title_palette[line[sx]];
+    }
+  }
+}
+
 static void draw_title(h2_garden_guard_canvas_t* canvas,
                        const h2_garden_guard_game_t* game) {
   const h2_garden_guard_layout_t* l = &game->layout;
-  const float u = l->unit;
-  float x0, y0, w, h;
-  panel(canvas, l, 0.86f, 0.86f, &x0, &y0, &w, &h);
-  const float cx = x0 + w * 0.5f;
-  const int32_t big = fit_scale("GARDEN GUARD", w * 0.9f, text_scale(u, 6.0f));
-  text_centered(canvas, "GARDEN GUARD", cx, y0 + h * 0.06f, big,
-                RGB(255, 214, 60), 256u);
-  /* The cast stands on a strip of lawn. */
-  const float s = fminf(w / 5.0f, h * 0.3f);
-  const float ground = y0 + h * 0.56f;
-  rounded_rect(canvas, x0 + w * 0.06f, ground - 0.1f * s, x0 + w * 0.94f,
-               ground + 0.12f * s, 0.11f * s, RGB(92, 156, 58), 230u);
-  draw_sunflower(canvas, x0 + w * 0.17f, ground, s, 0u, k_neutral_plant, false);
-  draw_shooter(canvas, x0 + w * 0.37f, ground, s, 0u, k_neutral_plant, false);
-  draw_pumpkin(canvas, x0 + w * 0.6f, ground, s, 0u, k_neutral_plant, false);
-  h2_garden_guard_render_zombie_portrait(canvas, H2_GARDEN_GUARD_PEST_SHAMBLER,
-                                         x0 + w * 0.84f, ground, s * 0.79f);
-  const char* hint1 = "TAP SUN TO COLLECT IT";
-  const char* hint2 = "PICK A CARD, THEN A TILE";
-  const int32_t hint = fit_scale(hint2, w * 0.92f, text_scale(u, 2.6f));
-  text_centered(canvas, hint1, cx, y0 + h * 0.63f, hint, RGB(232, 240, 214),
-                230u);
-  text_centered(canvas, hint2, cx, y0 + h * 0.63f + (float)(hint * 10), hint,
-                RGB(232, 240, 214), 230u);
-  const int32_t start =
-      fit_scale("TAP TO START", w * 0.9f, text_scale(u, 3.0f));
-  /* Keep a gap below the hints when the panel is short. */
-  const float start_y =
-      fmaxf(y0 + h * 0.8f, y0 + h * 0.63f + (float)(hint * 20) + 6.0f * u);
-  text_centered(canvas, "TAP TO START", cx, start_y, start, RGB(255, 244, 200),
-                256u);
-  if (game->best > 0u) {
+  const float s =
+      fminf((float)l->width / TITLE_ART_WIDTH, (float)l->height / 320.0f);
+  const float cx = (float)l->width * 0.5f;
+  const float y = ((float)l->height - 320.0f * s) * 0.5f;
+  const uint16_t cover_ink = RGB(20, 39, 35);
+  fill_rect(canvas, 0.0f, 0.0f, (float)l->width, (float)l->height, cover_ink,
+            256u);
+  draw_title_art(canvas, cx - 0.5f * TITLE_ART_WIDTH * s, y + 40.0f * s, s);
+
+  const char* title = "GARDEN GUARD";
+  const int32_t name_scale = fit_scale(title, 454.0f * s, text_scale(s, 3.9f));
+  text_centered(canvas, title, cx, y + 17.0f * s - 1.0f * (float)name_scale,
+                name_scale, RGB(255, 232, 164), 256u);
+
+  const char* action = "TAP TO START";
+  const int32_t action_scale =
+      fit_scale(action, 226.0f * s, text_scale(s, 2.0f));
+  rounded_rect(canvas, cx - 92.0f * s, y + 264.0f * s, cx + 92.0f * s,
+               y + 298.0f * s, 9.0f * s, cover_ink, 256u);
+  rounded_rect(canvas, cx - 89.0f * s, y + 267.0f * s, cx + 89.0f * s,
+               y + 294.0f * s, 7.0f * s, RGB(250, 209, 112), 256u);
+  text_centered(canvas, action, cx, y + 280.5f * s - 3.5f * (float)action_scale,
+                action_scale, cover_ink, 256u);
+  const char* hint = "COLLECT SUN, PICK A CARD, PLANT";
+  text_centered(canvas, hint, cx, y + 304.0f * s,
+                fit_scale(hint, 460.0f * s, 1), RGB(211, 219, 186), 256u);
+  if (game->best > 0u && s >= 0.75f) {
     char value[24];
     (void)snprintf(value, sizeof(value), "BEST %u", (unsigned)game->best);
-    text_centered(canvas, value, cx, start_y + (float)(start * 10), hint,
-                  RGB(255, 222, 80), 230u);
+    text_centered(canvas, value, cx + 152.0f * s, y + 279.0f * s, 1,
+                  RGB(211, 219, 186), 256u);
   }
 }
 
@@ -1722,6 +1758,10 @@ static void draw_lane_plants(h2_garden_guard_canvas_t* canvas,
 /* Cache the parked carts. On result screens the plants rest under the panel. */
 static void draw_field(h2_garden_guard_canvas_t* canvas,
                        const h2_garden_guard_game_t* game) {
+  if (game->phase == H2_GARDEN_GUARD_PHASE_TITLE) {
+    draw_title(canvas, game);
+    return;
+  }
   const h2_garden_guard_layout_t* l = &game->layout;
   field_clip(canvas, l);
   for (uint32_t lane = 0; lane < LANES; ++lane) {
@@ -1737,10 +1777,7 @@ static void draw_field(h2_garden_guard_canvas_t* canvas,
   }
   depth_mode(canvas, DEPTH_OFF, 0u);
   full_clip(canvas);
-  if (game->phase == H2_GARDEN_GUARD_PHASE_TITLE)
-    draw_title(canvas, game);
-  else if (game->phase != H2_GARDEN_GUARD_PHASE_PLAYING)
-    draw_result(canvas, game);
+  if (game->phase != H2_GARDEN_GUARD_PHASE_PLAYING) draw_result(canvas, game);
 }
 
 void h2_garden_guard_render_static(h2_garden_guard_canvas_t* canvas,
@@ -1748,10 +1785,11 @@ void h2_garden_guard_render_static(h2_garden_guard_canvas_t* canvas,
                                    h2_garden_guard_part_t part) {
   full_clip(canvas);
   depth_mode(canvas, DEPTH_OFF, 0u);
-  if (part == H2_GARDEN_GUARD_PART_TOOLBAR)
-    draw_toolbar(canvas, game);
-  else
+  if (part == H2_GARDEN_GUARD_PART_TOOLBAR) {
+    if (game->phase != H2_GARDEN_GUARD_PHASE_TITLE) draw_toolbar(canvas, game);
+  } else {
     draw_field(canvas, game);
+  }
 }
 
 /* ---- Moving scene -------------------------------------------------------- */
