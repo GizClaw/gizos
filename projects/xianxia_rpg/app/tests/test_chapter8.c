@@ -235,7 +235,7 @@ static void small_menu(void) {
         g.layout.chapter_rows[0].h >= 24);
   box(&g.layout.chapter_more);
   CHECK(g.chapter_page == 1u);
-  box(&g.layout.chapter_rows[8]);
+  box(&g.layout.chapter_rows[9]);
   CHECK(g.phase == H2_XIANXIA_RPG_PHASE_CHAPTERS);
   box(&g.layout.chapter_more);
   CHECK(g.chapter_page == 0u);
