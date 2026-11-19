@@ -866,7 +866,9 @@ const char* h2_xianxia_rpg_objective(h2_xianxia_rpg_stage_t stage);
 const h2_xianxia_rpg_enemy_info_t* h2_xianxia_rpg_enemy_info(
     h2_xianxia_rpg_enemy_t enemy);
 const char* h2_xianxia_rpg_command_label(h2_xianxia_rpg_command_t command);
-/** Every fixed UTF-8 string the story and UI may draw, for glyph checks. */
+/** Enumerate fixed UTF-8 story/UI strings in order for glyph checks. Return
+ * the total count even if truncated; write at most capacity pointers to out.
+ * out must hold capacity elements and may be NULL when capacity is zero. */
 size_t h2_xianxia_rpg_story_strings(const char** out, size_t capacity);
 
 /** Hero stats at a level, with full HP/MP and no pills. */

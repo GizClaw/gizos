@@ -86,6 +86,36 @@ static void check_all_layers(const h2_xianxia_rpg_game_t* g) {
   (void)check_layer(g, h2_xianxia_rpg_render_scene);
 }
 
+static void test_story_string_capacity(void) {
+  const size_t total = h2_xianxia_rpg_story_strings(NULL, 0u);
+  CHECK(total > 0u);
+  const char** full = malloc(total * sizeof(*full));
+  const char** bounded = malloc((total + 3u) * sizeof(*bounded));
+  CHECK(full != NULL && bounded != NULL);
+  CHECK(h2_xianxia_rpg_story_strings(full, total) == total);
+  static const char sentinel[] = "untouched";
+  /* Every prefix includes exact fit, one short, and capacities exhausted
+   * before any later chapter. Keep both guards and the entire unused tail. */
+  for (size_t capacity = 0; capacity <= total + 1u; ++capacity) {
+    for (size_t i = 0; i < total + 3u; ++i) bounded[i] = sentinel;
+    CHECK(h2_xianxia_rpg_story_strings(bounded + 1, capacity) == total);
+    CHECK(bounded[0] == sentinel);
+    const size_t written = capacity < total ? capacity : total;
+    for (size_t i = 0; i < written; ++i) CHECK(bounded[i + 1u] == full[i]);
+    for (size_t i = written; i < total + 2u; ++i) {
+      if (bounded[i + 1u] != sentinel)
+        fprintf(stderr, "story strings: capacity=%zu wrote index=%zu\n",
+                capacity, i);
+      CHECK(bounded[i + 1u] == sentinel);
+    }
+  }
+  printf(
+      "story strings: total=%zu, capacities 0..%zu preserve bounds and prefix\n",
+      total, total + 1u);
+  free(bounded);
+  free(full);
+}
+
 static void test_glyph_coverage(void) {
   const char* strings[1024];
   const size_t count = h2_xianxia_rpg_story_strings(strings, 1024);
@@ -635,6 +665,7 @@ static void test_chapter8_screens(int32_t width, int32_t height) {
 }
 
 int main(void) {
+  test_story_string_capacity();
   test_glyph_coverage();
   test_keys();
   static const int32_t sizes[][2] = {{640, 480}, {480, 800}, {480, 480},

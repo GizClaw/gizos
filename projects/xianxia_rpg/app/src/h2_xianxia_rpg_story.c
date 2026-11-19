@@ -1081,24 +1081,18 @@ size_t h2_xianxia_rpg_story_strings(const char** out, size_t capacity) {
   ADD(k_chapter1.next);
 #undef ADD
   size_t room = count < capacity ? capacity - count : 0u;
-  count += h2_xianxia_rpg_c2_strings(
-      out + (count < capacity ? count : capacity), room);
+  count += h2_xianxia_rpg_c2_strings(room != 0u ? out + count : NULL, room);
   room = count < capacity ? capacity - count : 0u;
-  count += h2_xianxia_rpg_c3_strings(
-      out + (count < capacity ? count : capacity), room);
+  count += h2_xianxia_rpg_c3_strings(room != 0u ? out + count : NULL, room);
   room = count < capacity ? capacity - count : 0u;
-  count += h2_xianxia_rpg_c4_strings(
-      out + (count < capacity ? count : capacity), room);
+  count += h2_xianxia_rpg_c4_strings(room != 0u ? out + count : NULL, room);
   room = count < capacity ? capacity - count : 0u;
-  count += h2_xianxia_rpg_c5_strings(
-      out + (count < capacity ? count : capacity), room);
+  count += h2_xianxia_rpg_c5_strings(room != 0u ? out + count : NULL, room);
   room = count < capacity ? capacity - count : 0u;
-  count += h2_xianxia_rpg_c6_strings(
-      out + (count < capacity ? count : capacity), room);
+  count += h2_xianxia_rpg_c6_strings(room != 0u ? out + count : NULL, room);
   room = count < capacity ? capacity - count : 0u;
-  count += h2_xianxia_rpg_c7_strings(
-      out != NULL && count < capacity ? out + count : NULL,
-      count < capacity ? capacity - count : 0u);
-  return count + h2_xianxia_rpg_c8_strings(
-                     out + (count < capacity ? count : capacity), room);
+  count += h2_xianxia_rpg_c7_strings(room != 0u ? out + count : NULL, room);
+  room = count < capacity ? capacity - count : 0u;
+  return count +
+         h2_xianxia_rpg_c8_strings(room != 0u ? out + count : NULL, room);
 }
