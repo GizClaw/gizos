@@ -47,7 +47,7 @@ typedef struct session {
   uint64_t compose_ms, push_ms, pixels_pushed;
   uint32_t max_frame_ms, slow_frames;
   /* Last logged state, so transitions are logged once. */
-  int32_t logged[13];
+  int32_t logged[16];
   /* Fingerprint of the stored save0..save3 words, kept in each journey. */
   uint32_t chapter1_tag, chapter2_tag, chapter3_tag, chapter4_tag, chapter5_tag,
       chapter6_tag, chapter7_tag, chapter8_tag;
@@ -665,7 +665,7 @@ static void log_transitions(session_t* s) {
   const h2_xianxia_rpg_game_t* g = &s->game;
   /* Walking starts and stops are logged too, with the cell reached. */
   const bool walking = g->moving || g->path_pos < g->path_len;
-  const int32_t now[13] = {
+  const int32_t now[16] = {
       (int32_t)g->phase,
       (int32_t)g->map,
       (int32_t)g->stage,
@@ -678,12 +678,16 @@ static void log_transitions(session_t* s) {
       g->battle.ally_mend ? 1 : 0,
       (int32_t)g->facts,
       (int32_t)g->turns_taken,
-      (int32_t)g->battle.west_lamp_hp};
+      (int32_t)g->battle.west_lamp_hp,
+      (int32_t)(g->glyph_view | (g->node_room << 4) |
+                (g->glyph_wrong ? 256u : 0u)),
+      (int32_t)g->battle.node_phase,
+      (int32_t)g->battle.mirror_command};
   if (memcmp(now, s->logged, sizeof(now)) == 0) return;
   memcpy(s->logged, now, sizeof(now));
   const int32_t enemy = now[3] >= 0 ? (int32_t)g->battle.enemy : -1;
   const h2_xianxia_rpg_battle_t* b = &g->battle;
-  char message[512];
+  char message[768];
   /* int32_t is long on some embedded toolchains, so use its own format. */
   (void)snprintf(
       message, sizeof(message),
@@ -694,7 +698,8 @@ static void log_transitions(session_t* s) {
       " x=%" PRId32 " y=%" PRId32 " rest=%u,%" PRId32 ",%" PRId32
       " flags=0x%x trust=%u ally=%d rapport=%u veiled=%d facts=0x%x"
       " sealed=%d split=%d real=%u joint=%d walking=%d stance=%u"
-      " ally_hp=%u lamp=%u wave=%u beat=%u mend=%d west_lamp=%u",
+      " ally_hp=%u lamp=%u wave=%u beat=%u mend=%d west_lamp=%u"
+      " glyph=%u room=%u wrong=%d node_phase=%u node_turn=%u mirror=%u",
       now[0], now[1], now[2], now[3], now[4], (unsigned)g->hero.level,
       (unsigned)g->hero.hp, (unsigned)g->hero.hp_max, (unsigned)g->hero.mp,
       (unsigned)g->hero.pills, enemy, (unsigned)b->enemy_hp,
@@ -706,7 +711,9 @@ static void log_transitions(session_t* s) {
       h2_xianxia_rpg_joint_ready(g) ? 1 : 0, walking ? 1 : 0,
       (unsigned)b->sword_stance, (unsigned)g->ally_hp, (unsigned)b->lamp_hp,
       (unsigned)b->wave, (unsigned)b->wave_turn, b->ally_mend ? 1 : 0,
-      (unsigned)b->west_lamp_hp);
+      (unsigned)b->west_lamp_hp, (unsigned)g->glyph_view,
+      (unsigned)g->node_room, g->glyph_wrong ? 1 : 0, (unsigned)b->node_phase,
+      (unsigned)b->turn, (unsigned)b->mirror_command);
   log_line(s, H2_PAL_LOG_INFO, message);
 }
 
