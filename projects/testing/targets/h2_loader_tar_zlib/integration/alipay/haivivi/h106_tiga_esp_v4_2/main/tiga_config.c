@@ -23,7 +23,14 @@ static uint32_t build_timestamp(void) {
   value.tm_hour = hour;
   value.tm_min = minute;
   value.tm_sec = second;
-  return (uint32_t)timegm(&value);
+#ifdef _WIN32
+  time_t timestamp = _mkgmtime(&value);
+#else
+  time_t timestamp = timegm(&value);
+#endif
+  return timestamp >= 0 && (uint64_t)timestamp <= UINT32_MAX
+             ? (uint32_t)timestamp
+             : 0u;
 }
 
 uint32_t h2_alipay_e2e_target_feature(void) {
