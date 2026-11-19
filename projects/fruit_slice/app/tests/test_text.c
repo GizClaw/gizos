@@ -19,9 +19,11 @@ static uint16_t pixels[256 * 64];
 static void test_coverage(void) {
   size_t glyphs = 0;
   CHECK(strstr(h2_fruit_slice_font_asset.license_notice,
-               "SIL OPEN FONT LICENSE Version 1.1") != NULL);
-  CHECK(strstr(h2_fruit_slice_font_asset.license_notice, "2014-2021 Adobe") !=
-        NULL);
+               "Apache License, Version 2.0") != NULL);
+  CHECK(strstr(h2_fruit_slice_font_asset.license_notice,
+               "Droid Sans Fallback, Version 2.55b") != NULL);
+  CHECK(strstr(h2_fruit_slice_font_asset.license_notice,
+               "Digitized data copyright Google Corporation") != NULL);
   for (size_t i = 0; i < h2_fruit_slice_translation_count; ++i) {
     const h2_fruit_slice_translation_t* t = &h2_fruit_slice_translations[i];
     CHECK(strcmp(h2_fruit_slice_translate(H2_FRUIT_SLICE_LANGUAGE_EN, t->en),
