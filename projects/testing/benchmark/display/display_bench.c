@@ -79,23 +79,6 @@ static int report(const h2_display_bench_profile_t* profile, const char* shape,
   return H2_PAL_OK;
 }
 
-static int update(const h2_display_bench_profile_t* profile,
-                  const h2_display_rect_t* rect, const uint16_t* pixels) {
-  const size_t stride = (size_t)rect->width * sizeof(uint16_t);
-  const uint32_t before =
-      profile->completed_pixels == NULL ? 0u : profile->completed_pixels();
-  int rc = h2_pal_display_draw_bitmap(profile->display, rect, pixels, stride,
-                                      H2_DISPLAY_PIXEL_RGB565);
-  if (rc == H2_DISPLAY_OK) rc = h2_pal_display_present(profile->display);
-  if (profile->timed_out != NULL && profile->timed_out())
-    return H2_PAL_ERR_TIMEOUT;
-  if (rc == H2_DISPLAY_OK && profile->completed_pixels != NULL &&
-      profile->completed_pixels() - before !=
-          (uint32_t)rect->width * rect->height)
-    return H2_DISPLAY_ERR_IO;
-  return rc;
-}
-
 static void fill_checkerboard(uint16_t* pixels, const h2_display_rect_t* rect,
                               uint16_t dark, uint16_t light) {
   for (int y = 0; y < rect->height; ++y) {
@@ -104,6 +87,37 @@ static void fill_checkerboard(uint16_t* pixels, const h2_display_rect_t* rect,
       pixels[(size_t)y * rect->width + x] = stripe ? dark : light;
     }
   }
+}
+
+void h2_display_bench_fill_patterns(uint16_t* pixels, int width, int height) {
+  const h2_display_rect_t rect = {0, 0, width, height};
+  const size_t pixel_count = (size_t)width * height;
+  fill_checkerboard(pixels, &rect, 0x7800u, 0x03e0u);
+  fill_checkerboard(pixels + pixel_count, &rect, 0x001fu, 0x7befu);
+}
+
+int h2_display_bench_draw_frame(const h2_pal_display_api_t* display,
+                                const h2_display_rect_t* rect,
+                                const uint16_t* pixels) {
+  const size_t stride = (size_t)rect->width * sizeof(uint16_t);
+  int rc = h2_pal_display_draw_bitmap(display, rect, pixels, stride,
+                                      H2_DISPLAY_PIXEL_RGB565);
+  if (rc == H2_DISPLAY_OK) rc = h2_pal_display_present(display);
+  return rc;
+}
+
+static int update(const h2_display_bench_profile_t* profile,
+                  const h2_display_rect_t* rect, const uint16_t* pixels) {
+  const uint32_t before =
+      profile->completed_pixels == NULL ? 0u : profile->completed_pixels();
+  const int rc = h2_display_bench_draw_frame(profile->display, rect, pixels);
+  if (profile->timed_out != NULL && profile->timed_out())
+    return H2_PAL_ERR_TIMEOUT;
+  if (rc == H2_DISPLAY_OK && profile->completed_pixels != NULL &&
+      profile->completed_pixels() - before !=
+          (uint32_t)rect->width * rect->height)
+    return H2_DISPLAY_ERR_IO;
+  return rc;
 }
 
 static int run_shape(const h2_display_bench_profile_t* profile,
@@ -126,8 +140,7 @@ static int run_shape(const h2_display_bench_profile_t* profile,
   int rc = H2_PAL_ERR_NO_MEMORY;
   if (pixels == NULL) goto failed;
 
-  fill_checkerboard(pixels, &rect, 0x7800u, 0x03e0u);
-  fill_checkerboard(pixels + pixel_count, &rect, 0x001fu, 0x7befu);
+  h2_display_bench_fill_patterns(pixels, rect.width, rect.height);
 
   stage = "open";
   rc = h2_pal_display_open(profile->display);

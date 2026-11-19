@@ -32,6 +32,15 @@ typedef struct h2_display_bench_profile {
   unsigned clock_tick_ns;
 } h2_display_bench_profile_t;
 
+/* Fill two consecutive, tightly packed RGB565 frames of width * height pixels
+ * each. The caller owns the storage and supplies positive dimensions. */
+void h2_display_bench_fill_patterns(uint16_t* pixels, int width, int height);
+
+/* Draw one tightly packed RGB565 frame and present it on the open Display. */
+int h2_display_bench_draw_frame(const h2_pal_display_api_t* display,
+                                const h2_display_rect_t* rect,
+                                const uint16_t* pixels);
+
 int h2_display_bench_run(const h2_display_bench_profile_t* profile);
 
 /* After the measured suite, submit one full checkerboard and leave Display
