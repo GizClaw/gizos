@@ -334,7 +334,9 @@ static int finish_mute(h2_fruit_slice_audio_t* audio, uint64_t now_ms) {
   if (audio->track != NULL && !audio->closing) {
     if (audio->mute_drain_after_ms == 0u)
       audio->mute_drain_after_ms = now_ms + audio->mute_timeout_ms;
-    const int drained = h2_pal_audio_track_drain(audio->track, 0u);
+    const int drained = audio->track->drain != NULL
+                            ? h2_pal_audio_track_drain(audio->track, 0u)
+                            : H2_PAL_ERR_UNSUPPORTED;
     if (drained != H2_PAL_OK && now_ms < audio->mute_drain_after_ms &&
         (drained == H2_PAL_ERR_WOULD_BLOCK || drained == H2_PAL_ERR_TIMEOUT ||
          drained == H2_PAL_ERR_UNSUPPORTED))
@@ -443,10 +445,17 @@ int h2_fruit_slice_audio_pump(h2_fruit_slice_audio_t* audio, uint64_t now_ms) {
   return H2_PAL_OK;
 }
 
-int h2_fruit_slice_audio_close(h2_fruit_slice_audio_t* audio) {
+static int close_audio(h2_fruit_slice_audio_t* audio, int final_mute) {
   if (audio == NULL) return H2_PAL_ERR_INVALID_ARG;
   int rc = h2_fruit_slice_audio_suspend(audio);
   if (rc != H2_PAL_OK) return rc;
+  /* The UI can advance past a rejected playback command. Reconcile only after
+   * the worker and its immutable Pref writer have joined, so no older accepted
+   * value can overwrite the final intent. This never restarts playback. */
+  if (final_mute >= 0 && audio->mute != (uint8_t)final_mute) {
+    audio->mute = (uint8_t)final_mute;
+    audio->pref_dirty = true;
+  }
   if (audio->pref_dirty && audio->runtime != NULL) {
     /* A disabled/cooperative session may exit before its retry deadline. Make
      * one final attempt, without trapping teardown on persistent storage I/O.
@@ -460,4 +469,14 @@ int h2_fruit_slice_audio_close(h2_fruit_slice_audio_t* audio) {
   audio->pcm = NULL;
   audio->available = false;
   return H2_PAL_OK;
+}
+
+int h2_fruit_slice_audio_close(h2_fruit_slice_audio_t* audio) {
+  return close_audio(audio, -1);
+}
+
+int h2_fruit_slice_audio_close_with_mute(h2_fruit_slice_audio_t* audio,
+                                         uint8_t final_mute) {
+  if (final_mute > 3u) return H2_PAL_ERR_INVALID_ARG;
+  return close_audio(audio, final_mute);
 }

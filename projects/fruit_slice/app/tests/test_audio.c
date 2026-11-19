@@ -25,8 +25,8 @@ typedef struct fixture {
   unsigned starts, stops, opens, closes, writes, commits;
   unsigned active_tracks;
   unsigned accepted, rejected, accept_before_block, drains, drain_blocks;
-  bool block_writes;
-  int create_result, write_result;
+  bool block_writes, omit_drain;
+  int create_result, write_result, drain_result;
   uint32_t preference;
   uint32_t peak;
   int16_t last_pcm[4096], first_pcm[4096];
@@ -110,7 +110,7 @@ static int drain_track(h2_pal_audio_track_t* track, uint32_t timeout) {
     --f->drain_blocks;
     return H2_PAL_ERR_WOULD_BLOCK;
   }
-  return H2_PAL_OK; /* The unpaced fixture consumes accepted PCM immediately. */
+  return f->drain_result; /* Unpaced accepted PCM is consumed immediately. */
 }
 static int create(void* user, const h2_audio_track_config_t* config,
                   h2_pal_audio_track_t** out) {
@@ -120,10 +120,11 @@ static int create(void* user, const h2_audio_track_config_t* config,
   CHECK(f->active_tracks == 0);
   f->active_tracks = 1;
   ++f->opens;
-  f->track = (h2_pal_audio_track_t){.user = f,
-                                    .write = write_track,
-                                    .close = close_track,
-                                    .drain = drain_track};
+  f->track =
+      (h2_pal_audio_track_t){.user = f,
+                             .write = write_track,
+                             .close = close_track,
+                             .drain = f->omit_drain ? NULL : drain_track};
   *out = &f->track;
   return H2_PAL_OK;
 }
@@ -781,7 +782,30 @@ static void test_pending_mute_suspend(void) {
   CHECK(h2_fruit_slice_audio_close(&a) == 0);
 }
 
+static void test_optional_drain_has_bounded_tail_allowance(void) {
+  for (unsigned missing = 0u; missing < 2u; ++missing) {
+    fixture_t f = {.preference = 0x41550101u,
+                   .omit_drain = missing != 0u,
+                   .drain_result = H2_PAL_ERR_UNSUPPORTED};
+    h2_runtime_t rt = runtime_for(&f);
+    h2_fruit_slice_audio_t a;
+    CHECK(h2_fruit_slice_audio_init(&a, &rt) == 0);
+    CHECK(h2_fruit_slice_audio_prepare(&a) == 0);
+    CHECK(h2_fruit_slice_audio_set_mute(&a, 3u) == 0);
+    CHECK(h2_fruit_slice_audio_pump(&a, 100u) == 0);
+    CHECK(h2_fruit_slice_audio_pump(&a, 120u) == 0);
+    CHECK(a.track != NULL && f.closes == 0u);
+    CHECK(h2_fruit_slice_audio_pump(&a, 120u + a.mute_timeout_ms - 1u) == 0);
+    CHECK(a.track != NULL && f.closes == 0u);
+    CHECK(h2_fruit_slice_audio_pump(&a, 120u + a.mute_timeout_ms) == 0);
+    CHECK(a.track == NULL && f.closes == 1u && f.stops == 1u);
+    CHECK((f.drains == 0u) == (missing != 0u));
+    CHECK(h2_fruit_slice_audio_close(&a) == 0);
+  }
+}
+
 int main(void) {
+  test_optional_drain_has_bounded_tail_allowance();
   test_backpressure_commits_only_accepted_pcm();
   test_muted_drain_reversal_and_timeout();
   test_sfx_duck_release_boundary();

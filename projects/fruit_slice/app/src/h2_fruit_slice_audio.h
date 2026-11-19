@@ -90,5 +90,11 @@ int h2_fruit_slice_audio_pump(h2_fruit_slice_audio_t* audio, uint64_t now_ms);
 int h2_fruit_slice_audio_suspend(h2_fruit_slice_audio_t* audio);
 /* Suspend then free PCM. Retry on error before releasing Runtime/owner. */
 int h2_fruit_slice_audio_close(h2_fruit_slice_audio_t* audio);
+/* App exit variant: after successful worker/writer/hardware teardown, persist
+ * final_mute (0..3) even if its playback command was rejected or never offered.
+ * Cleanup failure retains ownership for retry; storage keeps close's bounded
+ * best-effort policy. No older writer remains to overwrite this final save. */
+int h2_fruit_slice_audio_close_with_mute(h2_fruit_slice_audio_t* audio,
+                                         uint8_t final_mute);
 
 #endif

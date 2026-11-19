@@ -28,6 +28,7 @@ static void delay(uint32_t ms) {
 }
 
 static bool toggle_trial, tap_pending, all_muted_start;
+static unsigned exit_intent_trial, exit_trial_frame, exit_command_rejections;
 static pthread_t app_thread;
 static uint64_t tap_started, toggle_max_ms;
 static unsigned toggle_native_main_calls, toggle_pref_main_calls,
@@ -211,6 +212,11 @@ static int queue_send(void* u, h2_pal_queue_t* q, const void* item,
                       uint32_t timeout_ms) {
   (void)u;
   ++command_sends;
+  if (exit_intent_trial != 0u && exit_trial_frame == 20u &&
+      q == worker_command_queue) {
+    ++exit_command_rejections;
+    return H2_PAL_ERR_FULL;
+  }
   return h2_pal_queue_send(h2_desktop_platform_queue_api(), q, item,
                            timeout_ms);
 }
@@ -597,6 +603,27 @@ static int touch_poll(void* u, h2_pal_touch_event_t* e) {
   (void)u;
   const unsigned event = touch_phase / 2u;
   if (all_muted_start) return H2_PAL_ERR_WOULD_BLOCK;
+  if (exit_intent_trial != 0u) {
+    if (event >= 2u) {
+      if (exit_intent_trial == 3u || (exit_intent_trial == 2u && frames > 20u))
+        return H2_PAL_ERR_BUSY; /* Also cover abort before set_mute is called.
+                                 */
+      return H2_PAL_ERR_WOULD_BLOCK;
+    }
+    if (frames < (event == 0u ? 5u : 20u)) return H2_PAL_ERR_WOULD_BLOCK;
+    h2_fruit_slice_game_t game;
+    h2_fruit_slice_game_init(&game, 480, 320, 42, 0);
+    h2_fruit_slice_rect_t rect;
+    assert(h2_fruit_slice_game_button_rect(
+        &game,
+        event == 0u ? H2_FRUIT_SLICE_BUTTON_SFX : H2_FRUIT_SLICE_BUTTON_MUSIC,
+        &rect));
+    *e = (h2_pal_touch_event_t){
+        touch_phase++ % 2u ? H2_PAL_TOUCH_EVENT_UP : H2_PAL_TOUCH_EVENT_DOWN,
+        (uint16_t)((rect.x0 + rect.x1) / 2),
+        (uint16_t)((rect.y0 + rect.y1) / 2)};
+    return H2_PAL_OK;
+  }
   if (toggle_trial) {
     if (event >= sizeof(toggle_frames) / sizeof(toggle_frames[0]) ||
         frames < toggle_frames[event])
@@ -747,6 +774,10 @@ static const h2_pal_pref_vtable_t pvt = {.open = pref_open};
 static const h2_pal_pref_api_t pref_api = {.vtable = &pvt};
 static bool exit_app(void* u) {
   (void)u;
+  if (exit_intent_trial != 0u) {
+    exit_trial_frame = ++frames;
+    return frames > (exit_intent_trial == 1u ? 20u : 22u);
+  }
   if ((mute_failure_mode != 0u || mute_first_gesture) &&
       (frames == 60u || frames == 69u || frames == 95u)) {
     const unsigned stopped_tracks = 1u;
@@ -773,9 +804,10 @@ static bool exit_app(void* u) {
 static uint64_t run_app(bool worker, unsigned pressure) {
   reset_sink();
   frames = commits = touch_phase = 0;
+  exit_trial_frame = exit_command_rejections = 0u;
   monitor_blocked_audio = worker && mute_failure_mode == 0u &&
                           !mute_first_gesture && !toggle_trial &&
-                          !all_muted_start;
+                          !all_muted_start && exit_intent_trial == 0u;
   first_album_progress = false;
   display_progress_checks = pref_progress_checks = 0u;
   finite_command_waits = max_command_wait_ms = 0u;
@@ -839,7 +871,8 @@ static uint64_t run_app(bool worker, unsigned pressure) {
                                        .should_exit = exit_app,
                                        .prewarm_audio = true,
                                        .audio_worker = worker};
-  assert(h2_fruit_slice_run(rt, &cfg) == 0);
+  const int result = h2_fruit_slice_run(rt, &cfg);
+  assert(result == (exit_intent_trial >= 2u ? H2_PAL_ERR_BUSY : H2_PAL_OK));
   assert(h2_runtime_destroy(&rt) == 0);
   assert(sink.opens == sink.closes);
   if (all_muted_start) {
@@ -850,6 +883,14 @@ static uint64_t run_app(bool worker, unsigned pressure) {
   }
   assert(sink.writes > 0u && (toggle_trial || commits >= 2u));
   assert(live_queues == 0u);
+  if (exit_intent_trial != 0u) {
+    assert(touch_phase == 4u && stored_audio_setting == 0x41550103u);
+    assert(exit_intent_trial == 3u || exit_command_rejections != 0u);
+    assert(pref_join_handle == NULL);
+    printf("public-App final UI intent mode=%u: rejected=%u exit=%d stored=3\n",
+           exit_intent_trial, exit_command_rejections, result);
+    return sink.missing;
+  }
   if (toggle_trial) {
     assert(touch_phase ==
            2u * sizeof(toggle_frames) / sizeof(toggle_frames[0]));
@@ -1015,6 +1056,46 @@ static void test_pending_controls_and_receive_failure(void) {
          stored_audio_setting == 0x41550101u);
 }
 
+static void test_final_ui_intent_after_writer_and_cleanup_retry(void) {
+  reset_sink();
+  stored_audio_setting = 0x41550100u;
+  h2_runtime_t rt = direct_runtime();
+  rt.pref = &pref_api;
+  h2_fruit_slice_audio_t a;
+  assert(h2_fruit_slice_audio_init(&a, &rt) == 0);
+  a.worker_requested = true;
+  assert(h2_fruit_slice_audio_prepare(&a) == 0);
+  assert(h2_fruit_slice_audio_set_mute(&a, 1u) == 0);
+  const uint64_t deadline = now() + 5000u;
+  for (;;) {
+    pthread_mutex_lock(&sink.lock);
+    const bool writer = pref_join_handle != NULL;
+    pthread_mutex_unlock(&sink.lock);
+    if (writer) break;
+    assert(now() < deadline);
+    delay(1u);
+  }
+  /* A final rejected playback request must not change the accepted mask,
+   * but the App exit variant still owns its newer UI persistence intent. */
+  exit_intent_trial = 1u;
+  exit_trial_frame = 20u;
+  assert(h2_fruit_slice_audio_set_mute(&a, 3u) == H2_PAL_ERR_FULL);
+  assert(a.mute == 1u);
+  exit_intent_trial = 0u;
+  queue_close_failures = 1;
+  assert(h2_fruit_slice_audio_close_with_mute(&a, 3u) == H2_PAL_ERR_IO);
+  assert(a.worker != NULL && a.mute == 1u);
+  join_failures = 1;
+  assert(h2_fruit_slice_audio_close_with_mute(&a, 3u) == H2_PAL_ERR_BUSY);
+  assert(a.worker != NULL && a.mute == 1u);
+  assert(h2_fruit_slice_audio_close_with_mute(&a, 3u) == 0);
+  assert(a.mute == 3u && a.worker == NULL && a.pcm == NULL &&
+         live_queues == 0u && pref_join_handle == NULL);
+  assert(stored_audio_setting == 0x41550103u);
+  delay(50u);
+  assert(stored_audio_setting == 0x41550103u); /* No late old writer. */
+}
+
 int main(void) {
   init_queue_api();
   if (getenv("H2_TOGGLE_ONLY")) {
@@ -1044,6 +1125,10 @@ int main(void) {
   toggle_trial = true;
   (void)run_app(true, 8u);
   test_async_pref_and_full_mute_recovery();
+  test_final_ui_intent_after_writer_and_cleanup_retry();
+  for (exit_intent_trial = 1u; exit_intent_trial <= 3u; ++exit_intent_trial)
+    (void)run_app(true, 8u);
+  exit_intent_trial = 0u;
   all_muted_start = true;
   (void)run_app(true, 8u);
   puts("audio worker continuity tests passed");
