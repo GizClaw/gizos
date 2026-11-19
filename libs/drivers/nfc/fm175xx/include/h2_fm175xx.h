@@ -223,7 +223,9 @@ typedef struct h2_fm175xx_ndef_update {
  * read_snapshot uses the caller's already acquired first 16 bytes in
  * update.raw. Fast reads use 32-byte chunks and a 20 ms per-frame response
  * budget; ordinary reads retain their original 16-byte/5 ms behavior. Failure
- * invalidates size. prepare_snapshot performs no tag I/O, except existing
+ * invalidates size. Snapshot read_count includes the supplied header; CRC and
+ * RX observations cover only the newly acquired user-area commands.
+ * prepare_snapshot performs no tag I/O, except existing
  * dynamic-lock reads when validating a standard NDEF write layout. */
 int h2_fm175xx_ntag_read_header(h2_fm175xx_t* reader, uint8_t header[16]);
 int h2_fm175xx_ntag_read_snapshot(h2_fm175xx_t* reader,

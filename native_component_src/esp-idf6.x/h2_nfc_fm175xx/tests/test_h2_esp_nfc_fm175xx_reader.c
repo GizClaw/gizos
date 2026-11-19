@@ -573,7 +573,8 @@ static void test_reader_sessions(void) {
       continue;
     }
     assert(rc == 0 && data.len == sizeof(message));
-    assert(fixture.fast_reads == 1u && fixture.fields_off == (scenario == 1u));
+    assert(fixture.fast_reads == 1u &&
+           fixture.fields_off == (scenario == 1u ? 1u : 0u));
     h2_pal_nfc_scan_t scan;
     assert(h2_pal_nfc_scan_nfc_reader(h2_esp_nfc_fm175xx_api(&adapter), 201u,
                                       &scan) == H2_PAL_ERR_BUSY);

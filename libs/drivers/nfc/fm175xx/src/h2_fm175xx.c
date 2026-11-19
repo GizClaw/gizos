@@ -1228,6 +1228,9 @@ int h2_fm175xx_ntag_read_snapshot(h2_fm175xx_t* reader,
   if (d != NULL) {
     d->read_count = 1u;
     d->required_capacity = total;
+    d->status_result = H2_FM175XX_ERR_UNAVAILABLE;
+    d->rx_status_result = H2_FM175XX_ERR_UNAVAILABLE;
+    d->transfer_result = H2_FM175XX_ERR_UNAVAILABLE;
   }
   for (size_t offset = 16u; offset < total;) {
     int rc;
@@ -1238,16 +1241,32 @@ int h2_fm175xx_ntag_read_snapshot(h2_fm175xx_t* reader,
                            (uint8_t)((offset + bytes) / 4u - 1u)};
       uint8_t reply[34];
       size_t bits = 0u;
+      uint8_t irq = 0u;
+      rx_observation_t observation = {.result = H2_FM175XX_ERR_UNAVAILABLE};
       rc = set_timer(reader, 20u);
       if (rc == H2_FM175XX_OK)
-        rc = transceive(reader, command, sizeof(command), reply, sizeof(reply),
-                        &bits);
+        rc = transceive_observe(reader, command, sizeof(command), reply,
+                                sizeof(reply), &bits,
+                                d == NULL ? NULL : &observation, &irq);
+      int transfer_result = rc;
+      if (rc == H2_FM175XX_OK && (irq & 2u) != 0u) rc = H2_FM175XX_ERR_PROTOCOL;
       if (rc == H2_FM175XX_OK) rc = type_a_check_reply(reply, bytes, bits);
       if (d != NULL) {
         ++d->read_count;
+        if (bits == (bytes + 2u) * 8u) ++d->retained_crc_frames;
         d->last_page = command[1];
         d->last_reply_bits = bits;
         d->last_result = rc;
+        d->transfer_result = transfer_result;
+        d->short_reply_valid =
+            (uint8_t)(transfer_result == H2_FM175XX_OK && bits == 4u);
+        d->short_reply_low4 =
+            d->short_reply_valid ? (uint8_t)(reply[0] & 15u) : 0u;
+        d->rx_status_result = observation.result;
+        d->rx_irq = observation.irq;
+        d->rx_error = observation.error;
+        d->rx_fifo = observation.fifo;
+        d->rx_control = observation.control;
       }
       if (rc == H2_FM175XX_OK) memcpy(update->raw + offset, reply, bytes);
     } else {

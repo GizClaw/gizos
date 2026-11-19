@@ -67,6 +67,7 @@ typedef struct payment_page {
   uint8_t uid[H2_PAL_NFC_UID_MAX_LEN], uid_length;
   bool nfc_private_write, nfc_reply_started;
   const h2_pal_nfc_data_read_t* nfc_prepared;
+  h2_alipay_tap_transport_t tap_transport;
   uint8_t generated[H2_ALIPAY_PAYMENT_CODE_CAPACITY];
   uint32_t generated_length, generation, job_generation;
   int call_rc, sdk_rc, nfc_read_rc;
@@ -484,9 +485,9 @@ static void work(void* user) {
         p->call_rc = H2_PAL_ERR_UNSUPPORTED;
         break;
       }
-      const h2_alipay_tap_transport_t transport = {.user = p,
-                                                   .write_reply = write_reply};
-      p->call_rc = api->start_tap(p->api->user, &transport, &p->result);
+      p->tap_transport =
+          (h2_alipay_tap_transport_t){.user = p, .write_reply = write_reply};
+      p->call_rc = api->start_tap(p->api->user, &p->tap_transport, &p->result);
       break;
     }
     case J_FRAME: {

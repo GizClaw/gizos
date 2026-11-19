@@ -22,6 +22,7 @@ typedef struct transit_fixture {
   const char* response;
   unsigned requests;
   bool cancel;
+  h2_pal_result_t request_result;
 } transit_fixture_t;
 
 static const char cards[] =
@@ -94,6 +95,7 @@ static int request(void* user, const h2_pal_http_request_t* input,
                    h2_pal_http_response_t* output) {
   transit_fixture_t* fixture = user;
   ++fixture->requests;
+  if (fixture->request_result != H2_PAL_OK) return fixture->request_result;
   assert(input->body_len < 512u && input->cancel_cb != NULL);
   if (fixture->cancel) {
     alipay_break_rpc();
@@ -298,11 +300,89 @@ static void unsupported_script(transit_fixture_t* fixture) {
   finish(fixture);
 }
 
+static void required_refresh_failures(transit_fixture_t* fixture) {
+  for (unsigned scenario = 0u; scenario < 4u; ++scenario) {
+    initialize(fixture);
+    fixture->response = native;
+    uint8_t output[528];
+    char error[256];
+    uint32_t length;
+    assert(alipay_transit_update_card_data("NUMBER", "TYPE", error,
+                                           sizeof(error)) == 0);
+    if (scenario != 1u) {
+      assert(h2_pal_time_set_wall_ms(&fixture->time.api, 2000000001000u) == 0);
+    } else {
+      for (unsigned used = 0u; used < 20u; ++used) {
+        length = 512u;
+        assert(alipay_transit_get_TransitCode("NUMBER", "TYPE", output, &length,
+                                              error, sizeof(error)) == 0);
+      }
+    }
+    if (scenario < 2u) fixture->request_result = H2_PAL_ERR_IO;
+    if (scenario == 3u) {
+      fixture->pref.commit =
+          (h2_app_test_fault_t){.result = H2_PAL_ERR_IO, .remaining = 1u};
+      strcpy(fixture->pref.commit_key, "transit_data");
+    }
+    memset(output, 0xa5, sizeof(output));
+    length = 512u;
+    assert(alipay_transit_get_TransitCode("NUMBER", "TYPE", output, &length,
+                                          error, sizeof(error)) ==
+           (scenario < 2u    ? 7
+            : scenario == 2u ? 54
+                             : 5));
+    assert(length == 512u && fixture->requests == 2u);
+    for (size_t i = 0u; i < sizeof(output); ++i) assert(output[i] == 0xa5u);
+    transit_transit_code_result_e detail;
+    alipay_get_last_transit_code_result(&detail);
+    assert(detail ==
+           (scenario < 2u ? TRANSIT_CODE_NET_ERROR : TRANSIT_CODE_DEV_ERROR));
+    finish(fixture);
+  }
+}
+static void usage_commit_failures(transit_fixture_t* fixture) {
+  const h2_pal_result_t failures[] = {H2_PAL_ERR_IO, H2_PAL_ERR_NO_MEMORY};
+  for (size_t i = 0u; i < sizeof(failures) / sizeof(failures[0]); ++i) {
+    initialize(fixture);
+    fixture->response = native;
+    uint8_t output[528];
+    char error[256];
+    uint32_t length = 512u;
+    assert(alipay_transit_update_card_data("NUMBER", "TYPE", error,
+                                           sizeof(error)) == 0);
+    fixture->pref.commit =
+        (h2_app_test_fault_t){.result = failures[i], .remaining = 1u};
+    strcpy(fixture->pref.commit_key, "transit_data");
+    memset(output, 0xa5, sizeof(output));
+    assert(alipay_transit_get_TransitCode("NUMBER", "TYPE", output, &length,
+                                          error, sizeof(error)) ==
+           (failures[i] == H2_PAL_ERR_NO_MEMORY ? 29 : 54));
+    assert(length == 0u && output[0] == 0u && output[512] == 0xa5u);
+    transit_transit_code_result_e detail;
+    alipay_get_last_transit_code_result(&detail);
+    assert(detail == TRANSIT_CODE_DEV_ERROR);
+    alipay_transit_card_status_t status;
+    assert(alipay_transit_check_card_status("NUMBER", "TYPE", &status) == 0 &&
+           status.remain_use_count == 20);
+    alipay_tansit_CardBaseVO_t last;
+    assert(alipay_transit_get_the_last_transcode_info(&last) == 4);
+    length = 512u;
+    assert(alipay_transit_get_TransitCode("NUMBER", "TYPE", output, &length,
+                                          error, sizeof(error)) == 0);
+    assert(length > 0u && length < 512u && fixture->requests == 1u);
+    assert(alipay_transit_check_card_status("NUMBER", "TYPE", &status) == 0 &&
+           status.remain_use_count == 19);
+    finish(fixture);
+  }
+}
+
 int main(void) {
   uint32_t random = 1u;
   const h2_wolfcrypt_crypto_config_t crypto = {&random, entropy};
   assert(h2_wolfcrypt_crypto_init(&crypto) == 0);
   transit_fixture_t fixture;
+  required_refresh_failures(&fixture);
+  usage_commit_failures(&fixture);
   size_t list_faults = card_faults(&fixture);
   size_t code_faults = data_faults(&fixture);
   size_t offline_faults = native_faults(&fixture, native);

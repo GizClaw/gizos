@@ -29,7 +29,7 @@ typedef struct fixture {
   unsigned results, advertising_starts, advertising_stops;
   unsigned received_frames, reply_encodes, accepted_writes, cancel_calls;
   bool advertising;
-  h2_alipay_tap_transport_t transport;
+  const h2_alipay_tap_transport_t* transport;
   h2_pal_ble_scan_result_fn scan_callback;
   void* scan_user;
   const h2_pal_ble_gatt_service_t* service;
@@ -131,7 +131,7 @@ static int tap_start(void* user, const h2_alipay_tap_transport_t* transport,
   fixture_t* f = user;
   worker(f);
   assert(transport->write_reply != NULL && atomic_load(&f->scans) == 0u);
-  f->transport = *transport;
+  f->transport = transport;
   atomic_fetch_add(&f->starts, 1u);
   if (f->flow == 27u)
     while (!atomic_load(&f->exit_during_start))
@@ -142,8 +142,11 @@ static int tap_start(void* user, const h2_alipay_tap_transport_t* transport,
 static int stop(void* user) {
   fixture_t* f = user;
   worker(f);
+  if (f->transport != NULL)
+    assert(f->transport->user != NULL && f->transport->write_reply != NULL);
   unsigned stops = atomic_fetch_add(&f->stops, 1u);
   if (f->flow == 27u && stops == 0u) return H2_PAL_ERR_BUSY;
+  f->transport = NULL;
   return 0;
 }
 static int unbind(void* user, int* sdk_rc) {
@@ -323,13 +326,13 @@ static int receive_ndef(void* user, const uint8_t* data, size_t length,
   assert(length == sizeof(nfc_input) &&
          memcmp(data, nfc_input, sizeof(nfc_input)) == 0);
   ++fixture->received_frames;
-  assert(fixture->transport.write_reply != NULL);
+  assert(fixture->transport->write_reply != NULL);
   static const uint8_t reply[] = "TEST";
-  int rc = fixture->transport.write_reply(fixture->transport.user, reply,
-                                          sizeof(reply) - 1u);
+  int rc = fixture->transport->write_reply(fixture->transport->user, reply,
+                                           sizeof(reply) - 1u);
   if (transport_profile != 0u && transport_profile != 3u) {
-    assert(fixture->transport.write_reply(fixture->transport.user, reply,
-                                          sizeof(reply) - 1u) ==
+    assert(fixture->transport->write_reply(fixture->transport->user, reply,
+                                           sizeof(reply) - 1u) ==
            H2_PAL_ERR_INVALID_STATE);
     assert(fixture->writes == 1u);
   }

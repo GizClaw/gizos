@@ -34,8 +34,9 @@ typedef struct h2_alipay_payment_result {
 
 /** Borrowed synchronous NFC transport, called on the business worker.
  * Complete the physical write before returning OK; automatic NDEF readback is
- * not required. Bytes are application data and need the configured terminal
- * NDEF encoding. No SDK reentry is allowed. Borrowed data lives only through
+ * not required. Bytes are SDK application data; the transport owns terminal
+ * framing (NDEF or a negotiated private command). No SDK reentry is allowed.
+ * Borrowed data lives only through
  * this call. */
 typedef struct h2_alipay_tap_transport {
   void* user;

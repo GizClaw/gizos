@@ -532,6 +532,7 @@ static int transit_update_data(const h2_alipay_client_config_t* config,
       result = 7;
     } else {
       int rc = store_data(config, number, type, render, NULL);
+      if (rc != H2_PAL_OK) state->code_result = 5;
       result = rc == H2_PAL_OK ? 0 : rc == H2_PAL_ERR_NO_MEMORY ? 29 : 5;
     }
   }
@@ -982,14 +983,19 @@ int h2_alipay_transit_generate(const h2_alipay_client_config_t* config,
       state->code_result = 99;
       if (refresh) {
         int updated = transit_update_data(config, state, number, type);
-        if (updated == 0) {
+        if (updated != 0) {
           yyjson_doc_free(document);
-          document = NULL;
-          rc = read_json(config, "transit_data", &document);
-          record = yyjson_obj_get(yyjson_doc_get_root(document), type);
-          render = member(record, "render");
-          if (rc == H2_PAL_OK) rc = usage_load(config, record, &usage);
+          return updated;
         }
+        yyjson_doc_free(document);
+        document = NULL;
+        rc = read_json(config, "transit_data", &document);
+        record = yyjson_obj_get(yyjson_doc_get_root(document), type);
+        render = member(record, "render");
+        if (rc == H2_PAL_OK) rc = usage_load(config, record, &usage);
+        if (rc == H2_PAL_OK &&
+            json_integer(member(render, "expiredTime")) < (int64_t)timestamp)
+          rc = H2_PAL_ERR_INVALID_STATE;
       }
       if (rc == H2_PAL_OK && usage_expired(usage.mg_checked, timestamp)) {
         usage.mg_used = 0u;
@@ -1011,10 +1017,15 @@ int h2_alipay_transit_generate(const h2_alipay_client_config_t* config,
           ++usage.mg_used;
           ++usage.og_used;
           const char* stored_number = text(record, "number");
-          (void)store_data(config,
-                           stored_number != NULL ? stored_number : number, type,
-                           render, &usage);
-          if (strcmp(state->last.type, type) != 0) {
+          int stored =
+              store_data(config, stored_number != NULL ? stored_number : number,
+                         type, render, &usage);
+          if (stored != H2_PAL_OK) {
+            h2_alipay_client_wipe(output, *length);
+            *length = 0u;
+            state->code_result = 5;
+            result = stored == H2_PAL_ERR_NO_MEMORY ? 29 : 54;
+          } else if (strcmp(state->last.type, type) != 0) {
             memset(&state->last, 0, sizeof(state->last));
             copy_text((uint8_t*)state->last.number, number, false);
             copy_text((uint8_t*)state->last.type, type, false);

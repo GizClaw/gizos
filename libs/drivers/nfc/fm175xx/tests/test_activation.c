@@ -1302,6 +1302,11 @@ static void test_fast_session_io(void) {
   assert(h2_fm175xx_ntag_read_header(&reader, fast.raw) == 0);
   assert(h2_fm175xx_ntag_read_snapshot(&reader, &fast, 1, &diagnostics) == 0);
   assert(diagnostics.preread.read_count == 6u && fixture.fast_reads == 5u);
+  assert(diagnostics.preread.retained_crc_frames == 5u &&
+         diagnostics.preread.rx_status_result == H2_FM175XX_OK &&
+         diagnostics.preread.rx_error == 0u &&
+         diagnostics.preread.rx_fifo == 18u &&
+         diagnostics.preread.transfer_result == H2_FM175XX_OK);
   assert(normal.size == fast.size &&
          memcmp(normal.raw, fast.raw, fast.size) == 0);
   fast.raw[10] = 0xffu;
@@ -1319,6 +1324,15 @@ static void test_fast_session_io(void) {
   fixture.corrupt_read_crc = true;
   assert(h2_fm175xx_ntag_read_snapshot(&reader, &fast, 1, &diagnostics) ==
          H2_FM175XX_ERR_PROTOCOL);
+  fixture.corrupt_read_crc = false;
+  fixture.response_irq = 0x22u;
+  assert(h2_fm175xx_ntag_read_snapshot(&reader, &fast, 1, &diagnostics) ==
+         H2_FM175XX_ERR_PROTOCOL);
+  assert(diagnostics.preread.rx_status_result == H2_FM175XX_OK &&
+         diagnostics.preread.rx_irq == 0x22u &&
+         diagnostics.preread.rx_error == 0u &&
+         diagnostics.preread.transfer_result == H2_FM175XX_OK &&
+         fast.size == 0u);
   prepare_ndef_reader(&fixture, &reader);
   uint8_t command[132] = {0xa3u, 1u, 1u, 128u}, reply[3];
   size_t bits;
