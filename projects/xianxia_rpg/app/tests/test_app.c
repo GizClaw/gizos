@@ -1277,17 +1277,19 @@ static void test_ninth_record_ownership(void) {
   use_prefs = false;
 }
 
-/* Captured ninth-chapter candidate bytes from a real Chromium clear.
- * The formal v0.9 fixture is substituted after its public release. */
+/* Original bytes from the public v0.9 ZIP (0251bb8b...4e181), merge
+ * b500a708974b4ad395a604e969d894a66f17a25f. Independent Chromium spent
+ * all three pills and completed four trials and the core: Lv13, 53 turns.
+ * No candidate codec produced these predecessor bytes. */
 static void plant_ninth_clear(void) {
   static const uint8_t bytes[36] = {
-      0x03, 0x09, 0x38, 0x0d, 0x03, 0x1b, 0x07, 0x03, 0x1b, 0x07, 0x03, 0x00,
-      0xa1, 0x04, 0x00, 0x00, 0xff, 0x00, 0x00, 0x00, 0x05, 0x00, 0x34, 0x00,
-      0x9c, 0xd3, 0x4e, 0xcb, 0x08, 0xe8, 0x06, 0x0f, 0xf8, 0x0b, 0xc3, 0xf5};
+      0x03, 0x09, 0x38, 0x0d, 0x00, 0x1b, 0x07, 0x03, 0x1b, 0x07, 0x03, 0x00,
+      0xa1, 0x04, 0x00, 0x00, 0xff, 0x00, 0x00, 0x00, 0x05, 0x00, 0x35, 0x00,
+      0x9c, 0xd3, 0x4e, 0xcb, 0x08, 0xe8, 0x06, 0x0f, 0xfa, 0xe5, 0xae, 0x60};
   static const uint8_t table[168] = {
-      [0] = 2,    [1] = 10,     [3] = 1,      [132] = 13,   [133] = 3,
-      [135] = 15, [136] = 0xa1, [137] = 4,    [140] = 255,  [144] = 5,
-      [146] = 52, [164] = 0x73, [165] = 0x25, [166] = 0xd7, [167] = 0x48};
+      [0] = 2,      [1] = 10,     [3] = 1,      [132] = 13,  [135] = 15,
+      [136] = 0xa1, [137] = 4,    [140] = 255,  [144] = 5,   [146] = 53,
+      [164] = 0x2b, [165] = 0x7e, [166] = 0x0c, [167] = 0x8d};
   pref_put(H2_XIANXIA_RPG_PREF_JOURNEY9_KEY, H2_PAL_PREF_ENTRY_BLOB, bytes,
            sizeof(bytes))
       ->writes = 0;
@@ -1319,7 +1321,7 @@ static void test_tenth_record_ownership(void) {
   uint32_t tag = 0;
   CHECK(j10 && j10->writes == 1 &&
         h2_xianxia_rpg_journey10_decode(j10->value, j10->size, &save, &tag));
-  CHECK(save.chapter == 10 && save.level == 13 && save.pills == 3 &&
+  CHECK(save.chapter == 10 && save.level == 13 && save.pills == 0 &&
         save.facts == 0x1f06e808u);
   CHECK(tag == (h2_xianxia_rpg_predecessor_tag(0, old.value, old.size) ^
                 h2_xianxia_rpg_predecessor_tag(0, NULL, 0)));
