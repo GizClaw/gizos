@@ -1,4 +1,5 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel/firmware:tasks.bzl", "h2_tasks")
 load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
 load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 load("//tools/lvgl/font_conv:font_conv.bzl", "lvgl_font")
@@ -7,6 +8,7 @@ package(default_visibility = ["//visibility:public"])
 
 _PRIVATE_HEADERS = [
     "src/h2_fruit_slice_audio.h",
+    "src/h2_fruit_slice_audio_worker.h",
     "src/h2_fruit_slice_audio_bank.h",
     "src/h2_fruit_slice_sound.h",
     "src/h2_fruit_slice_text.h",
@@ -43,12 +45,18 @@ cc_library(
     visibility = ["//visibility:private"],
 )
 
+h2_tasks(
+    name = "audio_tasks",
+    tasks = ["fruit-slice/audio"],
+)
+
 cc_library(
     name = "fruit_slice",
     srcs = _PRIVATE_HEADERS + [
         "src/h2_fruit_slice.c",
         "src/h2_fruit_slice_audio.c",
         "src/h2_fruit_slice_audio_bank.c",
+        "src/h2_fruit_slice_audio_worker.c",
         "src/h2_fruit_slice_cards.c",
         "src/h2_fruit_slice_cards_render.c",
         "src/h2_fruit_slice_font.c",
@@ -62,6 +70,7 @@ cc_library(
     includes = ["include"],
     linkopts = _LIBM,
     deps = [
+        ":audio_tasks",
         ":fonts",
         "//libs/runtime",
     ],
@@ -133,6 +142,26 @@ cc_test(
         "//libs/sync/atomic/providers/c11",
         "//pal:unsupported",
         "//pal/providers/backends/sqlite",
+        "//pal/providers/platforms/desktop/pal_core:core",
+    ],
+)
+
+cc_test(
+    name = "audio_worker_test",
+    srcs = _PRIVATE_HEADERS + ["tests/test_audio_worker.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    linkopts = ["-pthread"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":fruit_slice",
+        "//libs/sync/atomic/providers/c11",
+        "//pal:unsupported",
         "//pal/providers/platforms/desktop/pal_core:core",
     ],
 )
