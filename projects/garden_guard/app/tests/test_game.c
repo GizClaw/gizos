@@ -681,8 +681,17 @@ static void test_pause_and_language(void) {
   CHECK(game.menu == H2_GARDEN_GUARD_MENU_CONFIRM);
   tap_action(&game, H2_GARDEN_GUARD_ACTION_CANCEL);
   CHECK(game.menu == H2_GARDEN_GUARD_MENU_PAUSE);
-  tap_action(&game, H2_GARDEN_GUARD_ACTION_RESUME);
+  tap_action(&game, H2_GARDEN_GUARD_ACTION_LEAVE);
+  h2_garden_guard_game_pointer(&game, H2_GARDEN_GUARD_POINTER_DOWN,
+                               confirm.x + confirm.w / 2, confirm.y + 1.0f);
+  CHECK(h2_garden_guard_game_back(&game));
+  CHECK(game.menu == H2_GARDEN_GUARD_MENU_PAUSE && !game.pointer_down);
+  h2_garden_guard_game_pointer(&game, H2_GARDEN_GUARD_POINTER_UP,
+                               confirm.x + confirm.w / 2, confirm.y + 1.0f);
+  CHECK(game.menu == H2_GARDEN_GUARD_MENU_PAUSE);
+  CHECK(h2_garden_guard_game_back(&game));
   CHECK(!h2_garden_guard_paused(&game) && game.time_ms == time);
+  CHECK(!h2_garden_guard_game_back(&game));
   h2_garden_guard_game_step(&game, 30u);
   CHECK(game.time_ms == time + 30u && pest->chew_ms > chew);
   tap_action(&game, H2_GARDEN_GUARD_ACTION_PAUSE);

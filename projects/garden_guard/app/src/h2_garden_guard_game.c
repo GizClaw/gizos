@@ -726,6 +726,12 @@ static void close_journal_card(h2_garden_guard_game_t* game) {
 bool h2_garden_guard_game_back(h2_garden_guard_game_t* game) {
   if (game->menu == H2_GARDEN_GUARD_MENU_JOURNAL && game->journal_card != 0u) {
     close_journal_card(game);
+  } else if (h2_garden_guard_paused(game)) {
+    game->menu = game->menu == H2_GARDEN_GUARD_MENU_CONFIRM
+                     ? H2_GARDEN_GUARD_MENU_PAUSE
+                     : H2_GARDEN_GUARD_MENU_NONE;
+    h2_garden_guard_game_pointer(game, H2_GARDEN_GUARD_POINTER_CANCEL, 0.0f,
+                                 0.0f);
   } else if (game->menu == H2_GARDEN_GUARD_MENU_JOURNAL ||
              game->menu == H2_GARDEN_GUARD_MENU_SHOP) {
     game->menu = H2_GARDEN_GUARD_MENU_NONE;
