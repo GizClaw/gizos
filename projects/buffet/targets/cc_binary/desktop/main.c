@@ -22,6 +22,11 @@ static int with_card_lock(void* user, h2_buffet_card_work_fn work,
   return buffet_desktop_with_card_lock(window->card_lock, work, context);
 }
 
+static void release_keys(void* user) {
+  window_t* window = user;
+  for (int i = 0; i < 4; i++) window->held[i] = false;
+}
+
 static void poll(void* user, h2_buffet_input_t* input) {
   window_t* window = user;
   h2_sdl3_event_t event;
@@ -29,7 +34,7 @@ static void poll(void* user, h2_buffet_input_t* input) {
     if (event.kind == H2_SDL3_EVENT_CLOSE) input->close = true;
     if (event.kind == H2_SDL3_EVENT_FOCUS_LOST) {
       window->inactive = true;
-      for (int i = 0; i < 4; i++) window->held[i] = false;
+      release_keys(window);
     }
     if (event.kind == H2_SDL3_EVENT_FOCUS_GAINED) window->inactive = false;
     if (event.kind != H2_SDL3_EVENT_KEY || event.repeat) continue;
@@ -66,7 +71,7 @@ static void poll(void* user, h2_buffet_input_t* input) {
         if (pressed) input->actions |= H2_BUFFET_LANGUAGE;
         break;
       case H2_SDL3_KEY_ESCAPE:
-        if (pressed) input->close = true;
+        if (pressed) input->actions |= H2_BUFFET_MENU;
         break;
       default:
         break;
@@ -154,6 +159,7 @@ int main(void) {
   if (rc == H2_PAL_OK) {
     const h2_buffet_config_t game = {
         .poll = poll,
+        .release_keys = release_keys,
         .user = &window,
         .keyboard = true,
         .with_card_lock = storage ? with_card_lock : NULL};
