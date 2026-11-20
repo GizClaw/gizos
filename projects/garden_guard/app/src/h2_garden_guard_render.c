@@ -2533,6 +2533,101 @@ static void draw_result(h2_garden_guard_canvas_t* canvas,
   }
 }
 
+static void include_plant_bands(h2_garden_guard_canvas_t* canvas,
+                                const h2_garden_guard_cached_plant_t* entry) {
+  /* Merge the original per-band spans so cache hits preserve transfer bounds.
+   */
+  const int32_t first = entry->y0 / BAND_ROWS;
+  const int32_t last = (entry->y1 + BAND_ROWS - 1) / BAND_ROWS;
+  for (int32_t band = first; band < last; ++band) {
+    const uint64_t bit = UINT64_C(1) << band;
+    if (!(entry->bands & bit)) continue;
+    if (!(canvas->bands & bit) || canvas->band_x0[band] > entry->band_x0[band])
+      canvas->band_x0[band] = entry->band_x0[band];
+    if (!(canvas->bands & bit) || canvas->band_x1[band] < entry->band_x1[band])
+      canvas->band_x1[band] = entry->band_x1[band];
+    canvas->bands |= bit;
+  }
+}
+
+static void measure_cached_plant(h2_garden_guard_canvas_t* canvas,
+                                 h2_garden_guard_cached_plant_t* entry,
+                                 const h2_garden_guard_game_t* game,
+                                 uint32_t lane, uint32_t col, float x, float y,
+                                 float scale) {
+  const uint64_t tick = game->time_ms / H2_GARDEN_GUARD_PLANT_IDLE_MS;
+  const h2_garden_guard_plant_t* plant = &game->plants[lane][col];
+  if (entry->kind != plant->kind || entry->stage != plant->stage ||
+      entry->idle_tick != tick || entry->growth != plant->grow_ms ||
+      entry->action != plant->action_ms || entry->impact != plant->impact_ms) {
+    h2_garden_guard_canvas_t measured = *canvas;
+    measured.bands = 0;
+    draw_plant_kind(&measured, plant->kind, x, y, scale, plant->stage,
+                    h2_garden_guard_plant_pose(game, lane, col), false);
+    entry->bands = measured.bands;
+    entry->x0 = (int16_t)canvas->width;
+    entry->x1 = entry->y0 = entry->y1 = 0;
+    uint64_t bands = measured.bands;
+    for (int32_t band = 0; bands != 0u; ++band, bands >>= 1u) {
+      if (!(bands & 1u)) continue;
+      if (entry->y1 == 0) entry->y0 = (int16_t)(band * BAND_ROWS);
+      entry->y1 = (int16_t)((band + 1) * BAND_ROWS);
+      if (entry->x0 > measured.band_x0[band])
+        entry->x0 = measured.band_x0[band];
+      if (entry->x1 < measured.band_x1[band])
+        entry->x1 = measured.band_x1[band];
+      entry->band_x0[band] = measured.band_x0[band];
+      entry->band_x1[band] = measured.band_x1[band];
+    }
+    if (entry->y1 > canvas->height) entry->y1 = (int16_t)canvas->height;
+    entry->kind = plant->kind;
+    entry->stage = plant->stage;
+    entry->growth = plant->grow_ms;
+    entry->action = plant->action_ms;
+    entry->impact = plant->impact_ms;
+    entry->idle_tick = tick;
+    entry->pixels_valid = false;
+  }
+  include_plant_bands(canvas, entry);
+}
+
+static bool paint_cached_plant(h2_garden_guard_canvas_t* canvas,
+                               h2_garden_guard_cached_plant_t* entry,
+                               const h2_garden_guard_game_t* game,
+                               uint32_t lane, uint32_t col, float x, float y,
+                               float scale) {
+  if (entry->bands == 0u) return true;
+  const size_t width = (size_t)(entry->x1 - entry->x0);
+  const size_t height = (size_t)(entry->y1 - entry->y0);
+  if (height * width > H2_GARDEN_GUARD_PLANT_CACHE_PIXELS) return false;
+  const size_t row_bytes = width * sizeof(uint16_t);
+  const uint32_t revision = canvas->plant_cache->depth_revision;
+  if (entry->pixels_valid && entry->depth_revision == revision) {
+    for (size_t row = 0; row < height; ++row) {
+      const uint16_t* pixels =
+          row_at(canvas, entry->y0 + (int32_t)row) + entry->x0;
+      if (memcmp(pixels, entry->before + row * width, row_bytes) != 0)
+        return false;
+    }
+    for (size_t row = 0; row < height; ++row)
+      memcpy(row_at(canvas, entry->y0 + (int32_t)row) + entry->x0,
+             entry->after + row * width, row_bytes);
+    return true;
+  }
+  for (size_t row = 0; row < height; ++row)
+    memcpy(entry->before + row * width,
+           row_at(canvas, entry->y0 + (int32_t)row) + entry->x0, row_bytes);
+  const h2_garden_guard_plant_t* plant = &game->plants[lane][col];
+  draw_plant_kind(canvas, plant->kind, x, y, scale, plant->stage,
+                  h2_garden_guard_plant_pose(game, lane, col), false);
+  for (size_t row = 0; row < height; ++row)
+    memcpy(entry->after + row * width,
+           row_at(canvas, entry->y0 + (int32_t)row) + entry->x0, row_bytes);
+  entry->depth_revision = revision;
+  entry->pixels_valid = true;
+  return true;
+}
+
 static void draw_lane_plants(h2_garden_guard_canvas_t* canvas,
                              const h2_garden_guard_game_t* game, uint32_t lane,
                              float scale, bool animate) {
@@ -2541,6 +2636,16 @@ static void draw_lane_plants(h2_garden_guard_canvas_t* canvas,
     if (plant->kind == H2_GARDEN_GUARD_PLANT_NONE) continue;
     float x, y;
     h2_garden_guard_field_point(&game->layout, lane, (float)col + 0.5f, &x, &y);
+    if (animate && canvas->plant_cache != NULL) {
+      h2_garden_guard_cached_plant_t* entry =
+          &canvas->plant_cache->cells[lane][col];
+      if (canvas->measure) {
+        measure_cached_plant(canvas, entry, game, lane, col, x, y, scale);
+        continue;
+      }
+      if (paint_cached_plant(canvas, entry, game, lane, col, x, y, scale))
+        continue;
+    }
     const h2_garden_guard_plant_pose_t pose =
         animate ? h2_garden_guard_plant_pose(game, lane, col) : k_neutral_plant;
     draw_plant_kind(canvas, plant->kind, x, y, scale, plant->stage, pose,

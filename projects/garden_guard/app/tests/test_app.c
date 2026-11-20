@@ -3,6 +3,7 @@
 #include "h2_desktop_platform.h"
 #include "h2_garden_guard.h"
 #include "h2_garden_guard_game.h"
+#include "h2_garden_guard_render.h"
 #include "h2_pal_unsupported.h"
 
 #include <stdio.h>
@@ -65,6 +66,8 @@ typedef struct fixture {
   h2_pal_pref_api_t pref_api;
   h2_pal_mem_api_t mem_api;
   size_t allocations, frees;
+  unsigned cache_requests;
+  bool cache_plants, deny_plant_cache;
   unsigned frames, exit_after, ready_calls;
   h2_pal_result_t ready_result;
   unsigned touch_from_frame;
@@ -202,6 +205,10 @@ static const h2_pal_pref_vtable_t pref_vtable = {.open = pref_open};
 
 static void* counted_alloc(void* user, size_t length) {
   (void)user;
+  if (length == sizeof(h2_garden_guard_plant_cache_t)) {
+    ++fx.cache_requests;
+    if (fx.deny_plant_cache) return NULL;
+  }
   void* p = h2_pal_mem_alloc(h2_desktop_platform_default_allocator(), length);
   if (p != NULL) ++fx.allocations;
   return p;
@@ -302,6 +309,7 @@ static h2_pal_result_t run(void) {
   const h2_garden_guard_config_t game = {.seed = 42u,
                                          .brightness_percent = 80u,
                                          .frame_period_ms = 10u,
+                                         .cache_plants = fx.cache_plants,
                                          .ready = ready,
                                          .should_exit = should_exit,
                                          .user = &fx};
@@ -375,8 +383,10 @@ static void test_touch_starts_and_plants(void) {
   CHECK(fx.display.full_frames == 2u);
 }
 
-static void test_shovel_restores_raised_figure(void) {
+static void test_shovel_restores_raised_figure(bool deny_plant_cache) {
   reset(65u, WIDTH, HEIGHT);
+  fx.cache_plants = true;
+  fx.deny_plant_cache = deny_plant_cache;
   fx.touch.info = (h2_pal_touch_info_t){WIDTH / 2, HEIGHT / 2};
   fx.touch_from_frame = 5u;
   h2_garden_guard_game_t layout_game;
@@ -397,6 +407,7 @@ static void test_shovel_restores_raised_figure(void) {
   fx.probes[1] = (probe_t){.frame = 42u, .x = x, .y = head_y};
   CHECK(run() == H2_PAL_OK);
   CHECK(fx.touch.script_next == fx.touch.script_count);
+  CHECK(fx.cache_requests == 1u);
   CHECK(fx.probes[0].value != fx.probes[1].value);
   CHECK(shadow_at(x, head_y) == fx.probes[0].value);
   CHECK(fx.display.full_frames == 2u);
@@ -447,7 +458,8 @@ int main(void) {
   CHECK(h2_garden_guard_run(NULL, NULL) == H2_PAL_ERR_INVALID_ARG);
   test_idle_title_pushes_once();
   test_touch_starts_and_plants();
-  test_shovel_restores_raised_figure();
+  test_shovel_restores_raised_figure(false);
+  test_shovel_restores_raised_figure(true);
   test_portrait_display();
   test_display_open_failure();
   test_unsupported_display();

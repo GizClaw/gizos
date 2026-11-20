@@ -57,8 +57,8 @@ static h2_pal_result_t confirm(void* user) {
 
 static void game(void* user) {
   (void)user;
-  const h2_garden_guard_config_t config = {.brightness_percent = 100u,
-                                           .ready = confirm};
+  const h2_garden_guard_config_t config = {
+      .brightness_percent = 100u, .cache_plants = true, .ready = confirm};
   const int rc = h2_garden_guard_run(runtime, &config);
   /* The run only ends on failure; keep App commands up for recovery. An
    * unconfirmed run still returns to Loader through the boot timeout. */

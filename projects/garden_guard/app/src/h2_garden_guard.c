@@ -35,6 +35,7 @@ typedef struct session {
   uint16_t* static_layer;
   /* Nearest static figure per pixel, for occlusion. */
   uint8_t* depth;
+  h2_garden_guard_plant_cache_t* plant_cache;
   h2_garden_guard_static_key_t static_key[PART_COUNT];
   dirty_t static_cover[PART_COUNT];
   dirty_t previous;
@@ -399,6 +400,8 @@ static void update_static_layer(session_t* s, dirty_t* changed) {
       grew = true;
     }
   }
+  if (s->plant_cache != NULL && repaint[H2_GARDEN_GUARD_PART_FIELD])
+    ++s->plant_cache->depth_revision;
   copy_dirty(s, s->static_layer, s->background, changed);
   clear_depth(s, changed);
   for (unsigned p = 0; p < PART_COUNT; ++p) {
@@ -488,6 +491,7 @@ static h2_pal_result_t render_frame(session_t* s) {
       tick == s->idle_pose_tick && s->plant_revision == s->game.plant_revision)
     return H2_PAL_OK;
   h2_garden_guard_canvas_t canvas = layer_canvas(s, s->frame, true);
+  canvas.plant_cache = s->plant_cache;
   h2_garden_guard_render_scene(&canvas, &s->game);
   dirty_t current;
   dirty_from_canvas(&current, &canvas);
@@ -495,6 +499,7 @@ static h2_pal_result_t render_frame(session_t* s) {
   dirty_merge(&dirty, &s->previous);
   copy_dirty(s, s->frame, s->static_layer, &dirty);
   canvas = layer_canvas(s, s->frame, false);
+  canvas.plant_cache = s->plant_cache;
   h2_garden_guard_render_scene(&canvas, &s->game);
   const uint64_t composed = clock_ms(s);
   const h2_pal_result_t rc = push_dirty(s, &dirty);
@@ -753,6 +758,11 @@ static h2_pal_result_t prepare(session_t* s) {
     return H2_PAL_ERR_NO_MEMORY;
   }
 
+  if (s->config.cache_plants) {
+    s->plant_cache = h2_pal_mem_alloc(s->allocator, sizeof(*s->plant_cache));
+    if (s->plant_cache != NULL)
+      memset(s->plant_cache, 0, sizeof(*s->plant_cache));
+  }
   uint32_t seed = s->config.seed;
   if (seed == 0u) {
     uint64_t now = 0;
@@ -812,6 +822,7 @@ h2_pal_result_t h2_garden_guard_run(h2_runtime_t* runtime,
   h2_pal_mem_free(allocator, s->depth);
   h2_pal_mem_free(allocator, s->static_layer);
   h2_pal_mem_free(allocator, s->background);
+  if (s->plant_cache != NULL) h2_pal_mem_free(allocator, s->plant_cache);
   h2_pal_mem_free(allocator, s->frame);
   h2_pal_mem_free(allocator, s);
   return rc;

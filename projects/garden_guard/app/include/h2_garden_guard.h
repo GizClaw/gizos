@@ -66,6 +66,9 @@ typedef struct h2_garden_guard_config {
                         bool session_language);
   /** Optional one-shot input from the cover layer, zero when idle. */
   h2_garden_guard_cover_action_t (*cover_action)(void* user);
+  /** Use up to 560 KiB of optional scratch space to reuse exact plant pixels.
+   * Allocation failure leaves the normal renderer active. */
+  bool cache_plants;
   /** Borrowed user value passed to the configured callbacks. */
   void* user;
 } h2_garden_guard_config_t;

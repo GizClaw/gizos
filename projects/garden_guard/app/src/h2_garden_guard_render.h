@@ -49,6 +49,30 @@ void h2_garden_guard_web_present_menu_labels(
     const h2_garden_guard_menu_labels_t* labels);
 #endif
 
+/* Optional scene cache for a fixed layout. A plant reuses its RGB565 result
+ * only when the exact pose, incoming pixels and static depth still agree. */
+#define H2_GARDEN_GUARD_PLANT_CACHE_PIXELS 3072u
+
+typedef struct h2_garden_guard_cached_plant {
+  uint64_t bands;
+  int16_t band_x0[H2_GARDEN_GUARD_MAX_BANDS],
+      band_x1[H2_GARDEN_GUARD_MAX_BANDS];
+  uint64_t idle_tick;
+  uint32_t depth_revision;
+  uint16_t growth, action, impact;
+  int16_t x0, x1, y0, y1;
+  uint8_t kind, stage;
+  bool pixels_valid;
+  uint16_t before[H2_GARDEN_GUARD_PLANT_CACHE_PIXELS];
+  uint16_t after[H2_GARDEN_GUARD_PLANT_CACHE_PIXELS];
+} h2_garden_guard_cached_plant_t;
+
+typedef struct h2_garden_guard_plant_cache {
+  uint32_t depth_revision;
+  h2_garden_guard_cached_plant_t cells[H2_GARDEN_GUARD_LANES]
+                                      [H2_GARDEN_GUARD_COLS];
+} h2_garden_guard_plant_cache_t;
+
 typedef struct h2_garden_guard_canvas {
   uint16_t* pixels; /**< Borrowed RGB565 rows; NULL while measuring only. */
   int32_t width, height;
@@ -56,6 +80,7 @@ typedef struct h2_garden_guard_canvas {
   /** True records coverage without writing pixels. */
   bool measure;
   bool external_cover_labels;
+  h2_garden_guard_plant_cache_t* plant_cache;
 #ifdef __EMSCRIPTEN__
   bool external_menu_labels;
   h2_garden_guard_menu_labels_t* menu_labels;
