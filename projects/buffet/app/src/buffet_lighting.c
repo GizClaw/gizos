@@ -48,7 +48,7 @@ static int illumination(int pixel_x, int pixel_y) {
 
 /* Use native RGB565 channels to tint light and reflected shade. */
 static unsigned channel(float gain, float lift, int value, int limit) {
-  return (unsigned)fminf(limit, fmaxf(0, value * gain + lift + .5f));
+  return (unsigned)fminf((float)limit, fmaxf(0, value * gain + lift + .5f));
 }
 
 void bf_light_room(bf_canvas_t canvas) {

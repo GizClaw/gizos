@@ -93,7 +93,8 @@ static void handheld_control_layout(void) {
              BF_CONTROL_Y);
   bf_pointer(&g, H2_PAL_TOUCH_EVENT_UP, 0, 0, BF_CONTROL_Y);
   CHECK(!g.controls.stick_held && g.controls.stick.x == 0);
-  bf_pointer(&g, H2_PAL_TOUCH_EVENT_DOWN, 0, stick.x - 1, BF_CONTROL_Y);
+  bf_pointer(&g, H2_PAL_TOUCH_EVENT_DOWN, 0, (float)(stick.x - 1),
+             BF_CONTROL_Y);
   bf_pointer(&g, H2_PAL_TOUCH_EVENT_MOVE, 0, BF_STICK_X, BF_CONTROL_Y);
   CHECK(!g.controls.stick_held);
 }
@@ -197,7 +198,7 @@ static void inspect_cards(void) {
   CHECK(!g.album.inspecting && !g.album.open);
   bf_tap(&g, 650, 29);
   CHECK(g.album.open && !g.album.this_meal);
-  bf_tap(&g, bf_card_position(&g, 1), 185);
+  bf_tap(&g, (float)bf_card_position(&g, 1), 185);
   CHECK(g.album.inspecting && !g.album.inspect_receipt &&
         g.album.selected == 1 && g.album.inspect_ms == 0);
   bf_step(&g, 500, 0, 0);
@@ -214,7 +215,7 @@ static void inspect_cards(void) {
         g.album.fresh == 3u && !g.album.awaiting);
   bf_init(&g, false);
   bf_tap(&g, 650, 29);
-  bf_tap(&g, bf_card_position(&g, 0), 185);
+  bf_tap(&g, (float)bf_card_position(&g, 0), 185);
   CHECK(g.album.open && !g.album.inspecting && g.album.selected == 0);
 }
 static void fonts_and_servings(void) {

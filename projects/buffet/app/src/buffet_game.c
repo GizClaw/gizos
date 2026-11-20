@@ -492,6 +492,6 @@ void bf_step(bf_game_t* g, int dt_ms, int dx, int dy) {
     if (g->controls.stick_held)
       bf_walk(g, min_int(dt, 100), g->controls.stick.x, g->controls.stick.y);
     else
-      bf_walk(g, min_int(dt, 100), dx, dy);
+      bf_walk(g, min_int(dt, 100), (float)dx, (float)dy);
   }
 }

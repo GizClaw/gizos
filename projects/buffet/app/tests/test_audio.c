@@ -107,7 +107,7 @@ int main(void) {
   bf_action(&g, H2_BUFFET_CONFIRM);
   assert(g.muted && g.phase == BF_DINING);
   bf_rect_t toggle = bf_sound_bounds(&g);
-  bf_tap(&g, toggle.x + 10, toggle.y + 10);
+  bf_tap(&g, (float)(toggle.x + 10), (float)(toggle.y + 10));
   assert(!g.muted && !g.eaten);
   return 0;
 }
