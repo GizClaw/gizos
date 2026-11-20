@@ -1,0 +1,142 @@
+{
+  "logical_tile": [
+    68,
+    96
+  ],
+  "sole_anchor": [
+    34,
+    89
+  ],
+  "visible_height": 82,
+  "master_pivot_definition": "Top-left origin. X at shoe-support centre, Y at the bottom tangent.",
+  "poses": {
+    "front": {
+      "source": [
+        43,
+        47,
+        505,
+        991
+      ],
+      "master_size": [
+        462,
+        944
+      ],
+      "master_sole": [
+        261,
+        944
+      ]
+    },
+    "front-blink": {
+      "source": [
+        43,
+        47,
+        505,
+        991
+      ],
+      "master_size": [
+        462,
+        944
+      ],
+      "master_sole": [
+        261,
+        944
+      ]
+    },
+    "quarter-right": {
+      "source": [
+        558,
+        45,
+        979,
+        995
+      ],
+      "master_size": [
+        421,
+        950
+      ],
+      "master_sole": [
+        184,
+        950
+      ]
+    },
+    "profile-right": {
+      "source": [
+        1085,
+        50,
+        1443,
+        992
+      ],
+      "master_size": [
+        358,
+        942
+      ],
+      "master_sole": [
+        205,
+        942
+      ]
+    },
+    "back": {
+      "source": [
+        45,
+        46,
+        488,
+        978
+      ],
+      "master_size": [
+        443,
+        932
+      ],
+      "master_sole": [
+        228,
+        932
+      ]
+    },
+    "step-right": {
+      "source": [
+        45,
+        46,
+        482,
+        976
+      ],
+      "master_size": [
+        437,
+        930
+      ],
+      "master_sole": [
+        212,
+        930
+      ]
+    },
+    "bite-right": {
+      "source": [
+        546,
+        45,
+        963,
+        986
+      ],
+      "master_size": [
+        417,
+        941
+      ],
+      "master_sole": [
+        215,
+        941
+      ]
+    },
+    "savor-right": {
+      "source": [
+        1053,
+        46,
+        1459,
+        986
+      ],
+      "master_size": [
+        406,
+        940
+      ],
+      "master_sole": [
+        223,
+        940
+      ]
+    }
+  }
+}

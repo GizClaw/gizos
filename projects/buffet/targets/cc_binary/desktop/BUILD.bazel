@@ -1,0 +1,39 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+_HOST = select({
+    "//tools/bazel/platforms:host_linux_target_linux": [],
+    "//tools/bazel/platforms:host_macos_target_macos": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
+cc_library(
+    name = "launcher",
+    srcs = [
+        "buffet_desktop_pref.c",
+        "buffet_desktop_pref.h",
+        "main.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = _HOST,
+    deps = [
+        "//libs/sync/atomic/providers/c11",
+        "//pal:unsupported",
+        "//pal/providers/backends/portaudio",
+        "//pal/providers/backends/sdl3",
+        "//pal/providers/backends/sqlite",
+        "//pal/providers/platforms/desktop/pal_core:core",
+        "//projects/buffet/app:buffet",
+    ],
+    alwayslink = True,
+)
+
+cc_binary(
+    name = "buffet",
+    data = ["//projects/buffet/app:font_licenses"],
+    target_compatible_with = _HOST,
+    deps = [":launcher"],
+)
