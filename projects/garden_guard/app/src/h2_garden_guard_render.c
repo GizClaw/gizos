@@ -1882,7 +1882,7 @@ static void draw_toolbar_status(h2_garden_guard_canvas_t* canvas,
 
 #include "h2_garden_guard_title.inc"
 
-static uint8_t title_symbol(uint32_t* offset) {
+static uint16_t title_symbol(uint32_t* offset) {
   int32_t node = (int32_t)(sizeof(k_title_tree) / sizeof(k_title_tree[0])) - 1;
   uint32_t pos = *offset;
   while (node >= 0) {
@@ -1892,12 +1892,11 @@ static uint8_t title_symbol(uint32_t* offset) {
     ++pos;
   }
   *offset = pos;
-  return (uint8_t)(-node - 1);
+  return (uint16_t)(-node - 1);
 }
 
-/* Expand a single source row when the scale needs it. The illustration uses
- * flash plus a scanline on the stack. No extra framebuffer or codec is needed.
- */
+/* Expand rows in order into one scanline. An indexed group starts with a
+ * complete row, and copy tokens leave spans of the previous row in place. */
 static void draw_title_art(h2_garden_guard_canvas_t* canvas, float x, float y,
                            float scale) {
   region_t bounds;
@@ -1907,23 +1906,31 @@ static void draw_title_art(h2_garden_guard_canvas_t* canvas, float x, float y,
   const float inverse = 1.0f / scale;
   uint8_t line[TITLE_ART_WIDTH];
   int32_t decoded = -1;
+  uint32_t offset = 0;
   for (int32_t py = bounds.y0; py < bounds.y1; ++py) {
     const int32_t sy = (int32_t)clampf(((float)py + 0.5f - y) * inverse, 0.0f,
                                        (float)(TITLE_ART_HEIGHT - 1));
-    if (decoded != sy) {
-      uint32_t offset = k_title_bit_offsets[sy];
+    const int32_t group = sy / TITLE_ART_ROWS_PER_GROUP;
+    const int32_t first = group * TITLE_ART_ROWS_PER_GROUP;
+    if (decoded < first) {
+      decoded = first - 1;
+      offset = k_title_bit_offsets[group];
+    }
+    while (decoded < sy) {
       int32_t sx = 0;
       while (sx < TITLE_ART_WIDTH) {
-        const uint8_t token = title_symbol(&offset);
-        if ((token & 128u) == 0u) {
-          line[sx++] = token;
-        } else {
-          const size_t count = (token & 127u) + 3u;
+        const uint16_t token = title_symbol(&offset);
+        if (token < 128u) {
+          line[sx++] = (uint8_t)token;
+        } else if (token < 256u) {
+          const size_t count = token - 128u + 3u;
           memset(&line[sx], title_symbol(&offset), count);
           sx += (int32_t)count;
+        } else {
+          sx += (int32_t)(token - 256u + 3u);
         }
       }
-      decoded = sy;
+      ++decoded;
     }
     uint16_t* row = row_at(canvas, py);
     for (int32_t px = bounds.x0; px < bounds.x1; ++px) {
