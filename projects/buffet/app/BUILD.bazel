@@ -1,0 +1,262 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("@rules_python//python:defs.bzl", "py_binary")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
+load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/lvgl/font_conv:font_conv.bzl", "lvgl_font")
+
+package(default_visibility = ["//visibility:private"])
+
+# The AC791N profile is selected by its normal firmware configuration.
+_APP_PLATFORMS = select({
+    "//tools/bazel/platforms:is_ac791n": [],
+    "@platforms//os:linux": [],
+    "@platforms//os:macos": [],
+    "@platforms//os:windows": [],
+    "@platforms//cpu:wasm32": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
+_DISH_NAMES = [
+    "salmon",
+    "tamago",
+    "tuna",
+    "shrimp",
+    "maki",
+    "inari",
+    "ramen",
+    "custard",
+]
+
+_PAINTS = [
+    "plate_shade",
+    "empty",
+] + ["hud_" + hud for hud in [
+    "next",
+    "fullness",
+    "clock_bg",
+    "clock",
+    "plates",
+    "arrival",
+]] + _DISH_NAMES + [dish + suffix for dish in _DISH_NAMES for suffix in [
+    "_table",
+    "_bite",
+]]
+
+_PLATES = ["plates/" + name + ".paintz" for name in _PAINTS] + ["plates/" + n + ".png" for n in [
+    "cloth",
+    "cast",
+    "guest",
+    "gauge",
+    "gauge_full",
+    "card_back",
+    "card_bite",
+    "card_close",
+    "card_rest",
+    "rest",
+    "mark",
+]]
+
+_STRIKES = {
+    "small": 14,
+    "body": 17,
+    "head": 22,
+    "title": 32,
+}
+
+_TRANSLATIONS = [
+    "src/buffet_game.c",
+    "src/buffet_stations.c",
+    "src/buffet_room.c",
+    "src/buffet_render.c",
+]
+
+filegroup(
+    name = "font_licenses",
+    srcs = [
+        "fonts/barlow_ofl.txt",
+        "fonts/noto_ofl.txt",
+    ],
+    visibility = ["//projects/buffet/targets:__subpackages__"],
+)
+
+py_binary(
+    name = "pack",
+    srcs = ["art/pack.py"],
+    main = "art/pack.py",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+
+genrule(
+    name = "sprite_data",
+    srcs = _PLATES,
+    outs = ["buffet_plates.c"],
+    cmd = "$(location :pack) $@ " + select({
+        "//tools/bazel/platforms:is_ac791n": "--board ",
+        "//conditions:default": "",
+    }) + "$(SRCS)",
+    target_compatible_with = _APP_PLATFORMS,
+    tools = [":pack"],
+)
+
+[lvgl_font(
+    name = "bf_" + lang + "_" + strike,
+    size = select({
+        "//tools/bazel/platforms:is_ac791n": (_STRIKES[strike] * 3 + 2) // 5,
+        "//conditions:default": _STRIKES[strike] * 2,
+    }),
+    out = "bf_" + lang + "_" + strike + ".c",
+    bpp = 4,
+    font = "//libs/ui/fonts/noto_sans_sc:NotoSansSC-Bold.ttf" if lang == "zh" else "fonts/BarlowSemiCondensed-SemiBold.ttf",
+    font_name = "bf_" + lang + "_" + strike,
+    lv_include = "buffet_font_format.h",
+    ranges = ["0x20-0x7E"],
+    symbol_sources = _TRANSLATIONS if lang == "zh" else [],
+    target_compatible_with = _APP_PLATFORMS,
+) for lang in [
+    "en",
+    "zh",
+] for strike in _STRIKES]
+
+cc_library(
+    name = "art",
+    srcs = [":sprite_data"] + [":bf_" + lang + "_" + strike for lang in [
+        "en",
+        "zh",
+    ] for strike in _STRIKES],
+    hdrs = [
+        "src/buffet_font_format.h",
+        "src/buffet_sprite.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    strip_include_prefix = "src",
+    target_compatible_with = _APP_PLATFORMS,
+)
+
+py_binary(
+    name = "pack_audio",
+    srcs = ["audio/pack_audio.py"],
+    main = "audio/pack_audio.py",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+
+genrule(
+    name = "audio_data",
+    srcs = ["audio/" + s + ".wav" for s in [
+        "lanterns-on-the-belt-compact",
+        "admission",
+        "plate-pickup",
+        "bite",
+        "stomach-red",
+        "stomach-recover",
+        "card-flip",
+        "card-reveal",
+        "closing",
+    ]],
+    outs = ["buffet_pcm.c"],
+    cmd = "$(location :pack_audio) $@ $(SRCS)",
+    target_compatible_with = _APP_PLATFORMS,
+    tools = [":pack_audio"],
+)
+
+_PRIVATE = [
+    "src/buffet_audio.h",
+    "src/buffet_checkpoint.h",
+    "src/buffet_cards.h",
+    "src/buffet_game.h",
+    "src/buffet_rotary.h",
+    "src/buffet_scale.h",
+    "src/buffet_lighting.h",
+    "src/buffet_mesh.h",
+    "src/buffet_damage.h",
+    "src/buffet_draw.h",
+    "src/buffet_render.h",
+]
+
+cc_library(
+    name = "buffet",
+    srcs = _PRIVATE + [
+        "src/buffet_audio.c",
+        "src/buffet_cards.c",
+        "src/buffet_draw.c",
+        "src/buffet_game.c",
+        "src/buffet_lighting.c",
+        "src/buffet_mesh.c",
+        "src/buffet_render.c",
+        "src/buffet_room.c",
+        "src/buffet_rotary.c",
+        "src/buffet_stations.c",
+        "src/h2_buffet.c",
+        ":audio_data",
+    ],
+    hdrs = ["include/h2_buffet.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    linkopts = select({
+        "@platforms//os:linux": ["-lm"],
+        "//conditions:default": [],
+    }),
+    local_defines = select({
+        "//tools/bazel/platforms:is_ac791n": ["BF_AC791N=1"],
+        "//conditions:default": [],
+    }),
+    target_compatible_with = _APP_PLATFORMS,
+    visibility = ["//visibility:public"],
+    deps = [
+        ":art",
+        "//libs/runtime",
+    ],
+)
+
+cc_test(
+    name = "audio_test",
+    srcs = _PRIVATE + ["tests/test_audio.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [":buffet"],
+)
+
+cc_test(
+    name = "cards_test",
+    srcs = _PRIVATE + ["tests/test_cards.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [":buffet"],
+)
+
+cc_test(
+    name = "service_test",
+    srcs = _PRIVATE + ["tests/test_service.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [":buffet"],
+)
+
+cc_test(
+    name = "pause_test",
+    srcs = _PRIVATE + ["tests/test_pause.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [":buffet"],
+)
+
+cc_test(
+    name = "game_test",
+    srcs = _PRIVATE + ["tests/test_game.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        ":art",
+        ":buffet",
+    ],
+)
