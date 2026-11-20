@@ -3539,6 +3539,25 @@ static void test_touch_lifecycle_and_mapped_input(void) {
   assert(h2_runtime_poll_event(rt, &event) == H2_PAL_ERR_WOULD_BLOCK);
   assert(h2_runtime_destroy(&rt) == H2_PAL_OK && rt == NULL);
   assert(t.opens == t.closes && env.task_state.handle_count == 0);
+
+  /* A Touch-only target publishes the health mutex on its first start.
+   * Failed creation must leave status readable and the provider unopened. */
+  test_env_init(&env);
+  config = test_runtime_config(&env);
+  config.touch = &touch;
+  const unsigned prior_opens = t.opens;
+  assert(h2_runtime_init(&config, &rt) == H2_PAL_OK);
+  env.sync_state.mutex_create_rc = H2_PAL_ERR_NO_MEMORY;
+  assert(h2_runtime_input_start(rt, &input) == H2_PAL_ERR_NO_MEMORY);
+  h2_runtime_input_status_t status;
+  assert(h2_runtime_input_status(rt, &status) == H2_PAL_OK);
+  assert(status.phase == H2_RUNTIME_INPUT_PHASE_STOPPED &&
+         !status.touch_error_count);
+  assert(t.opens == prior_opens);
+  env.sync_state.mutex_create_rc = H2_PAL_OK;
+  assert(h2_runtime_input_start(rt, &input) == H2_PAL_OK &&
+         env.task_state.handle_count == 1);
+  assert(h2_runtime_destroy(&rt) == H2_PAL_OK && !rt);
 }
 
 static void test_input_task_start_failure_leaves_input_stopped(void) {

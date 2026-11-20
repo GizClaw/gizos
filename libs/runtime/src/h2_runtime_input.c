@@ -1254,24 +1254,30 @@ static void input_writer_mutex_destroy(h2_runtime_t* runtime) {
   }
 }
 
-/* An unmapped Runtime can opt into singleton Touch after init. Keep health
- * reads synchronized without constructing or replacing a lock at start. */
+/* Mapped producers get their mutex at init. A Touch-only Runtime acquires
+ * it once at first start. Status may run concurrently with that start. */
+static h2_pal_result_t prepare_health_mutex(h2_runtime_t* runtime) {
+  h2_runtime_private_t* state = runtime->private_state;
+  if (h2_atomic_load(&state->input_health_ready)) return H2_PAL_OK;
+  const h2_pal_mutex_config_t config = {.name = "h2-runtime-input-health",
+                                        .allocator = runtime->mem};
+  h2_pal_result_t rc =
+      h2_pal_mutex_create(runtime->sync, &config, &state->input_health_mutex);
+  if (rc == H2_PAL_OK)
+    h2_atomic_store(&state->input_health_ready, 1);
+  else
+    state->input_health_mutex = NULL;
+  return rc;
+}
+
 static h2_pal_result_t input_health_lock(h2_runtime_t* runtime) {
-  if (runtime->private_state->input_health_mutex == NULL) {
-    h2_runtime_flag_lock(&runtime->private_state->input_health_fallback);
-    return H2_PAL_OK;
-  }
   return h2_pal_mutex_lock(runtime->sync,
                            runtime->private_state->input_health_mutex);
 }
 
 static void input_health_unlock(h2_runtime_t* runtime) {
-  if (runtime->private_state->input_health_mutex != NULL) {
-    (void)h2_pal_mutex_unlock(runtime->sync,
-                              runtime->private_state->input_health_mutex);
-  } else {
-    h2_runtime_flag_unlock(&runtime->private_state->input_health_fallback);
-  }
+  (void)h2_pal_mutex_unlock(runtime->sync,
+                            runtime->private_state->input_health_mutex);
 }
 
 static h2_pal_result_t input_poll_once_locked(h2_runtime_t* runtime,
@@ -1610,6 +1616,14 @@ h2_pal_result_t h2_runtime_input_status(h2_runtime_t* runtime,
     return H2_PAL_ERR_INVALID_ARG;
   }
   h2_runtime_private_t* state = runtime->private_state;
+  if (!h2_atomic_load(&state->input_health_ready)) {
+    /* Acquisition has not published its health mutex. Read only atomics. */
+    *out_status = (h2_runtime_input_status_t){
+        .phase = (h2_runtime_input_phase_t)h2_atomic_load(&state->input_phase),
+        .worker_result = h2_atomic_load(&state->input_worker_result),
+    };
+    return H2_PAL_OK;
+  }
   const h2_pal_result_t rc = input_health_lock(runtime);
   if (rc != H2_PAL_OK) {
     return rc;
@@ -1899,15 +1913,8 @@ h2_pal_result_t h2_runtime_input_prepare(h2_runtime_t* runtime) {
     runtime->private_state->input_writer_mutex = NULL;
     return rc;
   }
-  const h2_pal_mutex_config_t health_mutex_config = {
-      .name = "h2-runtime-input-health",
-      .allocator = runtime->mem,
-      .flags = H2_PAL_MUTEX_FLAG_NONE,
-  };
-  rc = h2_pal_mutex_create(runtime->sync, &health_mutex_config,
-                           &runtime->private_state->input_health_mutex);
+  rc = prepare_health_mutex(runtime);
   if (rc != H2_PAL_OK) {
-    runtime->private_state->input_health_mutex = NULL;
     input_writer_mutex_destroy(runtime);
     return rc;
   }
@@ -2009,7 +2016,10 @@ h2_pal_result_t h2_runtime_input_start(
   h2_pal_result_t rc = H2_PAL_OK;
   if (!touch || has_mapped_input_component(runtime))
     rc = input_poll_once_locked(runtime, 1, 0);
-  if (rc == H2_PAL_OK && touch) rc = touch_open(runtime);
+  if (rc == H2_PAL_OK && touch) {
+    rc = prepare_health_mutex(runtime);
+    if (rc == H2_PAL_OK) rc = touch_open(runtime);
+  }
   if (rc != H2_PAL_OK) goto rollback;
   if (!state->input_source_count && !touch) {
     h2_atomic_store(&state->input_phase, H2_RUNTIME_INPUT_PHASE_STOPPED);
