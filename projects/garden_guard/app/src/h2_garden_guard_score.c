@@ -83,14 +83,13 @@ static int sample(gg_note_t* voice) {
   return (wave * gain) >> 7;
 }
 
-_Static_assert(GG_SFX_TAP == GG_SOUND_TAP && GG_SFX_DENIED == GG_SOUND_DENIED &&
-                   GG_SFX_SUN == GG_SOUND_SUN &&
-                   GG_SFX_PLANT == GG_SOUND_PLANT &&
-                   GG_SFX_SHOT == GG_SOUND_SHOT && GG_SFX_HIT == GG_SOUND_HIT &&
-                   GG_SFX_CART == GG_SOUND_CART && GG_SFX_WON == GG_SOUND_WON &&
-                   GG_SFX_LOST == GG_SOUND_LOST &&
-                   GG_SFX_COUNT == GG_SOUND_COUNT,
+#define SAME_CUE(name) ((int)GG_SFX_##name == (int)GG_SOUND_##name)
+_Static_assert(SAME_CUE(TAP) && SAME_CUE(DENIED) && SAME_CUE(SUN) &&
+                   SAME_CUE(PLANT) && SAME_CUE(SHOT) && SAME_CUE(HIT) &&
+                   SAME_CUE(CART) && SAME_CUE(WON) && SAME_CUE(LOST) &&
+                   SAME_CUE(COUNT),
                "sound cue order");
+#undef SAME_CUE
 
 void gg_score_init(gg_score_t* score, uint32_t rate) {
   *score = (gg_score_t){.rate = rate};
