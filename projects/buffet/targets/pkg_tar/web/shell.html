@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>潮轮寿司 · Tidewheel Sushi</title>
+  <style>
+    * { box-sizing: border-box }
+    html, body { margin: 0; min-height: 100%; background: #193d42; color: #f8ecd1 }
+    main { min-height: 100svh; display: grid; place-content: center; justify-items: center }
+    canvas { display: block; width: min(100vw, 166.66svh, 1120px); height: auto; aspect-ratio: 5 / 3; background: #21484c; touch-action: none; user-select: none; -webkit-tap-highlight-color: transparent; cursor: pointer }
+    canvas:focus-visible { outline: 2px solid #edc58b; outline-offset: -2px }
+    #status { position: absolute; align-self: center; font: 16px system-ui; padding: 12px; background: #21484c }
+    #status:empty { display: none }
+  </style>
+</head>
+<body>
+  <main>
+    <canvas id="canvas" width="1600" height="960" tabindex="0" aria-keyshortcuts="Escape" aria-label="潮轮寿司 / Tidewheel Sushi"></canvas>
+    <p id="status" role="status">正在开店 · Opening the shop…</p>
+  </main>
+  <script>
+    const screen = document.getElementById('canvas');
+    const statusLine = document.getElementById('status');
+    var Module = {
+      canvas: screen,
+      onRuntimeInitialized() {
+        statusLine.textContent = '';
+        Module._bf_web_desktop(window.matchMedia('(pointer: fine)').matches ? 1 : 0,
+                              window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 1 : 0);
+        const keys = { ArrowLeft: 1, ArrowRight: 2, ArrowUp: 4, ArrowDown: 8, Space: 16, Enter: 16, KeyG: 32, KeyL: 64, KeyC: 128, KeyM: 256, Escape: 512 };
+        for (const eventName of ['keydown', 'keyup']) {
+          window.addEventListener(eventName, event => {
+            const bit = keys[event.code];
+            if (!bit || event.metaKey || event.ctrlKey || event.altKey) return;
+            event.preventDefault();
+            if (!event.repeat) Module._bf_web_key(bit, eventName === 'keydown' ? 1 : 0);
+          });
+        }
+        const visibility = () => Module._bf_web_hidden(document.hidden ? 1 : 0);
+        document.addEventListener('visibilitychange', visibility);
+        window.addEventListener('blur', () => Module._bf_web_hidden(1));
+        window.addEventListener('focus', visibility);
+        visibility();
+      },
+      onAbort() { statusLine.textContent = '请刷新重试 · Reload to reopen the shop.'; },
+    };
+  </script>
+  {{{ SCRIPT }}}
+</body>
+</html>

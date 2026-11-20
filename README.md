@@ -201,6 +201,7 @@ Board definitions are grouped by their manufacturer under `boards/<company>/<boa
 ## Documentation
 
 - [AI development constraints](guides/index.md): directory ownership, implementation boundaries, coding, validation, and review.
+- [Tidewheel Sushi](projects/buffet/): play the conveyor-sushi game in a browser or on the AC791N DevKit.
 - [Bazel and platform builds](tools/bazel/README.md).
 
 Module READMEs describe local usage; Public Headers document API contracts. `guides/` is a small set of Markdown constraints for AI agents and has no website build.

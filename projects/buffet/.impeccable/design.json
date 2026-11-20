@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 2,
+  "title": "Tidewheel Sushi",
+  "extensions": {
+    "motion": [
+      {"name": "Wave circuit", "value": "24s", "purpose": "Eight single-file carriers make one clockwise lap."},
+      {"name": "Sun circuit", "value": "26.4s", "purpose": "Eight single-file carriers make one counterclockwise lap."},
+      {"name": "bite", "value": "680ms", "purpose": "Dip, lift, taste and settle with feet planted."},
+      {"name": "turn", "value": "115ms", "purpose": "Shift into the first step when changing facing."},
+      {"name": "collector print", "value": "1000ms", "purpose": "Turn, reveal, then settle one print into this meal's rack."}
+    ]
+  },
+  "components": [
+    {"name": "Meal ticket", "kind": "button", "refersTo": "admission", "description": "Buys entry with the game purse.", "html": "<button class='ds-buy'>Buy ticket</button>", "css": ".ds-buy{background:#a94f38;color:#f6ead0;border:0;padding:0 24px;height:54px;font:600 20px 'Barlow Semi Condensed',sans-serif}.ds-buy:focus-visible{outline:2px solid #8ac3b1}"}
+  ],
+  "narrative": {
+    "northStar": "The late-afternoon counter",
+    "keyCharacteristics": ["Matching crests connect the serving countdown to its counter.", "Four facings share a heel anchor.", "A lit plate rim identifies a reachable serving."]
+  }
+}

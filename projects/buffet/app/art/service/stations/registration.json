@@ -1,0 +1,171 @@
+{
+  "logical_stage": [
+    800,
+    480
+  ],
+  "backing": [
+    1600,
+    960
+  ],
+  "projection": {
+    "type": "fixed orthographic, high three-quarter, south-facing",
+    "floor_origin": [
+      40,
+      72
+    ],
+    "tile_grid": [
+      15,
+      10
+    ],
+    "floor_tile_projection": [
+      48,
+      36
+    ],
+    "elevation_axis": [
+      0,
+      -1
+    ],
+    "table_rise_logical": 22
+  },
+  "tables": [
+    {
+      "id": "wave",
+      "badge": "wave",
+      "grid_rect": [
+        2,
+        2,
+        3,
+        2
+      ],
+      "ground_rect": [
+        136,
+        144,
+        144,
+        72
+      ],
+      "top_rect": [
+        136,
+        122,
+        144,
+        72
+      ],
+      "draw_origin": [
+        128,
+        114
+      ],
+      "draw_size": [
+        160,
+        110
+      ],
+      "feet_sort_y": 216
+    },
+    {
+      "id": "leaf",
+      "badge": "leaf",
+      "grid_rect": [
+        6,
+        5,
+        3,
+        2
+      ],
+      "ground_rect": [
+        328,
+        252,
+        144,
+        72
+      ],
+      "top_rect": [
+        328,
+        230,
+        144,
+        72
+      ],
+      "draw_origin": [
+        320,
+        222
+      ],
+      "draw_size": [
+        160,
+        110
+      ],
+      "feet_sort_y": 324
+    },
+    {
+      "id": "sun",
+      "badge": "sun",
+      "grid_rect": [
+        10,
+        2,
+        3,
+        2
+      ],
+      "ground_rect": [
+        520,
+        144,
+        144,
+        72
+      ],
+      "top_rect": [
+        520,
+        122,
+        144,
+        72
+      ],
+      "draw_origin": [
+        512,
+        114
+      ],
+      "draw_size": [
+        160,
+        110
+      ],
+      "feet_sort_y": 216
+    }
+  ],
+  "plate_slot_fraction_x": [
+    0.2,
+    0.5,
+    0.8
+  ],
+  "plate_slot_fraction_y": 0.6,
+  "dish_source": "T15 food layers may be re-projected or redrawn. Keep t17 station-scale contact anchors in registration.",
+  "player": {
+    "spawn_tile_center": [
+      7.5,
+      8.5
+    ],
+    "spawn_logical": [
+      400,
+      378
+    ],
+    "recommended_visible_height_logical": 54,
+    "recommended_tile_logical": [
+      64,
+      72
+    ],
+    "recommended_feet_anchor": [
+      32,
+      65
+    ],
+    "recommended_source_scale": 4,
+    "faces": [
+      "front",
+      "right-three-quarter",
+      "back",
+      "left-three-quarter"
+    ],
+    "actions": [
+      "idle",
+      "walk",
+      "reach",
+      "bite",
+      "savor"
+    ]
+  },
+  "hud": {
+    "next_dish": "top left x12..300 y8..59",
+    "portions_and_stomach": "bottom left x13..280 y430..476",
+    "clock": "bottom right x675..790 y430..476",
+    "local_action": "a 44px control beside an in-reach table, outside the clock"
+  }
+}
