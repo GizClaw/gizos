@@ -224,7 +224,7 @@ static void test_lifecycle_and_events(void) {
     drain_host_events(provider);
     assert(h2_pal_touch_poll_pointer(touch, &sample) == H2_PAL_OK &&
            sample.event.kind == H2_PAL_TOUCH_EVENT_DOWN &&
-           sample.event.x == 5 && sample.fresh_down && sample.down_after_open);
+           sample.event.x == 5 && sample.fresh_down && !sample.down_after_open);
     assert(h2_pal_touch_poll_pointer(touch, &sample) == H2_PAL_OK &&
            sample.event.kind == H2_PAL_TOUCH_EVENT_UP && sample.event.x == 7);
     assert(h2_pal_touch_poll_pointer(touch, &sample) == H2_PAL_ERR_WOULD_BLOCK);

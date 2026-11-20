@@ -103,6 +103,11 @@ typedef struct h2_sdl3_pointer_state {
 int h2_sdl3_create(const h2_sdl3_config_t* config, h2_sdl3_t** out_provider);
 void h2_sdl3_destroy(h2_sdl3_t* provider);
 h2_pal_display_t* h2_sdl3_display(h2_sdl3_t* provider);
+/** The exclusive reader can certify a post-open ordinary mouse press on
+ * a synchronized X11 window acquired from the SDL main thread. Other
+ * backends and emulated touch/pen mice supply within-session edges. On
+ * reacquisition their first ambiguous click can supply the release boundary.
+ */
 const h2_pal_touch_api_t* h2_sdl3_touch(h2_sdl3_t* provider);
 h2_pal_result_t h2_sdl3_poll_event(h2_sdl3_t* provider,
                                    h2_sdl3_event_t* out_event);

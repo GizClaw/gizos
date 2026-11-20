@@ -1,4 +1,5 @@
-load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
+load("@rules_python//python:defs.bzl", "py_test")
 load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
 
 package(default_visibility = ["//pal:provider_assembly"])
@@ -29,6 +30,34 @@ cc_library(
         "//pal",
         "@h2_vendor_sdl3//:sdl3",
     ],
+)
+
+cc_binary(
+    name = "x11_pointer_client",
+    testonly = True,
+    srcs = ["tests/x11_pointer_client.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":sdl3",
+        "@h2_vendor_sdl3//:sdl3",
+    ],
+)
+
+py_test(
+    name = "x11_pointer_test",
+    srcs = ["tests/test_x11_pointer.py"],
+    args = ["$(rootpath :x11_pointer_client)"],
+    data = [":x11_pointer_client"],
+    main = "tests/test_x11_pointer.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
 )
 
 cc_test(

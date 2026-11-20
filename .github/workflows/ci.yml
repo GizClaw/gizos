@@ -154,8 +154,8 @@ jobs:
           sudo apt-get "${apt_network_options[@]}" update
           sudo apt-get "${apt_network_options[@]}" install --yes \
             cmake lcov libasound2-dev libx11-dev libxext-dev \
-            libxi-dev libxrandr-dev libssl-dev nasm ninja-build \
-            pkg-config ripgrep unzip
+            libxi-dev libxrandr-dev libxtst6 libssl-dev nasm ninja-build \
+            pkg-config ripgrep unzip xauth xvfb
 
       - name: Install macOS dependencies and select Xcode
         if: runner.os == 'macOS'
@@ -362,8 +362,8 @@ jobs:
           sudo apt-get "${apt_network_options[@]}" update
           sudo apt-get "${apt_network_options[@]}" install --yes \
             cmake lcov libasound2-dev libx11-dev libxext-dev \
-            libxi-dev libxrandr-dev libssl-dev nasm ninja-build \
-            pkg-config ripgrep unzip
+            libxi-dev libxrandr-dev libxtst6 libssl-dev nasm ninja-build \
+            pkg-config ripgrep unzip xauth xvfb
 
       - name: Install macOS dependencies and select Xcode
         if: runner.os == 'macOS'

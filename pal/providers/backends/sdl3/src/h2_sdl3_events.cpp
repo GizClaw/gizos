@@ -61,18 +61,46 @@ h2_sdl3_event_t make_event(h2_sdl3_event_kind_t kind) {
   return event;
 }
 
+/* Only the SDL main thread may synchronize a native window. On the pinned
+ * X11 backend SyncWindow issues a server round trip (discard=False) and
+ * dispatches pending X events into SDL, including events stamped at dispatch.
+ */
+SDL_WindowID fence_pointer_input(h2_sdl3_t* provider) {
+  if (!SDL_IsMainThread()) return 0;
+  const char* driver = SDL_GetCurrentVideoDriver();
+  if (!driver) return 0;
+  if (std::strcmp(driver, "x11") != 0) {
+    /* Drain currently pending native events into SDL. Drivers with synthetic
+     * edges or an uncertain capture clock still need a release on reopen. */
+    SDL_PumpEvents();
+    return 0;
+  }
+  SDL_Window* window;
+  {
+    std::lock_guard<std::mutex> lock(provider->display_mutex);
+    window = provider->close_pending ? nullptr : provider->window;
+  }
+  return window && SDL_SyncWindow(window) ? SDL_GetWindowID(window) : 0;
+}
+
 h2_pal_result_t open_touch(void* user, bool exclusive) {
   auto* provider = static_cast<h2_sdl3_t*>(user);
   if (provider == nullptr || !provider->active) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  std::lock_guard<std::mutex> lock(provider->event_mutex);
+  std::unique_lock<std::mutex> lock(provider->event_mutex);
   if (provider->pointer_owned || (exclusive && provider->touch_open_count))
     return H2_PAL_ERR_BUSY;
   provider->pointer_owned = exclusive;
   if (exclusive) {
     /* The window pump can run between readers. Its older buffered edges
      * belong to the preceding session. A held mouse still has to lift. */
+    provider->pointer_opening = true;
+    lock.unlock();  // Native event callbacks may reenter the provider.
+    const SDL_WindowID window = fence_pointer_input(provider);
+    lock.lock();
+    provider->pointer_fenced_window = window;
+    provider->pointer_opening = false;
     provider->touch_head = provider->touch_count = 0u;
     provider->touch_overflow = false;
     provider->pointer_open_ns = SDL_GetTicksNS();
@@ -117,10 +145,11 @@ h2_pal_result_t poll_touch(void* user, h2_pal_touch_event_t* out_event,
   if (provider->touch_count == 0u) {
     return H2_PAL_ERR_WOULD_BLOCK;
   }
-  *out_event = provider->touches[provider->touch_head];
+  const auto& queued = provider->touches[provider->touch_head];
+  *out_event = queued.event;
   if (sample) {
     sample->fresh_down = out_event->kind == H2_PAL_TOUCH_EVENT_DOWN;
-    sample->down_after_open = provider->pointer_owned && sample->fresh_down;
+    sample->down_after_open = queued.down_after_open;
   } else if (out_event->kind == H2_PAL_TOUCH_EVENT_CANCEL) {
     out_event->kind = H2_PAL_TOUCH_EVENT_UP;
   }
@@ -143,6 +172,7 @@ h2_pal_result_t close_touch(void* user, bool exclusive) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   std::lock_guard<std::mutex> lock(provider->event_mutex);
+  if (provider->pointer_opening) return H2_PAL_ERR_BUSY;
   if (provider->touch_open_count != 0u) {
     if (provider->pointer_owned != exclusive) return H2_PAL_ERR_BUSY;
     --provider->touch_open_count;
@@ -182,9 +212,10 @@ void h2_sdl3_enqueue_event(h2_sdl3_t* provider, const h2_sdl3_event_t& event) {
 }
 
 static void enqueue_touch_locked(h2_sdl3_t* provider, Uint64 timestamp_ns,
-                                 const h2_pal_touch_event_t& event) {
-  /* SDL may still hold input generated before the exclusive open, even
-   * after the PAL ring is cleared. Use SDL's own monotonic event clock. */
+                                 const h2_pal_touch_event_t& event,
+                                 bool down_after_open = false) {
+  /* Even ambiguous backends can reject an SDL record already queued at
+   * open. A later timestamp alone gives no evidence of native capture. */
   if (provider->pointer_owned && timestamp_ns <= provider->pointer_open_ns)
     return;
   if (provider->touch_count == H2_SDL3_TOUCH_QUEUE_CAPACITY) {
@@ -195,7 +226,8 @@ static void enqueue_touch_locked(h2_sdl3_t* provider, Uint64 timestamp_ns,
   }
   const size_t tail = (provider->touch_head + provider->touch_count) %
                       H2_SDL3_TOUCH_QUEUE_CAPACITY;
-  provider->touches[tail] = event;
+  provider->touches[tail].event = event;
+  provider->touches[tail].down_after_open = down_after_open;
   ++provider->touch_count;
 }
 
@@ -276,8 +308,17 @@ void h2_sdl3_pump(h2_sdl3_t* provider) {
       provider->pointer.x = static_cast<int32_t>(event.button.x);
       provider->pointer.y = static_cast<int32_t>(event.button.y);
       provider->pointer.pressed = kind == H2_PAL_TOUCH_EVENT_DOWN ? 1 : 0;
+      /* SDL can synthesize a touch mouse press from motion of a previously
+       * unknown finger. Only the fenced window's ordinary mouse qualifies. */
+      const bool down_after_open =
+          provider->pointer_owned && provider->pointer_fenced_window != 0 &&
+          event.button.windowID == provider->pointer_fenced_window &&
+          kind == H2_PAL_TOUCH_EVENT_DOWN &&
+          event.button.which != SDL_TOUCH_MOUSEID &&
+          event.button.which != SDL_PEN_MOUSEID;
       enqueue_touch_locked(provider, event.common.timestamp,
-                           {kind, provider->pointer.x, provider->pointer.y});
+                           {kind, provider->pointer.x, provider->pointer.y},
+                           down_after_open);
     } else if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST) {
       {
         std::lock_guard<std::mutex> lock(provider->event_mutex);
