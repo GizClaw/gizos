@@ -5,6 +5,7 @@ package(default_visibility = ["//visibility:public"])
 
 r36s_sd_image(
     name = "gizos-r36s-panel0",
+    board_dts = "//boards/gameconsole/r36s/rk3326:gizos-r36s-panel0.dts",
     boot_script = "//boards/gameconsole/r36s/rk3326:boot.cmd",
     busybox_config = "busybox.config",
     exec_compatible_with = ["@platforms//os:linux"],
@@ -19,8 +20,20 @@ r36s_sd_image(
 sh_test(
     name = "image_test",
     srcs = ["image_test.sh"],
-    args = ["$(rootpath :gizos-r36s-panel0)"],
-    data = [":gizos-r36s-panel0"],
+    args = [
+        "$(rootpath :gizos-r36s-panel0)",
+        "$(rootpath :boot_chain_test.py)",
+        "$(rootpath @r36s_sources//:bl31.elf)",
+        "$(rootpath //third_party/hardkernel_uboot_patch:trust.sha256)",
+        "$(rootpath //boards/gameconsole/r36s/rk3326:boot.cmd)",
+    ],
+    data = [
+        ":boot_chain_test.py",
+        ":gizos-r36s-panel0",
+        "//boards/gameconsole/r36s/rk3326:boot.cmd",
+        "//third_party/hardkernel_uboot_patch:trust.sha256",
+        "@r36s_sources//:bl31.elf",
+    ],
     exec_compatible_with = ["@platforms//os:linux"],
     tags = ["manual"],
     target_compatible_with = ["//tools/bazel/platforms:target_rk3326"],

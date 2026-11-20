@@ -1,0 +1,4 @@
+exports_files([
+    "rk3326_trust.patch",
+    "trust.sha256",
+])

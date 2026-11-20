@@ -29,6 +29,6 @@ def _sources(ctx):
     downloads = [ctx.download(url, name, sha256 = digest, block = False) for name, (url, digest) in _INPUTS.items()]
     for download in downloads:
         download.wait()
-    ctx.file("BUILD.bazel", "filegroup(name = 'inputs', srcs = %s, visibility = ['//visibility:public'])\n" % repr(sorted(_INPUTS.keys())))
+    ctx.file("BUILD.bazel", "exports_files(['bl31.elf'])\nfilegroup(name = 'inputs', srcs = %s, visibility = ['//visibility:public'])\n" % repr(sorted(_INPUTS.keys())))
 
 r36s_sources = repository_rule(implementation = _sources)

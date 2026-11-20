@@ -1,7 +1,8 @@
 # ROCKNIX's legacy ('a') loader for genuine RK3326 handhelds.
-idb=$1 uboot=$2 trust=$3 boot_scr=$4 archive=$5 fix=$6 config=$7 ddr=$8 miniloader=$9 bl31=${10} boot_cmd=${11}
+idb=$1 uboot=$2 trust=$3 boot_scr=$4 archive=$5 fix=$6 config=$7 ddr=$8 miniloader=$9 bl31=${10} boot_cmd=${11} trust_fix=${12} trust_digest=${13}
 tar -xf "$archive" --strip-components=1
 patch --batch --fuzz=0 -p1 < "$fix"
+patch --batch --fuzz=0 -p1 < "$trust_fix"
 cp "$config" configs/rocknix_rk3326_defconfig
 export ARCH=arm CROSS_COMPILE=aarch64-linux-gnu- LOCALVERSION=
 make -s rocknix_rk3326_defconfig
@@ -28,5 +29,6 @@ SEC=0
 PATH=trust.img
 EOF
 tools/trust_merger trust.ini
+sha256sum -c "$trust_digest"
 cp trust.img "$trust"
 tools/mkimage -A arm64 -O linux -T script -C none -n 'GizOS R36S Panel 0' -d "$boot_cmd" "$boot_scr"

@@ -1,0 +1,16 @@
+Use the physical ELF load address and include the padded sector count in the
+hashed component descriptor, as required by the RK3326 miniloader format.
+
+--- a/tools/rockchip/trust_merger.c
++++ b/tools/rockchip/trust_merger.c
+@@ -446 +446 @@
+-				pEntry->addr = (uint32_t) pElfProgram64->p_vaddr;
++				pEntry->addr = (uint32_t) pElfProgram64->p_paddr;
+@@ -605,0 +606 @@
++		pComponentData->ImageSize = pEntry->align_size >> 9;
+--- a/tools/rockchip/trust_merger.h
++++ b/tools/rockchip/trust_merger.h
+@@ -117 +117,2 @@
+-	uint32_t reserved[3];
++	uint32_t ImageSize;
++	uint32_t reserved[2];

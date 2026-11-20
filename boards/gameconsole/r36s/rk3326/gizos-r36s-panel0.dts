@@ -1,0 +1,24 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+#include "rk3326-gameconsole-r36s.dts"
+
+/* RK817 supplies VBUS from BOOST through OTG_SWITCH on the R36S OTG port. */
+&rk817 {
+	vcc9-supply = <&usb_midu>;
+
+	regulators {
+		otg_switch: OTG_SWITCH {
+			regulator-name = "otg_switch";
+			regulator-boot-on;
+		};
+	};
+};
+
+&u2phy_otg {
+	status = "okay";
+};
+
+/* Linux 6.12 DWC2 and the Innosilicon PHY both read dr_mode. */
+&usb20_otg {
+	dr_mode = "host";
+	vbus-supply = <&otg_switch>;
+};

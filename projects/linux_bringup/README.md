@@ -12,7 +12,7 @@ sudo apt-get install build-essential bc bison flex libssl-dev libelf-dev pkg-con
 bazel build --config=rk3326 //projects/linux_bringup/targets/sd_image/gameconsole/r36s:gizos-r36s-panel0
 ```
 
-The build itself runs unprivileged. Its output is `bazel-bin/projects/linux_bringup/targets/sd_image/gameconsole/r36s/gizos-r36s-panel0.img`. Write the **whole image** to a spare card for TF1 and keep the original OS card. On startup, the console prints `GizOS Linux bring-up | R36S-V12 / original Panel 0`. Press Enter with a USB keyboard or on the UART2 console (1500000 8N1) for a local root shell. The root filesystem is read-only. `/run` and `/tmp` are in RAM. This initial image contains BusyBox and the bring-up script. GizOS graphical Apps and emulators are outside this target.
+The build runs unprivileged and writes `bazel-bin/projects/linux_bringup/targets/sd_image/gameconsole/r36s/gizos-r36s-panel0.img`. Write the **whole image** to a spare card for TF1 and keep the original OS card. The bring-up script prints `GizOS Linux bring-up | R36S-V12 / original Panel 0` and BusyBox starts local root shells on the console (UART2, 1500000 8N1) and `tty1`. The board DT configures the USB OTG port as a host with RK817 VBUS power. Keyboard enumeration and interaction on the LCD still require a matching handheld. The root filesystem is read-only. `/run` and `/tmp` are in RAM.
 
 ## Boot chain and layout
 
@@ -27,7 +27,7 @@ Bazel verifies the source archives, downstream patches and binary firmware by SH
 | 32768 | 64 MiB FAT16 boot partition with `boot.scr`, `Image` and `r36s.dtb` |
 | 163840 | 16 MiB partition containing SquashFS, `PARTUUID=36335030-02` |
 
-The 96 MiB image uses a fixed disk ID, filesystem IDs and timestamps. For byte-for-byte comparison, use the same GNU compiler, static libc and packaging tools in fresh Bazel output bases. Native actions run locally. [Board configuration](../../boards/gameconsole/r36s/rk3326) · [Image target and init policy](targets/sd_image/gameconsole/r36s)
+The 96 MiB image uses a fixed disk ID, filesystem IDs and timestamps. Use identical host compiler, static libc and packaging tool contents for a byte-for-byte rebuild. `--config=rk3326` supplies a fresh Bazel stable-status input to all four local native actions on every invocation. This intentionally rebuilds the stages when reusing an output base, even after replacing a tool in place. The invocation ID stays outside the image. Bazel still caches the pinned source downloads. [Board configuration](../../boards/gameconsole/r36s/rk3326) · [Image target and init policy](targets/sd_image/gameconsole/r36s)
 
 ## Verify without a card
 
@@ -35,7 +35,7 @@ The 96 MiB image uses a fixed disk ID, filesystem IDs and timestamps. For byte-f
 bazel test --config=rk3326 //projects/linux_bringup/targets/sd_image/gameconsole/r36s:image_test
 ```
 
-The test reads the final image to check its extent, partition table, ROM and firmware headers, boot script, ARM64 Image, R36S DTB and static BusyBox init. To exercise kernel and userspace on an ARM virt machine, install `qemu-system-arm`, extract `Image` from the FAT partition and give the same card to virtio read-only.
+The test reads the final card to check the partition table, DDR/miniloader, four U-Boot copies, typed boot script, ARM64 Image, R36S DTB and static BusyBox init. Both BL31 copies must have the physical addresses, padded sector counts and payloads of the pinned ELF. The entire 4 MiB trust region must match the SHA-256 of the same region in the ROCKNIX RK3326 `20261101-a` release. To exercise kernel and userspace on an ARM virt machine, install `qemu-system-arm`, extract `Image` from the FAT partition and give the same card to virtio read-only.
 
 ```sh
 img=$(realpath bazel-bin/projects/linux_bringup/targets/sd_image/gameconsole/r36s/gizos-r36s-panel0.img)
