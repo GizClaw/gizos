@@ -278,10 +278,10 @@ static void script_tap(unsigned frame, int32_t x, int32_t y) {
   fake_touch_t* t = &fx.touch;
   CHECK(t->script_count + 2u <= SCRIPT_MAX);
   t->script[t->script_count] =
-      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_DOWN, x, y};
+      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_DOWN, x, y, 0};
   t->script_frame[t->script_count++] = frame;
   t->script[t->script_count] =
-      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_UP, x, y};
+      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_UP, x, y, 0};
   t->script_frame[t->script_count++] = frame;
 }
 

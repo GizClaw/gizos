@@ -31,6 +31,14 @@ struct h2_jieli_wl82_boot_marker {
 };
 
 extern volatile struct h2_jieli_wl82_boot_marker h2_jieli_wl82_ram_marker;
+
+void h2_jieli_wl82_app_breadcrumb_set(int32_t word) {
+  __atomic_store_n(&h2_jieli_wl82_ram_marker.result, word, __ATOMIC_RELEASE);
+}
+
+int32_t h2_jieli_wl82_app_breadcrumb_get(void) {
+  return __atomic_load_n(&h2_jieli_wl82_ram_marker.result, __ATOMIC_ACQUIRE);
+}
 extern int printf(const char* format, ...);
 extern void put_buf(const uint8_t* buffer, int length);
 
@@ -175,7 +183,7 @@ static void h2_jieli_build_record(struct h2_jieli_coredump_record* record,
   record->reset_reason = reset_reason;
   record->boot_stage = h2_jieli_wl82_ram_marker.stage;
   record->caller = (uint32_t)(uintptr_t)caller;
-  record->marker_result = (uint32_t)h2_jieli_wl82_ram_marker.result;
+  record->marker_result = (uint32_t)h2_jieli_wl82_app_breadcrumb_get();
   const int owns_log = h2_jieli_sdk_try_lock_byte(&log_lock);
   if (owns_log && h2_jieli_log_valid()) {
     uint32_t available = retained_log.total < sizeof(retained_log.data)

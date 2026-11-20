@@ -704,12 +704,12 @@ static void test_scaled_touch_slices_title_melon(void) {
   fx.touch.info = (h2_pal_touch_info_t){WIDTH / 2, HEIGHT / 2};
   fx.touch_from_frame = 5u;
   fx.touch.script[fx.touch.script_count++] =
-      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_DOWN, 30, 144};
+      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_DOWN, 30, 144, 0};
   for (int x = 60; x <= 210; x += 30)
     fx.touch.script[fx.touch.script_count++] =
-        (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_MOVE, x, 144};
+        (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_MOVE, x, 144, 0};
   fx.touch.script[fx.touch.script_count++] =
-      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_UP, 210, 144};
+      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_UP, 210, 144, 0};
   CHECK(run() == H2_PAL_OK);
   CHECK(fx.touch.script_next == fx.touch.script_count);
   /* The melon at the display center is gone once its halves fell away. */
@@ -755,9 +755,9 @@ static void test_ready_failure_stops(void) {
 static void script_tap(int32_t x, int32_t y) {
   CHECK(fx.touch.script_count + 2u <= SCRIPT_MAX);
   fx.touch.script[fx.touch.script_count++] =
-      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_DOWN, x, y};
+      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_DOWN, x, y, 0};
   fx.touch.script[fx.touch.script_count++] =
-      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_UP, x, y};
+      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_UP, x, y, 0};
 }
 
 static void script_tap_at(unsigned frame, int32_t x, int32_t y) {
@@ -1053,9 +1053,9 @@ static void test_paced_audio_through_public_entry(bool prewarm) {
   fx.present_cost_ms = 8u;
   fx.touch_from_frame = 5u;
   fx.touch.script[fx.touch.script_count++] =
-      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_DOWN, 20, 160};
+      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_DOWN, 20, 160, 0};
   fx.touch.script[fx.touch.script_count++] =
-      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_UP, 20, 160};
+      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_UP, 20, 160, 0};
   CHECK(run() == H2_PAL_OK);
   printf(
       "public-entry simulated 480x320: elapsed=%llu starvation=%u full=%u writes=%u\n",
@@ -1073,11 +1073,11 @@ static void test_audio_gesture_pause_and_exit(void) {
   fx.pause_until = 24u;
   fx.touch_from_frame = 5u;
   fx.touch.script[fx.touch.script_count++] =
-      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_DOWN, 60, 288};
+      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_DOWN, 60, 288, 0};
   fx.touch.script[fx.touch.script_count++] =
-      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_MOVE, 400, 288};
+      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_MOVE, 400, 288, 0};
   fx.touch.script[fx.touch.script_count++] =
-      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_UP, 400, 288};
+      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_UP, 400, 288, 0};
   CHECK(run() == H2_PAL_OK);
   CHECK(fx.audio_writes > 0u);
   CHECK(fx.audio_opens == 2u && fx.audio_closes == 2u);
@@ -1091,11 +1091,11 @@ static void test_audio_backpressure_keeps_stream_playing(void) {
   fx.audio_block_writes = 3u;
   fx.touch_from_frame = 5u;
   fx.touch.script[fx.touch.script_count++] =
-      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_DOWN, 60, 288};
+      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_DOWN, 60, 288, 0};
   fx.touch.script[fx.touch.script_count++] =
-      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_MOVE, 400, 288};
+      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_MOVE, 400, 288, 0};
   fx.touch.script[fx.touch.script_count++] =
-      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_UP, 400, 288};
+      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_UP, 400, 288, 0};
   CHECK(run() == H2_PAL_OK);
   CHECK(fx.audio_block_writes == 0u && fx.audio_successful_writes > 0u);
   CHECK(fx.audio_writes == fx.audio_successful_writes + 3u);
@@ -1115,11 +1115,11 @@ static void test_audio_close_errors_release_runtime_wrapped_track(void) {
     }
     fx.touch_from_frame = 5u;
     fx.touch.script[fx.touch.script_count++] =
-        (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_DOWN, 60, 288};
+        (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_DOWN, 60, 288, 0};
     fx.touch.script[fx.touch.script_count++] =
-        (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_MOVE, 400, 288};
+        (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_MOVE, 400, 288, 0};
     fx.touch.script[fx.touch.script_count++] =
-        (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_UP, 400, 288};
+        (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_UP, 400, 288, 0};
     CHECK(run() == H2_PAL_ERR_IO);
     CHECK(fx.audio_opens == 1u && fx.audio_closes == 1u);
     CHECK(fx.audio_starts == 1u);

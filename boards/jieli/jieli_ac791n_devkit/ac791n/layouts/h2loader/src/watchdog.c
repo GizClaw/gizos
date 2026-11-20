@@ -11,6 +11,13 @@
 static volatile uint32_t watchdog_progress[2] SEC(.volatile_ram);
 static volatile uint8_t watchdog_feed_lock SEC(.volatile_ram);
 
+/* Sample which CPU has reported since the last joint feed. These two reads
+ * are approximate. Sampling consumes no progress and performs no feed. */
+uint32_t h2_jieli_ac791n_devkit_watchdog_pending(void) {
+  return h2_jieli_atomic_load_u32(&watchdog_progress[0]) |
+         (h2_jieli_atomic_load_u32(&watchdog_progress[1]) << 1u);
+}
+
 void wdt_clear(void) SEC(.volatile_ram_code);
 void wdt_clear(void) {
   const unsigned core = current_cpu_id();

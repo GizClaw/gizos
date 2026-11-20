@@ -9,6 +9,7 @@
 #include "h2_jieli_ac791n_devkit.h"
 #include "h2_jieli_wl82_atomic.h"
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -25,8 +26,14 @@ enum {
   H2_FT6236_WRITE = 0x70,
   H2_FT6236_READ = 0x71,
   H2_FT6236_FINGERS = 0x02,
-  H2_FT6236_POINT1 = 0x03,
   H2_FT6236_CHIP_ID = 0xa3,
+  H2_FT6236_POINTS = 2,
+  H2_FT6236_POINT_STRIDE = 6,
+  H2_FT6236_FIRST_POINT_SIZE = 1 + 4,
+  H2_FT6236_REPORT_SIZE = H2_FT6236_FIRST_POINT_SIZE + H2_FT6236_POINT_STRIDE,
+  H2_FT6236_DOWN = 0,
+  H2_FT6236_CONTACT = 2,
+  H2_FT6236_INVALID_ID = 15,
 };
 
 typedef struct h2_panel_init {
@@ -46,12 +53,18 @@ typedef struct h2_display_state {
   uint32_t dma_done;
 } h2_display_state_t;
 
+typedef struct h2_touch_contact {
+  uint16_t x, y;
+  uint8_t id, flag;
+} h2_touch_contact_t;
+
 typedef struct h2_touch_state {
   void* iic;
   int open;
-  int down;
-  uint16_t x;
-  uint16_t y;
+  h2_touch_contact_t held[H2_FT6236_POINTS];
+  h2_pal_touch_event_t pending[2 * H2_FT6236_POINTS];
+  unsigned held_count, pending_at, pending_count;
+  bool require_clear;
 } h2_touch_state_t;
 
 static h2_display_state_t display_state;
@@ -59,6 +72,7 @@ static h2_touch_state_t touch_state;
 static uint32_t adkey_initialized;
 static uint32_t display_operation;
 static uint32_t touch_operation;
+static bool touch_multi_enabled;
 
 /* Nonwaiting operation reservations serialize each singleton device. SDK
  * calls run without a held PAL mutex/spinlock; callback reentry returns BUSY.
@@ -268,6 +282,11 @@ static int set_window(const h2_display_rect_t* rect) {
   return lcd_command(0x2c);
 }
 
+__attribute__((weak)) void h2_jieli_ac791n_devkit_display_trace(
+    h2_jieli_display_stage_t stage) {
+  (void)stage;
+}
+
 static int display_draw_bitmap_impl(void* user, const h2_display_rect_t* rect,
                                     const void* pixels, size_t stride_bytes,
                                     h2_display_pixel_format_t format) {
@@ -283,14 +302,17 @@ static int display_draw_bitmap_impl(void* user, const h2_display_rect_t* rect,
   }
   /* Official JieLi LCD fills wait for the preceding non-blocking packet at
    * the beginning of the next fill, then submit the entire new image once. */
+  h2_jieli_ac791n_devkit_display_trace(H2_JIELI_DISPLAY_DRAIN);
   if (display_flush(state) != H2_DISPLAY_OK) {
     return H2_DISPLAY_ERR_IO;
   }
+  h2_jieli_ac791n_devkit_display_trace(H2_JIELI_DISPLAY_WINDOW);
   if (set_window(rect) != 0) return H2_DISPLAY_ERR_IO;
   /* RAMWR (0x2c) is a non-blocking EMI packet too. Finish the command before
    * selecting pixel data; display_write's later flush cannot protect RS. */
   if (display_flush(state) != H2_DISPLAY_OK) return H2_DISPLAY_ERR_IO;
   gpio_direction_output(H2_LCD_RS_PIN, 1);
+  h2_jieli_ac791n_devkit_display_trace(H2_JIELI_DISPLAY_PACK);
   const uint8_t* row = pixels;
   uint8_t* destination = state->frame;
   for (int y = 0; y < rect->height; ++y) {
@@ -303,6 +325,7 @@ static int display_draw_bitmap_impl(void* user, const h2_display_rect_t* rect,
     row += stride_bytes;
   }
   size_t bytes = (size_t)rect->width * (size_t)rect->height * 2u;
+  h2_jieli_ac791n_devkit_display_trace(H2_JIELI_DISPLAY_SUBMIT);
   return display_write(state, state->frame, (uint32_t)bytes);
 }
 
@@ -372,21 +395,27 @@ static int touch_write_register(uint8_t reg, uint8_t value) {
   return result;
 }
 
-static int touch_read_register(uint8_t reg, uint8_t* value) {
+static int touch_read_registers(uint8_t reg, uint8_t* bytes, size_t count) {
   int result = dev_ioctl(touch_state.iic, IIC_IOCTL_START, 0) == 0 ? 0 : -1;
-  if (result == 0 && (dev_ioctl(touch_state.iic, IIC_IOCTL_TX_WITH_START_BIT,
-                                H2_FT6236_WRITE) ||
-                      dev_ioctl(touch_state.iic, IIC_IOCTL_TX, reg) ||
-                      dev_ioctl(touch_state.iic, IIC_IOCTL_TX_WITH_START_BIT,
-                                H2_FT6236_READ) ||
-                      dev_ioctl(touch_state.iic, IIC_IOCTL_RX_WITH_STOP_BIT,
-                                (uintptr_t)value))) {
+  if (result == 0 &&
+      (dev_ioctl(touch_state.iic, IIC_IOCTL_TX_WITH_START_BIT,
+                 H2_FT6236_WRITE) ||
+       dev_ioctl(touch_state.iic, IIC_IOCTL_TX, reg) ||
+       dev_ioctl(touch_state.iic, IIC_IOCTL_TX_WITH_START_BIT, H2_FT6236_READ)))
     result = -1;
-  }
+  for (size_t i = 0; result == 0 && i < count; ++i)
+    if (dev_ioctl(touch_state.iic,
+                  i + 1 == count ? IIC_IOCTL_RX_WITH_STOP_BIT : IIC_IOCTL_RX,
+                  (uintptr_t)&bytes[i]) != 0)
+      result = -1;
   /* START owns the native transaction mutex even if the driver reports an
    * error; STOP must always run to release it, and its error is observable. */
   if (dev_ioctl(touch_state.iic, IIC_IOCTL_STOP, 0) != 0) result = -1;
   return result;
+}
+
+static int touch_read_register(uint8_t reg, uint8_t* value) {
+  return touch_read_registers(reg, value, 1u);
 }
 
 static h2_pal_result_t touch_open_impl(void* user) {
@@ -425,44 +454,146 @@ static h2_pal_result_t touch_get_info_impl(void* user,
   return H2_PAL_OK;
 }
 
+static const h2_touch_contact_t* touch_find(const h2_touch_contact_t* contacts,
+                                            unsigned count, uint8_t id) {
+  for (unsigned i = 0; i < count; ++i)
+    if (contacts[i].id == id) return &contacts[i];
+  return NULL;
+}
+
+static void touch_enqueue(h2_touch_state_t* state,
+                          h2_pal_touch_event_kind_t kind,
+                          const h2_touch_contact_t* contact) {
+  state->pending[state->pending_count++] =
+      (h2_pal_touch_event_t){.kind = kind,
+                             .x = contact->x,
+                             .y = contact->y,
+                             .pointer_id = contact->id};
+}
+
+static h2_touch_contact_t touch_decode_point(const uint8_t* point) {
+  uint16_t raw_x = (uint16_t)(((uint16_t)(point[0] & 0x0fu) << 8u) | point[1]);
+  uint16_t raw_y = (uint16_t)(((uint16_t)(point[2] & 0x0fu) << 8u) | point[3]);
+  /* Match the DevKit's landscape transform and clamp to the panel. */
+  return (h2_touch_contact_t){
+      .x = raw_y < H2_LCD_WIDTH ? raw_y : H2_LCD_WIDTH - 1u,
+      .y = raw_x < H2_LCD_HEIGHT ? (uint16_t)(H2_LCD_HEIGHT - 1u - raw_x) : 0u,
+      .id = point[2] >> 4,
+      .flag = point[0] >> 6};
+}
+
+static bool touch_decode(const uint8_t report[H2_FT6236_REPORT_SIZE],
+                         unsigned count,
+                         h2_touch_contact_t contacts[H2_FT6236_POINTS]) {
+  if (count == 0) return true;
+  if (count > H2_FT6236_POINTS) return false;
+  unsigned active = 0;
+  for (unsigned slot = 0; slot < H2_FT6236_POINTS; ++slot) {
+    const h2_touch_contact_t contact =
+        touch_decode_point(&report[1 + slot * H2_FT6236_POINT_STRIDE]);
+    if (contact.id == H2_FT6236_INVALID_ID ||
+        (contact.flag != H2_FT6236_DOWN && contact.flag != H2_FT6236_CONTACT))
+      continue;
+    if (touch_find(contacts, active, contact.id)) return false;
+    contacts[active++] = contact;
+  }
+  return active == count;
+}
+
+static void touch_apply_single(h2_touch_state_t* state, const uint8_t* report,
+                               unsigned count) {
+  /* Preserve the legacy first-slot stream and ignore hardware contact IDs. */
+  if (count == 0) {
+    if (state->held_count)
+      touch_enqueue(state, H2_PAL_TOUCH_EVENT_UP, &state->held[0]);
+    state->held_count = 0;
+    return;
+  }
+  h2_touch_contact_t next = touch_decode_point(&report[1]);
+  next.id = 0;
+  if (!state->held_count)
+    touch_enqueue(state, H2_PAL_TOUCH_EVENT_DOWN, &next);
+  else if (state->held[0].x != next.x || state->held[0].y != next.y)
+    touch_enqueue(state, H2_PAL_TOUCH_EVENT_MOVE, &next);
+  state->held[0] = next;
+  state->held_count = 1;
+}
+
+static bool touch_restarted(const h2_touch_contact_t* old,
+                            const h2_touch_contact_t* next) {
+  return old->flag == H2_FT6236_CONTACT && next->flag == H2_FT6236_DOWN;
+}
+
+static void touch_apply(h2_touch_state_t* state,
+                        const h2_touch_contact_t contacts[H2_FT6236_POINTS],
+                        unsigned count) {
+  /* A report can retire two IDs and start two new IDs. Publish retirements
+   * first so a newly pressed finger can claim the control just released. */
+  for (unsigned i = 0; i < state->held_count; ++i) {
+    const h2_touch_contact_t* old = &state->held[i];
+    const h2_touch_contact_t* next = touch_find(contacts, count, old->id);
+    if (!next)
+      touch_enqueue(state, H2_PAL_TOUCH_EVENT_UP, old);
+    else if (touch_restarted(old, next))
+      touch_enqueue(state, H2_PAL_TOUCH_EVENT_CANCEL, old);
+  }
+  for (unsigned i = 0; i < count; ++i) {
+    const h2_touch_contact_t* next = &contacts[i];
+    const h2_touch_contact_t* old =
+        touch_find(state->held, state->held_count, next->id);
+    if (!old || touch_restarted(old, next))
+      touch_enqueue(state, H2_PAL_TOUCH_EVENT_DOWN, next);
+    else if (old->x != next->x || old->y != next->y)
+      touch_enqueue(state, H2_PAL_TOUCH_EVENT_MOVE, next);
+  }
+  for (unsigned i = 0; i < count; ++i) state->held[i] = contacts[i];
+  state->held_count = count;
+}
+
+static void touch_apply_report(h2_touch_state_t* state,
+                               const uint8_t report[H2_FT6236_REPORT_SIZE]) {
+  unsigned count = report[0] & 0x0fu;
+  if (!touch_multi_enabled) {
+    touch_apply_single(state, report, count);
+    return;
+  }
+  if (state->require_clear) {
+    if (count == 0) state->require_clear = false;
+    return;
+  }
+  h2_touch_contact_t contacts[H2_FT6236_POINTS];
+  if (!touch_decode(report, count, contacts)) {
+    /* A contradictory report cannot be used as a press. Cancel held IDs
+     * and wait for a clean lift so the same contact cannot press twice. */
+    state->require_clear = true;
+    if (state->held_count) {
+      state->held_count = 0;
+      state->pending[state->pending_count++] =
+          (h2_pal_touch_event_t){.kind = H2_PAL_TOUCH_EVENT_CANCEL,
+                                 .pointer_id = H2_PAL_TOUCH_ALL_POINTERS};
+    }
+    return;
+  }
+  touch_apply(state, contacts, count);
+}
+
 static h2_pal_result_t touch_poll_event_impl(void* user,
                                              h2_pal_touch_event_t* out_event) {
   if (out_event == NULL) return H2_PAL_ERR_INVALID_ARG;
   h2_touch_state_t* state = user;
-  uint8_t fingers = 0u;
-  uint8_t point[4];
   if (!state->open) return H2_PAL_ERR_INVALID_STATE;
-  if (touch_read_register(H2_FT6236_FINGERS, &fingers) != 0) {
-    return H2_PAL_ERR_IO;
-  }
-  if ((fingers & 0x0fu) == 0u) {
-    if (!state->down) return H2_PAL_ERR_WOULD_BLOCK;
-    state->down = 0;
-    *out_event = (h2_pal_touch_event_t){
-        .kind = H2_PAL_TOUCH_EVENT_UP, .x = state->x, .y = state->y};
-    return H2_PAL_OK;
-  }
-  for (size_t i = 0u; i < sizeof(point); ++i) {
-    if (touch_read_register((uint8_t)(H2_FT6236_POINT1 + i), &point[i]) != 0) {
+  if (state->pending_at == state->pending_count) {
+    state->pending_at = state->pending_count = 0;
+    uint8_t report[H2_FT6236_REPORT_SIZE];
+    size_t size =
+        touch_multi_enabled ? sizeof(report) : H2_FT6236_FIRST_POINT_SIZE;
+    /* Read status and all selected point records in one transaction. */
+    if (touch_read_registers(H2_FT6236_FINGERS, report, size) != 0)
       return H2_PAL_ERR_IO;
-    }
+    touch_apply_report(state, report);
+    if (!state->pending_count) return H2_PAL_ERR_WOULD_BLOCK;
   }
-  uint16_t raw_x = (uint16_t)(((uint16_t)(point[0] & 0x0fu) << 8u) | point[1]);
-  uint16_t raw_y = (uint16_t)(((uint16_t)(point[2] & 0x0fu) << 8u) | point[3]);
-  /* Match the DevKit's official FT6236 landscape transform. Keep the PAL
-   * result strictly inside its zero-based 480x320 coordinate space. */
-  uint16_t x = raw_y < H2_LCD_WIDTH ? raw_y : H2_LCD_WIDTH - 1u;
-  uint16_t y =
-      raw_x < H2_LCD_HEIGHT ? (uint16_t)(H2_LCD_HEIGHT - 1u - raw_x) : 0u;
-  if (state->down && x == state->x && y == state->y) {
-    return H2_PAL_ERR_WOULD_BLOCK;
-  }
-  h2_pal_touch_event_kind_t kind =
-      state->down ? H2_PAL_TOUCH_EVENT_MOVE : H2_PAL_TOUCH_EVENT_DOWN;
-  state->down = 1;
-  state->x = x;
-  state->y = y;
-  *out_event = (h2_pal_touch_event_t){.kind = kind, .x = x, .y = y};
+  *out_event = state->pending[state->pending_at++];
   return H2_PAL_OK;
 }
 
@@ -481,6 +612,19 @@ INPUT_OPERATION(touch_poll_event, h2_pal_result_t, touch_operation,
                 (void* user, h2_pal_touch_event_t* event), (user, event))
 INPUT_OPERATION(touch_close, h2_pal_result_t, touch_operation, (void* user),
                 (user))
+
+h2_pal_result_t h2_jieli_ac791n_devkit_enable_multi_touch(void) {
+  uint32_t expected = 0u;
+  if (!h2_jieli_atomic_cas_u32(&touch_operation, &expected, 1u))
+    return H2_PAL_ERR_BUSY;
+  h2_pal_result_t result = H2_PAL_ERR_INVALID_STATE;
+  if (!touch_state.open) {
+    touch_multi_enabled = true;
+    result = H2_PAL_OK;
+  }
+  h2_jieli_atomic_store_u32(&touch_operation, 0u);
+  return result;
+}
 
 const h2_pal_touch_api_t* h2_jieli_ac791n_devkit_touch_api(void) {
   static const h2_pal_touch_vtable_t vtable = {

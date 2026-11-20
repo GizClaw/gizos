@@ -325,7 +325,7 @@ static h2_pal_result_t test_touch_poll(void* user,
   if (event == NULL) return H2_PAL_ERR_INVALID_ARG;
   if (s_test_touch_event_sent) return H2_PAL_ERR_WOULD_BLOCK;
   s_test_touch_event_sent = 1;
-  *event = (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_DOWN, 12, 34};
+  *event = (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_DOWN, 12, 34, 0};
   return H2_PAL_OK;
 }
 

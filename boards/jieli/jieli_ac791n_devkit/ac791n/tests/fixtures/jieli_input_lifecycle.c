@@ -26,7 +26,8 @@ enum {
   IIC_IOCTL_TX_WITH_START_BIT,
   IIC_IOCTL_TX,
   IIC_IOCTL_TX_WITH_STOP_BIT,
-  IIC_IOCTL_RX_WITH_STOP_BIT
+  IIC_IOCTL_RX_WITH_STOP_BIT,
+  IIC_IOCTL_RX
 };
 #define AD_CH_PB01 1u
 #define ADC_MAX_CH 10u
@@ -38,6 +39,10 @@ static int model_panel;
 static const uint8_t* dma_source;
 static uint32_t dma_length;
 static uint8_t small_packet[4];
+static unsigned touch_reads, touch_commands;
+static uint8_t touch_report[11];
+static int trace_touch;
+static unsigned report_size = 5;
 static uint32_t clock_ms;
 static void complete_transfer(void);
 static h2_atomic_int_t adc_calls, adc_result, pause_adc, pause_draw,
@@ -112,7 +117,26 @@ static int fake_dev_ioctl(void* device, int command, uintptr_t argument) {
   if (command == IIC_IOCTL_START && h2_atomic_load(&pause_touch))
     pause_operation();
   if (command == IIC_IOCTL_STOP) ++stops;
-  if (command == IIC_IOCTL_RX_WITH_STOP_BIT) *(uint8_t*)argument = 0x64;
+  if (trace_touch && device == &iic_handle) {
+    static const int prefix[] = {IIC_IOCTL_START, IIC_IOCTL_TX_WITH_START_BIT,
+                                 IIC_IOCTL_TX, IIC_IOCTL_TX_WITH_START_BIT};
+    unsigned size = report_size;
+    if (command == IIC_IOCTL_STOP && iic_error) {
+      assert(touch_commands == 5 && touch_reads == 1);
+    } else if (touch_commands < 4) {
+      assert(command == prefix[touch_commands]);
+    } else if (touch_reads < size) {
+      assert(command == (touch_reads + 1u == size ? IIC_IOCTL_RX_WITH_STOP_BIT
+                                                  : IIC_IOCTL_RX));
+    } else {
+      assert(command == IIC_IOCTL_STOP);
+    }
+    if (command == IIC_IOCTL_TX) assert(argument == 0x02);
+    if (command == IIC_IOCTL_RX || command == IIC_IOCTL_RX_WITH_STOP_BIT)
+      *(uint8_t*)argument = touch_report[touch_reads++];
+    ++touch_commands;
+  } else if (command == IIC_IOCTL_RX || command == IIC_IOCTL_RX_WITH_STOP_BIT)
+    *(uint8_t*)argument = 0x64;
   return command == iic_error ? -1 : 0;
 }
 #define dev_ioctl(device, command, argument) \
@@ -205,11 +229,131 @@ static void* draw_thread(void* unused) {
                                   H2_DISPLAY_PIXEL_RGB565) == H2_PAL_OK);
   return NULL;
 }
+enum { PRESS = 0, LIFT = 1, CONTACT = 2 };
+static void report_begin(unsigned count) {
+  trace_touch = 1;
+  touch_reads = touch_commands = 0;
+  memset(touch_report, 0xff, sizeof(touch_report));
+  touch_report[0] = (uint8_t)count;
+}
+static void report_point(unsigned slot, unsigned id, unsigned flag,
+                         unsigned raw_x, unsigned raw_y) {
+  uint8_t* point = &touch_report[1 + 6 * slot];
+  point[0] = (uint8_t)(flag << 6 | raw_x >> 8);
+  point[1] = (uint8_t)raw_x;
+  point[2] = (uint8_t)(id << 4 | raw_y >> 8);
+  point[3] = (uint8_t)raw_y;
+}
+static void expect_event(const h2_pal_touch_api_t* api,
+                         h2_pal_touch_event_kind_t kind, uint32_t id, int x,
+                         int y) {
+  h2_pal_touch_event_t event;
+  assert(h2_pal_touch_poll_event(api, &event) == H2_PAL_OK);
+  assert(event.kind == kind && event.pointer_id == id);
+  assert(event.x == x && event.y == y);
+}
+static void expect_empty(const h2_pal_touch_api_t* api) {
+  h2_pal_touch_event_t event;
+  touch_reads = touch_commands = 0;
+  assert(h2_pal_touch_poll_event(api, &event) == H2_PAL_ERR_WOULD_BLOCK);
+}
+static void touch_single_sequence(const h2_pal_touch_api_t* api) {
+  assert(h2_jieli_ac791n_devkit_enable_multi_touch() ==
+         H2_PAL_ERR_INVALID_STATE);
+  report_begin(1);
+  report_point(0, 3, PRESS, 81, 96);
+  expect_event(api, H2_PAL_TOUCH_EVENT_DOWN, 0, 96, 238);
+  assert(touch_commands == 10 && touch_reads == 5 && stops == 1);
+  report_begin(2);
+  report_point(0, 9, PRESS, 81, 384);
+  report_point(1, 3, CONTACT, 81, 96);
+  expect_event(api, H2_PAL_TOUCH_EVENT_MOVE, 0, 384, 238);
+  expect_empty(api);
+  report_begin(0);
+  expect_event(api, H2_PAL_TOUCH_EVENT_UP, 0, 384, 238);
+  expect_empty(api);
+}
+
+static void touch_report_sequence(const h2_pal_touch_api_t* api) {
+  report_begin(1);
+  report_point(0, 0, PRESS, 81, 56);
+  expect_event(api, H2_PAL_TOUCH_EVENT_DOWN, 0, 56, 238);
+  assert(touch_commands == 16 && touch_reads == 11 && stops == 1);
+  report_begin(1);
+  report_point(0, 0, CONTACT, 81, 41);
+  expect_event(api, H2_PAL_TOUCH_EVENT_MOVE, 0, 41, 238);
+  report_begin(1);
+  report_point(0, 0, CONTACT, 80, 0);
+  expect_event(api, H2_PAL_TOUCH_EVENT_MOVE, 0, 0, 239);
+  expect_empty(api);
+  iic_error = IIC_IOCTL_RX;
+  report_begin(1);
+  report_point(0, 0, CONTACT, 80, 500);
+  h2_pal_touch_event_t event;
+  assert(h2_pal_touch_poll_event(api, &event) == H2_PAL_ERR_IO);
+  assert(touch_commands == 6 && stops == 5);
+  iic_error = 0;
+  report_begin(0);
+  expect_event(api, H2_PAL_TOUCH_EVENT_UP, 0, 0, 239);
+  expect_empty(api);
+  report_begin(1);
+  report_point(0, 7, PRESS, 80, 500);
+  expect_event(api, H2_PAL_TOUCH_EVENT_DOWN, 7, 479, 239);
+}
+static void touch_dual_sequence(const h2_pal_touch_api_t* api) {
+  report_begin(1);
+  report_point(0, 3, PRESS, 81, 96);
+  expect_event(api, H2_PAL_TOUCH_EVENT_DOWN, 3, 96, 238);
+  report_begin(2);
+  report_point(0, 9, PRESS, 81, 384);
+  report_point(1, 3, CONTACT, 81, 57);
+  expect_event(api, H2_PAL_TOUCH_EVENT_DOWN, 9, 384, 238);
+  expect_event(api, H2_PAL_TOUCH_EVENT_MOVE, 3, 57, 238);
+  assert(touch_commands == 16 && stops == 2);
+  report_begin(2);
+  report_point(0, 3, CONTACT, 81, 57);
+  report_point(1, 9, PRESS, 81, 384);
+  expect_empty(api); /* Swap slots while the controller repeats PRESS. */
+  report_begin(1);
+  report_point(0, 9, LIFT, 81, 384);
+  report_point(1, 3, CONTACT, 81, 41);
+  expect_event(api, H2_PAL_TOUCH_EVENT_UP, 9, 384, 238);
+  expect_event(api, H2_PAL_TOUCH_EVENT_MOVE, 3, 41, 238);
+  report_begin(2);
+  report_point(0, 3, CONTACT, 81, 40);
+  report_point(1, 9, CONTACT, 81, 384);
+  expect_event(api, H2_PAL_TOUCH_EVENT_MOVE, 3, 40, 238);
+  expect_event(api, H2_PAL_TOUCH_EVENT_DOWN, 9, 384, 238);
+  report_begin(1);
+  report_point(0, 9, CONTACT, 81, 384);
+  expect_event(api, H2_PAL_TOUCH_EVENT_UP, 3, 40, 238);
+  expect_empty(api);
+  report_begin(1);
+  report_point(0, 9, PRESS, 81, 96);
+  expect_event(api, H2_PAL_TOUCH_EVENT_CANCEL, 9, 384, 238);
+  expect_event(api, H2_PAL_TOUCH_EVENT_DOWN, 9, 96, 238);
+  report_begin(2);
+  report_point(0, 9, CONTACT, 81, 57);
+  report_point(1, 9, CONTACT, 81, 384);
+  expect_event(api, H2_PAL_TOUCH_EVENT_CANCEL, H2_PAL_TOUCH_ALL_POINTERS, 0, 0);
+  report_begin(1);
+  report_point(0, 9, CONTACT, 81, 57);
+  expect_empty(api);
+  report_begin(0);
+  expect_empty(api);
+  report_begin(1);
+  report_point(0, 9, PRESS, 81, 96);
+  expect_event(api, H2_PAL_TOUCH_EVENT_DOWN, 9, 96, 238);
+  report_begin(0);
+  expect_event(api, H2_PAL_TOUCH_EVENT_UP, 9, 96, 238);
+  expect_empty(api);
+}
 static void* touch_thread(void* unused) {
   (void)unused;
-  h2_pal_touch_event_t event;
-  const h2_pal_touch_api_t* api = h2_jieli_ac791n_devkit_touch_api();
-  assert(api->vtable->poll_event(api->user, &event) == H2_PAL_OK);
+  report_begin(1);
+  report_point(0, 0, PRESS, 81, 96);
+  expect_event(h2_jieli_ac791n_devkit_touch_api(), H2_PAL_TOUCH_EVENT_DOWN, 0,
+               96, 238);
   return NULL;
 }
 static void* button_thread(void* unused) {
@@ -241,6 +385,11 @@ int main(int argc, char** argv) {
   assert(argc == 2);
   display_state.device = &emi_handle;
   display_state.open = 1;
+  if (strcmp(argv[1], "touch_report") == 0 ||
+      strcmp(argv[1], "touch_dual") == 0) {
+    assert(h2_jieli_ac791n_devkit_enable_multi_touch() == H2_PAL_OK);
+    report_size = sizeof(touch_report);
+  }
   touch_state.iic = &iic_handle;
   touch_state.open = 1;
   const h2_pal_display_api_t* display = h2_jieli_ac791n_devkit_display_api();
@@ -286,6 +435,12 @@ int main(int argc, char** argv) {
     assert(display->vtable->close(display->user) == H2_PAL_ERR_IO);
     assert(!display_state.open && display_state.device == NULL);
     assert(display->vtable->close(display->user) == H2_PAL_OK && closes == 1);
+  } else if (strcmp(argv[1], "touch_single") == 0) {
+    touch_single_sequence(touch);
+  } else if (strcmp(argv[1], "touch_report") == 0) {
+    touch_report_sequence(touch);
+  } else if (strcmp(argv[1], "touch_dual") == 0) {
+    touch_dual_sequence(touch);
   } else if (strcmp(argv[1], "touch_close_error") == 0) {
     close_error = 1;
     assert(touch->vtable->close(touch->user) == H2_PAL_ERR_IO);

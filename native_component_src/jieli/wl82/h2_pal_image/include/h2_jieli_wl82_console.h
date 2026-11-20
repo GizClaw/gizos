@@ -34,4 +34,10 @@ void h2_jieli_wl82_diag_write(const char* text);
 int h2_jieli_wl82_take_loader_crash_pending(void);
 int h2_jieli_wl82_coredump_flush_pending(void);
 
+/* Post-startup, single App writer. The existing Loader warm snapshot reports
+ * this aligned retained word as marker.result. Boot stages and reset policy
+ * have independent ownership. A task-context observer can sample the word. */
+void h2_jieli_wl82_app_breadcrumb_set(int32_t word);
+int32_t h2_jieli_wl82_app_breadcrumb_get(void);
+
 #endif

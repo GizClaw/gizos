@@ -65,16 +65,19 @@ static inline int h2_android_touch_capture(h2_android_touch_state_t* state,
     if (state->pressed && x == state->last_x && y == state->last_y)
       return H2_PAL_OK;
     h2_android_touch_enqueue(
-        state, (h2_pal_touch_event_t){state->pressed ? H2_PAL_TOUCH_EVENT_MOVE
-                                                     : H2_PAL_TOUCH_EVENT_DOWN,
-                                      x, y});
+        state,
+        (h2_pal_touch_event_t){.kind = state->pressed ? H2_PAL_TOUCH_EVENT_MOVE
+                                                      : H2_PAL_TOUCH_EVENT_DOWN,
+                               .x = x,
+                               .y = y});
     state->pressed = true;
     state->last_x = x;
     state->last_y = y;
   } else if (state->pressed) {
     h2_android_touch_enqueue(
-        state, (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_UP, state->last_x,
-                                      state->last_y});
+        state, (h2_pal_touch_event_t){.kind = H2_PAL_TOUCH_EVENT_UP,
+                                      .x = state->last_x,
+                                      .y = state->last_y});
     state->pressed = false;
   }
   return H2_PAL_OK;
