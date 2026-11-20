@@ -2810,6 +2810,31 @@ static void draw_pause(h2_garden_guard_canvas_t* canvas,
   text_centered(canvas, L("PAUSED", "已暂停"), cx, y + 71.0f * s,
                 text_scale(s, 3.0f), cream, 256u);
   menu_button(canvas, center, L("RESUME", "继续游戏"), gold, ink);
+  if (game->sound_control) {
+    const h2_garden_guard_rect_t button =
+        h2_garden_guard_action_rect(l, H2_GARDEN_GUARD_ACTION_SOUND);
+    const float x = button.x + button.w * 0.5f, cy = button.y + button.h * 0.5f;
+    /* Speaker and a slash/moving air, independent of the font subset. */
+    rounded_rect(canvas, button.x, button.y, button.x + button.w,
+                 button.y + button.h, 7.0f * s, green, 256u);
+    fill_rect(canvas, x - 14.0f * s, cy - 4.0f * s, x - 6.0f * s, cy + 4.0f * s,
+              cream, 256u);
+    for (unsigned i = 0; i < 8u; ++i) {
+      const float d = (float)i * s;
+      fill_rect(canvas, x - 7.0f * s + d, cy - 4.0f * s - d, x - 6.0f * s + d,
+                cy + 4.0f * s + d, cream, 256u);
+    }
+    if (game->muted) {
+      for (unsigned i = 0; i < 16u; ++i) {
+        const float d = (float)i * s;
+        disc(canvas, x + 16.0f * s - d, cy - 8.0f * s + d, 1.5f * s, gold,
+             256u);
+      }
+    } else {
+      disc(canvas, x + 6.0f * s, cy, 2.5f * s, cream, 256u);
+      disc(canvas, x + 13.0f * s, cy, 2.0f * s, cream, 256u);
+    }
+  }
   menu_button(
       canvas,
       h2_garden_guard_action_rect(l, H2_GARDEN_GUARD_ACTION_PAUSE_LANGUAGE),

@@ -3,13 +3,14 @@
 #include "h2_desktop_platform.h"
 #include "h2_garden_guard.h"
 #include "h2_pal_unsupported.h"
+#include "h2_portaudio.h"
 #include "h2_sdl3.h"
 
 #include <stdio.h>
 
 typedef struct window {
   h2_sdl3_t* sdl;
-  bool closed, back;
+  bool closed, back, unfocused;
 } window_t;
 
 static bool should_exit(void* user) {
@@ -21,6 +22,10 @@ static bool should_exit(void* user) {
     else if (event.kind == H2_SDL3_EVENT_KEY && event.pressed &&
              event.key == H2_SDL3_KEY_ESCAPE)
       window->back = true;
+    else if (event.kind == H2_SDL3_EVENT_FOCUS_LOST)
+      window->unfocused = true;
+    else if (event.kind == H2_SDL3_EVENT_FOCUS_GAINED)
+      window->unfocused = false;
   }
   return window->closed;
 }
@@ -32,7 +37,10 @@ static bool back_pressed(void* user) {
   return pressed;
 }
 
-static h2_runtime_config_t runtime_config(h2_sdl3_t* sdl) {
+static bool audio_active(void* user) { return !((window_t*)user)->unfocused; }
+
+static h2_runtime_config_t runtime_config(h2_sdl3_t* sdl,
+                                          h2_portaudio_t* audio) {
   h2_runtime_config_t config = {0};
   config.board = "desktop";
   config.target = "desktop";
@@ -63,7 +71,8 @@ static h2_runtime_config_t runtime_config(h2_sdl3_t* sdl) {
   config.power = h2_pal_unsupported_power_api();
   config.camera = h2_pal_unsupported_camera_api();
   config.display = h2_sdl3_display(sdl);
-  config.audio = h2_pal_unsupported_audio_api();
+  config.audio =
+      audio ? h2_portaudio_audio(audio) : h2_pal_unsupported_audio_api();
   config.audio_decoder = h2_pal_unsupported_audio_decoder_api();
   config.periph = h2_pal_unsupported_periph_api();
   config.button = h2_pal_unsupported_button_api();
@@ -96,18 +105,33 @@ int main(int argc, char** argv) {
     fprintf(stderr, "garden-guard: SDL3 window failed\n");
     return 1;
   }
-  const h2_runtime_config_t config = runtime_config(window.sdl);
+  h2_portaudio_t* audio = NULL;
+  const h2_portaudio_config_t audio_config = {
+      .allocator = h2_desktop_platform_default_allocator(),
+      .queue = h2_desktop_platform_queue_api(),
+      .sync = h2_desktop_platform_sync_api(),
+      .require_real_devices = 1};
+  const int audio_rc = h2_portaudio_create(&audio_config, &audio);
+  if (audio_rc != H2_PAL_OK)
+    fprintf(stderr, "garden-guard: optional audio unavailable rc=%d\n",
+            audio_rc);
+  const h2_runtime_config_t config = runtime_config(window.sdl, audio);
   h2_runtime_t* runtime = NULL;
   int rc = h2_runtime_init(&config, &runtime);
   if (rc == H2_PAL_OK) {
     const h2_garden_guard_config_t game = {.should_exit = should_exit,
+                                           .enable_audio = audio != NULL,
+                                           .audio_active = audio_active,
                                            .back_pressed = back_pressed,
                                            .exit_on_unhandled_back = true,
                                            .user = &window};
     rc = h2_garden_guard_run(runtime, &game);
   }
   const int destroyed = runtime != NULL ? h2_runtime_destroy(&runtime) : 0;
-  if (destroyed == H2_PAL_OK) h2_sdl3_destroy(window.sdl);
+  if (destroyed == H2_PAL_OK) {
+    h2_portaudio_destroy(audio);
+    h2_sdl3_destroy(window.sdl);
+  }
   if (rc != H2_PAL_OK || destroyed != H2_PAL_OK) {
     fprintf(stderr, "garden-guard: rc=%d destroy=%d\n", rc, destroyed);
     return 1;

@@ -1,6 +1,6 @@
 # Garden Guard
 
-A touch lane-defense garden game. Plants hold five lanes of a nine-cell lawn against waves of cartoon garden zombies. The portable App in [`app/`](app/) depends only on Runtime and the Display, Touch and Pref PAL contracts; it renders RGB565 in software and pushes only the dirty row bands each frame. The public contract is [`h2_garden_guard.h`](app/include/h2_garden_guard.h).
+A touch lane-defense garden game. Plants hold five lanes of a nine-cell lawn against waves of cartoon garden zombies. The portable App in [`app/`](app/) uses Runtime and the Display, Touch, Pref and Audio PAL contracts. It renders RGB565 in software and pushes only the dirty row bands each frame. The public contract is [`h2_garden_guard.h`](app/include/h2_garden_guard.h).
 
 | Entry | Board | Package |
 | --- | --- | --- |
@@ -42,11 +42,19 @@ Cards recharge after use, shown by a draining shade. Shamblers drag one foot, Sh
 
 The lawn is viewed obliquely from its front edge: distant rows are narrower and closer together, while upright plants and zombies grow larger toward the viewer. All display shapes keep the lanes running right to left toward the house; taller displays show more courtyard behind the lawn. Planting and drag highlights use the same perspective geometry as the ground. The shovel can also target a plant's raised figure.
 
+## Audio
+
+The original **Morning Rounds** theme plays during a run. The speaker button in the pause menu mutes both music and effects for the current session. Pause holds the music position and clears pending effects. Leaving a run or starting again resets the score. On the Web target, a trusted interaction unlocks audio and the game falls silent in the background or while another tab holds the profile lock.
+
+The final PCM is synthesized from the first-party score in [`h2_garden_guard_score.c`](app/src/h2_garden_guard_score.c). Its 16 bars at 120 BPM repeat every 32 seconds at 16 kHz. The same C11 integer renderer produces samples for the native, Web and desktop targets. There are no external recordings or audio assets to fetch. `bazel test //projects/garden_guard/app:score_test` exercises the loop seam, each effect at multiple sample rates and overlapping cues.
+
+The game thread coalesces sound cues in a single atomic word. A separate task owns the audio stream, its reusable frame buffer and its mixer cursor. The WL82 task table places the producer on CPU 1 at priority 11, below the SDK audio server (16), mixer (28) and decoder (30). The existing game entry keeps its priority 10 and its SDK-default affinity. The DAC PAL uses a three-frame PCM ring at 16 kHz mono for this game, with 320 samples per frame. ESP task policy places the producer on core 1 at priority 5 and retains the existing display setup and game policy. The desktop routes playback to PortAudio and Web to the browser's AudioContext. Provider failure leaves gameplay running silently.
+
 ## Rendering
 
 The courtyard is drawn once, including the tiled entry, back border and retaining wall. The toolbar and parked carts are cached separately. While playing, the renderer draws plants, zombies, projectiles and moving carts from far lane to near, with a one-byte-per-pixel occlusion map for the parked carts. The scene restores and presents only the horizontal bands and column ranges covered in the current or previous frame. The three RGB565 buffers and depth map together use 7 bytes per pixel (1.03 MiB at 480×320, 2.56 MiB at 480×800). There are no frame-time allocations.
 
-Quiet leaves and blinks update on a 120 ms clock. Growth, bloom, shot recoil, jaw strikes, hits and falls follow gameplay events at the default 40 ms frame period. The planted pose also drives the shovel hit area. An idle title screen presents only its first frame. Its dedicated cover illustration uses a 128-color RGB565 palette and per-row runs in flash. It is decoded one row at a time into a 480-byte stack buffer and needs no extra framebuffer.
+Quiet leaves and blinks update on a 120 ms clock. Growth, bloom, shot recoil, jaw strikes, hits and falls follow gameplay events at the default 40 ms frame period. The planted pose also drives the shovel hit area. An idle title screen presents only its first frame. Its dedicated cover illustration uses a 128-color RGB565 palette and 16-row groups in flash. It is decoded into one 480-byte stack buffer and needs no extra framebuffer.
 
 The Field Journal and Plant Shop open from the title or result. The journal unlocks a card when that zombie first becomes visible. Select a discovered card to inspect its portrait, trait, and counter. Close it or press Escape on Web and desktop to return it to the shelf. The Web game observes the browser’s reduced-motion preference. Every finished match adds its run score to the total once. Plant defeats earn 3 coins per 10 defense points, rounded up, with another 12 for a win with plant defeats. Carts still score, but their kills do not earn coins. Purchases permanently unlock cards while each new run begins with its ordinary sun allowance.
 
@@ -74,7 +82,7 @@ python3 projects/garden_guard/tools/generate_droid.py \
   "$scratch/DroidSansFallback.ttf" "$scratch/generate_han" "$scratch/DroidSans.ttf"
 ```
 
-The cover retains its original RGB565 palette and per-row runs. The decode table reduces its flash footprint while the renderer still uses one row of scratch storage. To reproduce the conversion, pass the original row-RLE table from commit `8c48db3a899fe6ee367dd58f253c2188d4540ea0` to `tools/compress_cover.py ORIGINAL_INCLUDE app/src/h2_garden_guard_title.inc`. The tool round-trips every row against the input.
+The cover retains its original RGB565 palette and pixels. Each 16-row group starts with a complete row. The following rows use horizontal runs and spans copied in place from the previous row. A Huffman table encodes the tokens. To reproduce the conversion, pass the original row-RLE table from commit `8c48db3a899fe6ee367dd58f253c2188d4540ea0` to `tools/compress_cover.py ORIGINAL_INCLUDE app/src/h2_garden_guard_title.inc`. The tool round-trips every pixel against the input.
 
 The zombie sprites and journal portraits are generated from the original drawing paths. See the [sprite sources](tools/zombie_art/) for the format and regeneration command.
 

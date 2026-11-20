@@ -344,9 +344,9 @@ static void script_tap(float x, float y) {
   const float sy = (float)fx.touch.info.height / (float)fx.display.info.height;
   const int32_t tx = (int32_t)(x * sx), ty = (int32_t)(y * sy);
   fx.touch.script[fx.touch.script_count++] =
-      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_DOWN, tx, ty};
+      (h2_pal_touch_event_t){.kind = H2_PAL_TOUCH_EVENT_DOWN, .x = tx, .y = ty};
   fx.touch.script[fx.touch.script_count++] =
-      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_UP, tx, ty};
+      (h2_pal_touch_event_t){.kind = H2_PAL_TOUCH_EVENT_UP, .x = tx, .y = ty};
 }
 
 static void script_action(const h2_garden_guard_layout_t* l,
