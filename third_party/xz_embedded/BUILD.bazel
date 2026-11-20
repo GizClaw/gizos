@@ -1,0 +1,24 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "headers",
+    hdrs = [
+        "xz.h",
+        "xz_config.h",
+        "xz_lzma2.h",
+        "xz_private.h",
+        "xz_stream.h",
+    ],
+    includes = ["."],
+)
+
+filegroup(
+    name = "firmware_sources",
+    srcs = [
+        "xz_crc32.c",
+        "xz_dec_lzma2.c",
+        "xz_dec_stream.c",
+    ],
+)
