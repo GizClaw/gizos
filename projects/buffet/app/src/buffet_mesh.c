@@ -401,7 +401,7 @@ static void pass_shelves(mesh_t m) {
 static void cabinet(mesh_t m, int row) {
   bf_footprint_t r = bf_counters[row];
   bool along = row == 0;
-  float z = along ? 8 : 0;
+  float z = along ? 8.0f : 0.0f;
   int modules = along ? 13 : 6;
   float pitch = (along ? r.w : r.h) / modules;
   shadow(m, r, z + .35f, 0xaa9579);
