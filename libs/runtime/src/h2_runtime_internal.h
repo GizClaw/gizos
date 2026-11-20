@@ -451,6 +451,11 @@ struct h2_runtime_private {
   uint32_t input_temperature_poll_interval_ms;
   h2_pal_task_t* input_task;
   h2_pal_task_t* input_nfc_task;
+  h2_pal_task_t* input_touch_task;
+  h2_atomic_uint_t touch_session;
+  h2_pal_touch_info_t touch_info;
+  uint32_t touch_interval_ms;
+  bool touch_open, touch_pressed, touch_wait_release;
   h2_pal_queue_t* input_push_edge_queue;
   h2_pal_queue_t* input_nfc_result_queue;
   h2_pal_mutex_t* input_writer_mutex;

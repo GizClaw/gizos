@@ -5,6 +5,7 @@
 #include "h2_fruit_slice_game.h"
 #include "h2_pal_unsupported.h"
 #include "h2_sqlite.h"
+#include "input_clock.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -299,7 +300,7 @@ static h2_pal_result_t touch_info(void* user, h2_pal_touch_info_t* out) {
 }
 static h2_pal_result_t touch_poll(void* user, h2_pal_touch_event_t* out) {
   fake_touch_t* t = user;
-  CHECK(t->opened);
+  CHECK(t->opened && input_thread);
   if (t->poll_error != H2_PAL_OK) return t->poll_error;
   /* Accelerated first-install regression: ordinary pointer strokes play
    * real rounds, then leave enough game time for misses to end the last run. */
@@ -543,7 +544,9 @@ static bool should_exit(void* user) {
   if (f->frames == 3u)
     f->probe_before = f->display.shadow[288u * SHADOW_STRIDE + 240u];
   if (f->loop_hook != NULL) f->loop_hook();
-  return f->frames++ >= f->exit_after;
+  if (f->frames++ >= f->exit_after) return true;
+  input_tick();
+  return false;
 }
 
 static h2_pal_result_t ready(void* user) {
@@ -577,7 +580,7 @@ static h2_pal_result_t accelerated_clock(void* user, uint64_t* out_ms) {
   (void)user;
   if (fx.clock_error != H2_PAL_OK && fx.clock_ms >= fx.clock_fail_after_ms)
     return fx.clock_error;
-  if (!fx.paced_clock) fx.clock_ms += 10u;
+  if (!fx.paced_clock && !input_thread) fx.clock_ms += 10u;
   *out_ms = fx.clock_ms;
   return H2_PAL_OK;
 }
@@ -657,6 +660,7 @@ static h2_pal_result_t run(void) {
   config.system_event = h2_pal_unsupported_system_event_api();
   config.video_decoder = h2_pal_unsupported_video_decoder_api();
   h2_runtime_t* runtime = NULL;
+  input_clock_install(&config);
   CHECK(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
   const h2_fruit_slice_config_t game = {.seed = fx.seed,
                                         .brightness_percent = 80u,
@@ -735,14 +739,12 @@ static void test_unsupported_display(void) {
 }
 
 static void test_persistent_touch_failure(void) {
-  reset(1000u);
+  reset(120u);
+  fx.paced_clock = true;
   fx.touch.poll_error = H2_PAL_ERR_IO;
-  CHECK(run() == H2_PAL_ERR_IO);
-  CHECK(fx.frames == 30u);
-  CHECK(fx.touch.close_calls == 1);
-  CHECK(fx.failure_count == 1u && fx.failure_before_close);
-  CHECK(strstr(fx.failure_message, "op=touch_poll rc=-4") != NULL);
-  CHECK(strstr(fx.failure_message, "touch_failures=30") != NULL);
+  CHECK(run() == H2_PAL_OK);
+  CHECK(fx.display.presents == 120u && fx.failure_count == 0u);
+  CHECK(fx.touch.open_calls > 1 && fx.touch.close_calls == fx.touch.open_calls);
 }
 
 static void test_ready_failure_stops(void) {
@@ -891,7 +893,7 @@ static void test_fresh_sqlite_storage(void) {
   fx.capture_every = 4u;
   fx.capture_from = 324u;
   fx.capture_until = 380u;
-  fx.touch_from_frame = 1505u;
+  fx.touch_from_frame = 1506u; /* After the previous reveal tap's real UP. */
   script_tap(120, 450);
   script_tap(396, 151);
   script_tap(396, 151);
@@ -2306,10 +2308,8 @@ static void test_terminal_failure_markers(void) {
 
   reset(40u);
   fx.touch.poll_error = H2_PAL_ERR_TIMEOUT;
-  CHECK(run() == H2_PAL_ERR_TIMEOUT);
-  CHECK(fx.failure_count == 1u && fx.failure_before_close);
-  CHECK(strstr(fx.failure_message, "op=touch_poll rc=-6") != NULL);
-  CHECK(strstr(fx.failure_message, "touch_failures=30") != NULL);
+  CHECK(run() == H2_PAL_OK);
+  CHECK(fx.failure_count == 0u && fx.display.presents == 40u);
 
   reset(20u);
   fx.paced_clock = true;

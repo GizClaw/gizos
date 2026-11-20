@@ -26,10 +26,17 @@ static h2_pal_result_t recv_event(h2_runtime_t* runtime,
   }
 
   h2_runtime_queued_event_t queued;
-  h2_pal_result_t rc = h2_pal_queue_recv(
-      runtime->queue, runtime->private_state->event_queue, &queued, timeout_ms);
-  if (rc != H2_PAL_OK) {
-    return rc;
+  for (;;) {
+    h2_pal_result_t rc = h2_pal_queue_recv(
+        runtime->queue, runtime->private_state->event_queue, &queued, timeout_ms);
+    if (rc != H2_PAL_OK) return rc;
+    if (queued.kind != H2_RUNTIME_EVENT_TOUCH_POINTER) break;
+    h2_runtime_touch_pointer_event_t pointer;
+    if (queued.payload_size != sizeof(pointer)) return H2_PAL_ERR_FORMAT;
+    memcpy(&pointer, queued.payload.bytes, sizeof(pointer));
+    if (pointer.session == h2_atomic_load(&runtime->private_state->touch_session)) break;
+    /* A stopped reader's queued strokes belong to its previous consumer.
+     * Discard just those records, preserving interleaved system events. */
   }
 
   void* payload = out_event->payload;

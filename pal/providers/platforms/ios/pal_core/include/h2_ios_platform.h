@@ -55,6 +55,9 @@ const h2_pal_mem_api_t *h2_ios_platform_mem_api(void);
 const h2_pal_time_api_t *h2_ios_platform_time_api(void);
 const h2_pal_queue_api_t *h2_ios_platform_queue_api(void);
 const h2_pal_display_api_t *h2_ios_platform_display_api(h2_ios_platform_t *platform);
+/** Borrow ordered single-pointer UIKit events in logical display pixels.
+ * Queue overflow returns FULL before the next edge. Open once per reader. */
+const h2_pal_touch_api_t *h2_ios_platform_touch_api(h2_ios_platform_t *platform);
 
 /** Native AudioQueue input/output owner.
  * A valid playback track's close waits up to 3000 ms for its tail, cancels

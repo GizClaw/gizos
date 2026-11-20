@@ -28,6 +28,8 @@ typedef enum h2_runtime_component {
   /* Owner of H2_RUNTIME_EVENT_CUSTOM events: the app or library itself. */
   H2_RUNTIME_COMPONENT_APP,
   H2_RUNTIME_COMPONENT_SYSTEM_TIME,
+  /** Singleton viewport, with component_id H2_RUNTIME_COMPONENT_ID_NONE. */
+  H2_RUNTIME_COMPONENT_TOUCH,
 } h2_runtime_component_t;
 
 typedef h2_runtime_id_t h2_runtime_component_id_t;

@@ -40,23 +40,34 @@ EM_JS(void, h2_web_install_pointer_js,
               Math.floor((event.clientX - rect.left) * width / rect.width)));
           const y = Math.max(0, Math.min(height - 1,
               Math.floor((event.clientY - rect.top) * height / rect.height)));
-          Module['_h2_web_platform_pointer'](address, x, y, pressed ? 1 : 0);
+          Module['_h2_web_platform_pointer'](address, x, y, pressed);
         };
+        let owner = null;
         const down = event => {
-          canvas.setPointerCapture(event.pointerId);
-          update(event, true);
+          if (owner !== null) return;
+          owner = event.pointerId;
+          canvas.setPointerCapture(owner);
+          update(event, 1);
         };
-        const move = event => update(event, event.buttons !== 0);
-        const up = event => update(event, false);
+        const move = event => { if (event.pointerId === owner) update(event, 1); };
+        const end = (event, pressed) => {
+          if (event.pointerId !== owner) return;
+          owner = null;
+          update(event, pressed);
+        };
+        const up = event => end(event, 0);
+        const cancel = event => end(event, -1);
         canvas.addEventListener('pointerdown', down);
         canvas.addEventListener('pointermove', move);
         canvas.addEventListener('pointerup', up);
-        canvas.addEventListener('pointercancel', up);
+        canvas.addEventListener('pointercancel', cancel);
+        canvas.addEventListener('lostpointercapture', cancel);
         cleanups.set(address, () => {
           canvas.removeEventListener('pointerdown', down);
           canvas.removeEventListener('pointermove', move);
           canvas.removeEventListener('pointerup', up);
-          canvas.removeEventListener('pointercancel', up);
+          canvas.removeEventListener('pointercancel', cancel);
+          canvas.removeEventListener('lostpointercapture', cancel);
         });
         return 1;
       });
@@ -124,6 +135,7 @@ static void h2_web_touch_push(h2_web_platform_t* platform,
     }
   }
   if (platform->touch_count == H2_WEB_TOUCH_EVENT_CAPACITY) {
+    platform->touch_overflow = true;
     platform->touch_head =
         (platform->touch_head + 1u) % H2_WEB_TOUCH_EVENT_CAPACITY;
     --platform->touch_count;
@@ -146,7 +158,10 @@ EMSCRIPTEN_KEEPALIVE void h2_web_platform_pointer(uintptr_t address, int32_t x,
     return;
   }
   h2_pal_touch_event_kind_t kind = H2_PAL_TOUCH_EVENT_MOVE;
-  if (!platform->pointer_pressed && pressed) {
+  if (pressed < 0) {
+    kind = H2_PAL_TOUCH_EVENT_CANCEL;
+    pressed = 0;
+  } else if (!platform->pointer_pressed && pressed) {
     kind = H2_PAL_TOUCH_EVENT_DOWN;
   } else if (platform->pointer_pressed && !pressed) {
     kind = H2_PAL_TOUCH_EVENT_UP;
@@ -192,6 +207,7 @@ static h2_pal_result_t h2_web_touch_open(void* user) {
   platform->touch_head = 0u;
   platform->touch_count = 0u;
   platform->touch_opened = true;
+  platform->touch_overflow = false;
   h2_web_platform_install_pointer(platform);
   if (!platform->pointer_installed) {
     platform->touch_opened = false;
@@ -215,22 +231,35 @@ static h2_pal_result_t h2_web_touch_get_info(void* user,
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t h2_web_touch_poll(void* user,
-                                         h2_pal_touch_event_t* out_event) {
+static h2_pal_result_t read_touch(void* user, h2_pal_touch_event_t* out_event,
+                                  bool loss_aware) {
   H2_WEB_STATE_GUARD();
   h2_web_platform_t* platform = user;
   if (out_event != NULL) *out_event = (h2_pal_touch_event_t){0};
   if (platform == NULL || out_event == NULL || !platform->touch_opened) {
     return H2_PAL_ERR_INVALID_STATE;
   }
+  if (platform->touch_overflow) {
+    platform->touch_overflow = false;
+    if (loss_aware) return H2_PAL_ERR_FULL;
+  }
   if (platform->touch_count == 0u) {
     return H2_PAL_ERR_WOULD_BLOCK;
   }
   *out_event = platform->touch_events[platform->touch_head];
+  if (!loss_aware && out_event->kind == H2_PAL_TOUCH_EVENT_CANCEL)
+    out_event->kind = H2_PAL_TOUCH_EVENT_UP;
   platform->touch_head =
       (platform->touch_head + 1u) % H2_WEB_TOUCH_EVENT_CAPACITY;
   --platform->touch_count;
   return H2_PAL_OK;
+}
+
+static h2_pal_result_t h2_web_touch_poll(void* user, h2_pal_touch_event_t* out) {
+  return read_touch(user, out, false);
+}
+static h2_pal_result_t h2_web_touch_pointer(void* user, h2_pal_touch_event_t* out) {
+  return read_touch(user, out, true);
 }
 
 static h2_pal_result_t h2_web_touch_close(void* user) {
@@ -382,6 +411,7 @@ void h2_web_platform_display_init(h2_web_platform_t* platform) {
       .get_info = h2_web_touch_get_info,
       .poll_event = h2_web_touch_poll,
       .close = h2_web_touch_close,
+      .poll_pointer = h2_web_touch_pointer,
   };
   platform->display_api = (h2_pal_display_api_t){
       .user = platform,

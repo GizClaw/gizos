@@ -29,6 +29,13 @@ typedef struct h2_runtime_input_poll_config {
   uint32_t temperature_poll_interval_ms;
   /** Target task policy; a null name selects `h2-runtime-input`. */
   h2_pal_task_options_t task_options;
+  /** Nonzero opts into exclusive acquisition of the singleton Touch PAL at
+   * this interval. Open any display supplying its geometry before start.
+   * Touch-only targets use $runtime/input. Targets also mapping other input
+   * components declare //libs/runtime:touch_tasks for the independent
+   * $runtime/touch reader, so slow device recovery cannot delay those inputs.
+   * Zero leaves the Touch provider entirely under its existing owner. */
+  uint32_t touch_poll_interval_ms;
 } h2_runtime_input_poll_config_t;
 
 /**
@@ -43,6 +50,11 @@ typedef struct h2_runtime_input_poll_config {
  * A start selects the poll cadences and task policy, takes one immediate
  * frame so the next publication reflects current hardware, and then starts
  * the private input task (plus the NFC task when an NFC reader is mapped).
+ * Opted-in Touch delivers H2_RUNTIME_EVENT_TOUCH_POINTER through poll_event().
+ * A read failure or a refused edge cancels the stroke. After a device error,
+ * acquisition waits for an observed release before admitting a new stroke.
+ * Repeated device errors are logged and retried on the Touch reader.
+ * Opening the required provider and obtaining its geometry are startup checks.
  * The input source table, the writer mutex and the state publication are
  * built once by `h2_runtime_init()`; a start does not rebuild them and does
  * not reset component state or Button action state.
@@ -58,7 +70,8 @@ typedef struct h2_runtime_input_poll_config {
  *         closed the Runtime event queue; a faulted Runtime is terminal and
  *         only `h2_runtime_deinit()` plus a fresh `h2_runtime_init()` recovers
  *         it. Any other PAL result comes from the failing PAL operation, and
- *         leaves acquisition stopped.
+ *         leaves acquisition stopped. If rollback itself fails, stop or destroy
+ *         must be retried before the Runtime and its providers are released.
  */
 h2_pal_result_t h2_runtime_input_start(
     h2_runtime_t* runtime, const h2_runtime_input_poll_config_t* config);
@@ -66,8 +79,10 @@ h2_pal_result_t h2_runtime_input_start(
 /**
  * Stop Runtime-owned input acquisition.
  *
- * Requests the input and NFC tasks to stop and joins them. That is all it
- * does: component state is untouched, so `h2_runtime_component_state_*()`
+ * Requests acquisition tasks to stop and joins them, then closes opted-in
+ * Touch. Consumers cancel any held pointer on stop. A subsequent start
+ * discards undelivered pointer events from the old session and isolates a
+ * contact still held across stop. Other component state is untouched, so `h2_runtime_component_state_*()`
  * keeps returning the last published snapshot with its own `updated_at_ms`,
  * which is still the most recent observation the Runtime actually made.
  * Queued push edges are kept and delivered by a later start.
@@ -118,6 +133,7 @@ typedef enum h2_runtime_input_stage {
   H2_RUNTIME_INPUT_STAGE_SNAPSHOT_PUBLISH,
   H2_RUNTIME_INPUT_STAGE_SLEEP,
   H2_RUNTIME_INPUT_STAGE_NFC_SCAN,
+  H2_RUNTIME_INPUT_STAGE_TOUCH,
 } h2_runtime_input_stage_t;
 
 /**

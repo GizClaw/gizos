@@ -35,8 +35,8 @@ typedef struct h2_fruit_slice_config {
   uint32_t brightness_percent;
   /** Frame period in milliseconds; zero selects the default. */
   uint32_t frame_period_ms;
-  /** Optional, called once on the run thread after the first frame was
-   * presented with Touch open. A nonzero result ends the run with it. */
+  /** Optional, called once on the run thread after the input poller starts
+   * and the first frame is presented. A nonzero result ends the run with it. */
   h2_pal_result_t (*ready)(void* user);
   /** Optional, polled on the run thread before every frame. Returning true
    * ends the run with H2_PAL_OK after cleanup. */
@@ -80,9 +80,11 @@ typedef struct h2_fruit_slice_config {
  * true or a required capability fails.
  *
  * Requires an initialized Runtime whose Display reports RGB565 within the
- * supported extent and whose Touch provider is available; Touch coordinates
- * are scaled to the Display extent. The run opens and closes Display and
- * Touch, drains Runtime events, and paces frames with h2_runtime_wait_notify().
+ * supported extent, an available Touch provider and a stopped Runtime input
+ * poller. The caller delegates the exclusive poller lifecycle to this call.
+ * With Display open, the game starts the Runtime input poller, consumes its
+ * ordered pointer events in Display coordinates and stops it before closing
+ * Display. A touch read failure cancels the stroke and play continues.
  * Pref is optional: when unavailable the best score, coins, task progress,
  * owned/equipped weapons and audio settings stay in memory for this call.
  * Successful claims, purchases and equipment changes request one versioned
@@ -99,7 +101,7 @@ typedef struct h2_fruit_slice_config {
  *
  * @return H2_PAL_OK after a requested exit; INVALID_ARG for a NULL Runtime;
  *         UNSUPPORTED for an unusable Display format or extent; NO_MEMORY;
- *         or the first Display, Touch, clock, Runtime wait or ready error.
+ *         or the first Display, input lifecycle, clock, Runtime wait or ready error.
  */
 h2_pal_result_t h2_fruit_slice_run(h2_runtime_t* runtime,
                                    const h2_fruit_slice_config_t* config);

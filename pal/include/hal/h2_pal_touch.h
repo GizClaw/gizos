@@ -14,6 +14,9 @@ typedef enum h2_pal_touch_event_kind {
   H2_PAL_TOUCH_EVENT_DOWN = 1,
   H2_PAL_TOUCH_EVENT_MOVE,
   H2_PAL_TOUCH_EVENT_UP,
+  /** The platform ended the contact without a release (e.g. lost capture).
+   * Consumers discard the gesture without committing a click or final move. */
+  H2_PAL_TOUCH_EVENT_CANCEL,
 } h2_pal_touch_event_kind_t;
 
 /** Logical viewport exposed by one single-pointer Touch provider. */
@@ -41,6 +44,10 @@ typedef struct h2_pal_touch_vtable {
   h2_pal_result_t (*get_info)(void* user, h2_pal_touch_info_t* out_info);
   h2_pal_result_t (*poll_event)(void* user, h2_pal_touch_event_t* out_event);
   h2_pal_result_t (*close)(void* user);
+  /** Optional loss-aware view of the same stream, for gesture recognition.
+   * Reports capacity loss before later samples and distinguishes CANCEL from
+   * a physical UP. A session uses just one poll method and reader. */
+  h2_pal_result_t (*poll_pointer)(void* user, h2_pal_touch_event_t* out_event);
 } h2_pal_touch_vtable_t;
 
 typedef struct h2_pal_touch_api {
@@ -78,6 +85,16 @@ static inline h2_pal_result_t h2_pal_touch_poll_event(
     return H2_PAL_ERR_UNSUPPORTED;
   }
   return api->vtable->poll_event(api->user, out_event);
+}
+
+/** Poll the provider's loss-aware stream, or its native edge stream on a
+ * device without a separate compatibility projection. Nonblocking. */
+static inline h2_pal_result_t h2_pal_touch_poll_pointer(
+    const h2_pal_touch_api_t* api, h2_pal_touch_event_t* out) {
+  if (out == NULL) return H2_PAL_ERR_INVALID_ARG;
+  if (api && api->vtable && api->vtable->poll_pointer)
+    return api->vtable->poll_pointer(api->user, out);
+  return h2_pal_touch_poll_event(api, out);
 }
 
 /** Close the Touch provider and release its session resources. */

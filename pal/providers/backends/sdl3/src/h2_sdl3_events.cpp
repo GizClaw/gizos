@@ -85,7 +85,7 @@ h2_pal_result_t touch_get_info(void* user, h2_pal_touch_info_t* out_info) {
   return H2_PAL_OK;
 }
 
-h2_pal_result_t touch_poll(void* user, h2_pal_touch_event_t* out_event) {
+h2_pal_result_t poll_touch(void* user, h2_pal_touch_event_t* out_event, bool loss_aware) {
   auto* provider = static_cast<h2_sdl3_t*>(user);
   if (provider == nullptr || out_event == nullptr) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -94,14 +94,27 @@ h2_pal_result_t touch_poll(void* user, h2_pal_touch_event_t* out_event) {
   if (provider->touch_open_count == 0u) {
     return H2_PAL_ERR_INVALID_STATE;
   }
+  if (provider->touch_overflow) {
+    provider->touch_overflow = false;
+    if (loss_aware) return H2_PAL_ERR_FULL;
+  }
   if (provider->touch_count == 0u) {
     return H2_PAL_ERR_WOULD_BLOCK;
   }
   *out_event = provider->touches[provider->touch_head];
+  if (!loss_aware && out_event->kind == H2_PAL_TOUCH_EVENT_CANCEL)
+    out_event->kind = H2_PAL_TOUCH_EVENT_UP;
   provider->touch_head =
       (provider->touch_head + 1u) % H2_SDL3_TOUCH_QUEUE_CAPACITY;
   --provider->touch_count;
   return H2_PAL_OK;
+}
+
+h2_pal_result_t touch_poll(void* user, h2_pal_touch_event_t* out) {
+  return poll_touch(user, out, false);
+}
+h2_pal_result_t touch_poll_pointer(void* user, h2_pal_touch_event_t* out) {
+  return poll_touch(user, out, true);
 }
 
 h2_pal_result_t touch_close(void* user) {
@@ -116,6 +129,7 @@ h2_pal_result_t touch_close(void* user) {
   if (provider->touch_open_count == 0u) {
     provider->touch_head = 0u;
     provider->touch_count = 0u;
+    provider->touch_overflow = false;
   }
   return H2_PAL_OK;
 }
@@ -125,6 +139,7 @@ const h2_pal_touch_vtable_t kTouchVtable = {
     touch_get_info,
     touch_poll,
     touch_close,
+    touch_poll_pointer,
 };
 
 }  // namespace
@@ -146,6 +161,7 @@ void h2_sdl3_enqueue_touch(h2_sdl3_t* provider,
                            const h2_pal_touch_event_t& event) {
   std::lock_guard<std::mutex> lock(provider->event_mutex);
   if (provider->touch_count == H2_SDL3_TOUCH_QUEUE_CAPACITY) {
+    provider->touch_overflow = true;
     provider->touch_head =
         (provider->touch_head + 1u) % H2_SDL3_TOUCH_QUEUE_CAPACITY;
     --provider->touch_count;
@@ -216,6 +232,7 @@ void h2_sdl3_pump(h2_sdl3_t* provider) {
             provider->pointer.y,
         };
         if (provider->touch_count == H2_SDL3_TOUCH_QUEUE_CAPACITY) {
+          provider->touch_overflow = true;
           provider->touch_head =
               (provider->touch_head + 1u) % H2_SDL3_TOUCH_QUEUE_CAPACITY;
           --provider->touch_count;
@@ -252,7 +269,7 @@ void h2_sdl3_pump(h2_sdl3_t* provider) {
         provider->pointer.pressed = 0;
       }
       if (was_pressed) {
-        h2_sdl3_enqueue_touch(provider, {H2_PAL_TOUCH_EVENT_UP, x, y});
+        h2_sdl3_enqueue_touch(provider, {H2_PAL_TOUCH_EVENT_CANCEL, x, y});
       }
       h2_sdl3_enqueue_event(provider, make_event(H2_SDL3_EVENT_FOCUS_LOST));
     } else if (event.type == SDL_EVENT_WINDOW_FOCUS_GAINED) {

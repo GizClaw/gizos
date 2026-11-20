@@ -1,6 +1,5 @@
 #include "h2_fruit_slice_native_host.h"
 #include "h2_pal_unsupported.h"
-#include <string.h>
 
 h2_runtime_config_t h2_fruit_slice_native_defaults(void) {
   h2_runtime_config_t config = {0};
@@ -47,73 +46,4 @@ h2_runtime_config_t h2_fruit_slice_native_defaults(void) {
   config.system_event = h2_pal_unsupported_system_event_api();
   config.video_decoder = h2_pal_unsupported_video_decoder_api();
   return config;
-}
-
-static h2_pal_result_t pointer_open(void* user) {
-  h2_fruit_slice_pointer_t* pointer = user;
-  if (!pointer->opened) {
-    pointer->pressed = false;
-    pointer->opened = true;
-  }
-  return H2_PAL_OK;
-}
-static h2_pal_result_t pointer_info(void* user, h2_pal_touch_info_t* out) {
-  h2_fruit_slice_pointer_t* pointer = user;
-  if (!pointer->opened) return H2_PAL_ERR_INVALID_STATE;
-  *out = (h2_pal_touch_info_t){pointer->width, pointer->height};
-  return H2_PAL_OK;
-}
-static h2_pal_result_t pointer_poll(void* user, h2_pal_touch_event_t* out) {
-  h2_fruit_slice_pointer_t* pointer = user;
-  memset(out, 0, sizeof(*out));
-  if (!pointer->opened) return H2_PAL_ERR_INVALID_STATE;
-  int32_t x = 0, y = 0;
-  int pressed = 0;
-  const h2_pal_result_t rc = pointer->read(pointer->user, &x, &y, &pressed);
-  if (rc != H2_PAL_OK) return rc;
-  if (pressed) {
-    if (x < 0 || y < 0 || x >= pointer->width || y >= pointer->height)
-      return H2_PAL_ERR_IO;
-    if (pointer->pressed && x == pointer->last_x && y == pointer->last_y)
-      return H2_PAL_ERR_WOULD_BLOCK;
-    *out = (h2_pal_touch_event_t){
-        pointer->pressed ? H2_PAL_TOUCH_EVENT_MOVE : H2_PAL_TOUCH_EVENT_DOWN, x,
-        y};
-    pointer->last_x = x;
-    pointer->last_y = y;
-    pointer->pressed = true;
-    return H2_PAL_OK;
-  }
-  if (!pointer->pressed) return H2_PAL_ERR_WOULD_BLOCK;
-  *out = (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_UP, pointer->last_x,
-                                pointer->last_y};
-  pointer->pressed = false;
-  return H2_PAL_OK;
-}
-static h2_pal_result_t pointer_close(void* user) {
-  h2_fruit_slice_pointer_t* pointer = user;
-  pointer->opened = pointer->pressed = false;
-  return H2_PAL_OK;
-}
-static const h2_pal_touch_vtable_t pointer_vtable = {.open = pointer_open,
-                                                     .get_info = pointer_info,
-                                                     .poll_event = pointer_poll,
-                                                     .close = pointer_close};
-h2_pal_result_t h2_fruit_slice_pointer_init(h2_fruit_slice_pointer_t* pointer,
-                                            int32_t width, int32_t height,
-                                            h2_fruit_slice_pointer_read_fn read,
-                                            void* user) {
-  if (!pointer || width <= 0 || height <= 0 || !read)
-    return H2_PAL_ERR_INVALID_ARG;
-  memset(pointer, 0, sizeof(*pointer));
-  pointer->width = width;
-  pointer->height = height;
-  pointer->read = read;
-  pointer->user = user;
-  pointer->api = (h2_pal_touch_api_t){pointer, &pointer_vtable};
-  return H2_PAL_OK;
-}
-const h2_pal_touch_api_t* h2_fruit_slice_pointer_touch(
-    h2_fruit_slice_pointer_t* pointer) {
-  return pointer ? &pointer->api : NULL;
 }

@@ -55,6 +55,8 @@ const h2_pal_touch_api_t* h2_android_platform_touch_api(
 h2_pal_result_t h2_android_platform_read_pointer(void* user, int32_t* out_x,
                                                  int32_t* out_y,
                                                  int* out_pressed);
+/** End native pointer capture without committing a release gesture. */
+void h2_android_platform_cancel_pointer(h2_android_platform_t* platform);
 void h2_android_platform_update_pointer(h2_android_platform_t* platform,
                                         int32_t x, int32_t y, int pressed);
 int h2_android_platform_copy_frame(h2_android_platform_t* platform, JNIEnv* env,

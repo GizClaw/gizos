@@ -18,6 +18,10 @@ struct h2_ios_platform {
   int32_t pointer_x;
   int32_t pointer_y;
   int pointer_pressed;
+  h2_pal_touch_api_t touch;
+  h2_pal_touch_event_t events[64];
+  size_t head, count;
+  bool touch_open, overflow;
   H2IOSPlatformView *view;
   h2_pal_display_api_t display;
   int opened;
@@ -100,7 +104,7 @@ static CGRect h2_ios_platform_content_rect(h2_ios_platform_t *host, CGRect bound
   CGDataProviderRelease(provider);
 }
 
-- (void)updateTouch:(UITouch *)touch pressed:(BOOL)pressed {
+- (void)updateTouch:(UITouch *)touch kind:(h2_pal_touch_event_kind_t)kind {
   h2_ios_platform_t *host = _host;
   if (host == NULL) {
     return;
@@ -114,28 +118,36 @@ static CGRect h2_ios_platform_content_rect(h2_ios_platform_t *host, CGRect bound
   pthread_mutex_lock(&host->mutex);
   host->pointer_x = x;
   host->pointer_y = y;
-  host->pointer_pressed = pressed ? 1 : 0;
+  host->pointer_pressed = kind == H2_PAL_TOUCH_EVENT_DOWN || kind == H2_PAL_TOUCH_EVENT_MOVE;
+  if (host->touch_open) {
+    const size_t capacity = sizeof(host->events) / sizeof(host->events[0]);
+    if (host->count == capacity) {
+      host->overflow = true;
+      host->head = host->count = 0u;
+    }
+    host->events[(host->head + host->count++) % capacity] = (h2_pal_touch_event_t){kind, x, y};
+  }
   pthread_mutex_unlock(&host->mutex);
 }
 
 - (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
   (void)event;
-  [self updateTouch:touches.anyObject pressed:YES];
+  [self updateTouch:touches.anyObject kind:H2_PAL_TOUCH_EVENT_DOWN];
 }
 
 - (void)touchesMoved:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
   (void)event;
-  [self updateTouch:touches.anyObject pressed:YES];
+  [self updateTouch:touches.anyObject kind:H2_PAL_TOUCH_EVENT_MOVE];
 }
 
 - (void)touchesEnded:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
   (void)event;
-  [self updateTouch:touches.anyObject pressed:NO];
+  [self updateTouch:touches.anyObject kind:H2_PAL_TOUCH_EVENT_UP];
 }
 
 - (void)touchesCancelled:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
   (void)event;
-  [self updateTouch:touches.anyObject pressed:NO];
+  [self updateTouch:touches.anyObject kind:H2_PAL_TOUCH_EVENT_CANCEL];
 }
 
 @end
@@ -251,6 +263,59 @@ static const h2_pal_display_vtable_t s_h2_ios_platform_display_vtable = {
     .close = h2_ios_platform_display_close,
 };
 
+static h2_pal_result_t touch_open(void *user) {
+  h2_ios_platform_t *host = user;
+  pthread_mutex_lock(&host->mutex);
+  const int rc = host->touch_open ? H2_PAL_ERR_BUSY : H2_PAL_OK;
+  host->touch_open = true;
+  pthread_mutex_unlock(&host->mutex);
+  return rc;
+}
+
+static h2_pal_result_t touch_info(void *user, h2_pal_touch_info_t *out) {
+  h2_ios_platform_t *host = user;
+  pthread_mutex_lock(&host->mutex);
+  const int rc = host->touch_open ? H2_PAL_OK : H2_PAL_ERR_INVALID_STATE;
+  if (rc == H2_PAL_OK) *out = (h2_pal_touch_info_t){(uint32_t)host->width, (uint32_t)host->height};
+  pthread_mutex_unlock(&host->mutex);
+  return rc;
+}
+
+static h2_pal_result_t touch_poll(void *user, h2_pal_touch_event_t *out) {
+  h2_ios_platform_t *host = user;
+  pthread_mutex_lock(&host->mutex);
+  int rc = H2_PAL_ERR_WOULD_BLOCK;
+  if (!host->touch_open) {
+    rc = H2_PAL_ERR_INVALID_STATE;
+  } else if (host->overflow) {
+    host->overflow = false;
+    rc = H2_PAL_ERR_FULL;
+  } else if (host->count) {
+    *out = host->events[host->head];
+    host->head = (host->head + 1u) % (sizeof(host->events) / sizeof(host->events[0]));
+    --host->count;
+    rc = H2_PAL_OK;
+  }
+  pthread_mutex_unlock(&host->mutex);
+  return rc;
+}
+
+static h2_pal_result_t touch_close(void *user) {
+  h2_ios_platform_t *host = user;
+  pthread_mutex_lock(&host->mutex);
+  host->touch_open = host->overflow = false;
+  host->head = host->count = 0u;
+  pthread_mutex_unlock(&host->mutex);
+  return H2_PAL_OK;
+}
+
+static const h2_pal_touch_vtable_t touch_vtable = {
+    .open = touch_open, .get_info = touch_info, .poll_event = touch_poll, .close = touch_close};
+
+const h2_pal_touch_api_t *h2_ios_platform_touch_api(h2_ios_platform_t *host) {
+  return host ? &host->touch : NULL;
+}
+
 h2_ios_platform_t *h2_ios_platform_create(const h2_ios_platform_config_t *config) {
   if (config == NULL || config->display_width <= 0 || config->display_height <= 0) {
     return NULL;
@@ -263,6 +328,7 @@ h2_ios_platform_t *h2_ios_platform_create(const h2_ios_platform_config_t *config
   host->width = config->display_width;
   host->height = config->display_height;
   host->display.user = host;
+  host->touch = (h2_pal_touch_api_t){host, &touch_vtable};
   host->display.vtable = &s_h2_ios_platform_display_vtable;
   host->view = [[H2IOSPlatformView alloc] initWithHost:host];
   if (host->view == nil) {

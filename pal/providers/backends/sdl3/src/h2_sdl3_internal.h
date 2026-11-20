@@ -43,6 +43,7 @@ struct h2_sdl3 {
   std::array<h2_pal_touch_event_t, H2_SDL3_TOUCH_QUEUE_CAPACITY> touches = {};
   size_t touch_head = 0u;
   size_t touch_count = 0u;
+  bool touch_overflow = false;
   size_t touch_open_count = 0u;
   h2_pal_display_t display = {};
   h2_pal_touch_api_t touch = {};

@@ -68,7 +68,28 @@ typedef enum h2_runtime_event_kind {
    */
   H2_RUNTIME_EVENT_CUSTOM,
   H2_RUNTIME_SYSTEM_EVENT_TIME_ADJUSTED,
+  /** Singleton Touch stream, payload h2_runtime_touch_pointer_event_t. */
+  H2_RUNTIME_EVENT_TOUCH_POINTER,
 } h2_runtime_event_kind_t;
+
+typedef enum h2_runtime_pointer_phase {
+  H2_RUNTIME_POINTER_DOWN = 1,
+  H2_RUNTIME_POINTER_MOVE,
+  H2_RUNTIME_POINTER_UP,
+  /** Discard the entire pending gesture without activating a control. */
+  H2_RUNTIME_POINTER_CANCEL,
+} h2_runtime_pointer_phase_t;
+
+typedef struct h2_runtime_touch_pointer_event {
+  h2_runtime_pointer_phase_t phase;
+  int32_t x, y;
+  /** Logical source dimensions. A zero extent means display coordinates. */
+  uint32_t width, height;
+  /** On CANCEL, the source or queue result that interrupted the stroke. */
+  h2_pal_result_t result;
+  /** Identifies a single start/stop session of the Runtime input poller. */
+  uint32_t session;
+} h2_runtime_touch_pointer_event_t;
 
 typedef struct h2_runtime_event {
   h2_runtime_event_kind_t kind;

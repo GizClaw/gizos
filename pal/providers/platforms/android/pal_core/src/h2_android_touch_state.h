@@ -43,7 +43,7 @@ static inline void h2_android_touch_enqueue(h2_android_touch_state_t* state,
        * two unrelated strokes. A currently held pointer restarts with DOWN. */
       state->head = state->count = 0;
       state->pending_error = true;
-      if (event.kind == H2_PAL_TOUCH_EVENT_UP) return;
+      if (event.kind == H2_PAL_TOUCH_EVENT_UP || event.kind == H2_PAL_TOUCH_EVENT_CANCEL) return;
       event.kind = H2_PAL_TOUCH_EVENT_DOWN;
     }
   }
@@ -78,6 +78,12 @@ static inline int h2_android_touch_capture(h2_android_touch_state_t* state,
     state->pressed = false;
   }
   return H2_PAL_OK;
+}
+static inline void h2_android_touch_cancel(h2_android_touch_state_t* state) {
+  if (state->opened && state->pressed) {
+    h2_android_touch_enqueue(state, (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_CANCEL, state->last_x, state->last_y});
+    state->pressed = false;
+  }
 }
 static inline int h2_android_touch_poll(h2_android_touch_state_t* state,
                                         h2_pal_touch_event_t* out) {

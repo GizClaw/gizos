@@ -23,6 +23,12 @@ Java_com_gizclaw_gizos_pal_H2AndroidPlatform_nativePointer(
   h2_android_platform_update_pointer((h2_android_platform_t*)(uintptr_t)handle,
                                      x, y, down != 0);
 }
+JNIEXPORT void JNICALL Java_com_gizclaw_gizos_pal_H2AndroidPlatform_nativeCancel(
+    JNIEnv* env, jclass type, jlong handle) {
+  (void)env;
+  (void)type;
+  h2_android_platform_cancel_pointer((h2_android_platform_t*)(uintptr_t)handle);
+}
 JNIEXPORT void JNICALL
 Java_com_gizclaw_gizos_pal_H2AndroidPlatform_nativeDestroy(JNIEnv* env,
                                                            jclass type,

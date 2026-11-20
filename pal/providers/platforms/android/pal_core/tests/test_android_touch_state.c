@@ -25,6 +25,12 @@ int main(void) {
   state.opened = true;
   expect_empty(&state);
 
+  capture(&state, 7, 9, true);
+  h2_android_touch_cancel(&state);
+  expect(&state, H2_PAL_TOUCH_EVENT_DOWN, 7, 9);
+  expect(&state, H2_PAL_TOUCH_EVENT_CANCEL, 7, 9);
+  expect_empty(&state);
+
   /* Preserve a release and a new press delivered entirely between polls. */
   capture(&state, 10, 20, true);
   capture(&state, 30, 40, true);

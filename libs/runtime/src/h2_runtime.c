@@ -284,6 +284,7 @@ static void runtime_atomic_destroy(h2_runtime_private_t* state) {
   h2_atomic_uint_destroy(&state->next_sequence);
   h2_atomic_int_destroy(&state->system_event_active);
   h2_atomic_int_destroy(&state->input_phase);
+  h2_atomic_uint_destroy(&state->touch_session);
   h2_atomic_int_destroy(&state->input_stop_requested);
   h2_atomic_int_destroy(&state->input_worker_result);
   for (size_t i = 0; i < H2_RUNTIME_STATE_SLOT_COUNT; ++i)
@@ -355,6 +356,9 @@ static h2_pal_result_t runtime_atomic_init(h2_runtime_private_t* state) {
       H2_ATOMIC_OK)
     goto atomic_failure;
   if ((atomic_rc = h2_atomic_int_init(&state->system_event_active, 0)) !=
+      H2_ATOMIC_OK)
+    goto atomic_failure;
+  if ((atomic_rc = h2_atomic_uint_init(&state->touch_session, 0u)) !=
       H2_ATOMIC_OK)
     goto atomic_failure;
   if ((atomic_rc = h2_atomic_int_init(&state->input_phase,
@@ -670,8 +674,8 @@ h2_pal_result_t h2_runtime_destroy(h2_runtime_t** pointer) {
 
   h2_pal_result_t input_stop_rc = h2_runtime_input_stop(runtime);
   if (input_stop_rc != H2_PAL_OK &&
-      (runtime->private_state->input_task != NULL ||
-       runtime->private_state->input_nfc_task != NULL)) {
+      h2_atomic_load(&runtime->private_state->input_phase) !=
+          H2_RUNTIME_INPUT_PHASE_STOPPED) {
     return input_stop_rc;
   }
   h2_runtime_input_release(runtime);
