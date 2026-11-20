@@ -75,7 +75,8 @@ static int present(h2_runtime_t* rt, bf_session_t* s,
     if (s->first && BF_LCD_PAD > 0) {
       /* The panel keeps pixels outside the game's viewport. The previous
        * frame is free scratch until the first successful presentation. */
-      _Static_assert(BF_LCD_PAD <= BF_FRAME_H, "matte must fit a game frame");
+      _Static_assert((int)BF_LCD_PAD <= (int)BF_FRAME_H,
+                     "matte must fit a game frame");
       memset(s->previous, 0, STRIDE * BF_LCD_PAD);
       h2_display_rect_t bar = {0, 0, WIDTH, BF_LCD_PAD};
       int rc = h2_pal_display_draw_bitmap(rt->display, &bar, s->previous,
