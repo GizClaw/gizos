@@ -2,6 +2,7 @@
 import ctypes
 import os
 from pathlib import Path
+import select
 import subprocess
 import sys
 
@@ -23,6 +24,8 @@ def send_clicks(client):
             try:
                 for stage, edges in [('old clicks and held press', (1, 0, 1, 0, 1)),
                                      ('release', (0,)), ('first click after idle restart', (1, 0))]:
+                    if not select.select([proc.stdout], [], [], 5)[0]:
+                        raise TimeoutError(stage)
                     assert proc.stdout.readline().strip() == stage, stage
                     for down in edges:
                         assert xtst.XTestFakeButtonEvent(display, 1, down, 0)
@@ -42,6 +45,6 @@ if __name__ == '__main__':
     if len(sys.argv) == 3 and sys.argv[1] == '--drive':
         send_clicks(sys.argv[2])
     else:
-        subprocess.run(['xvfb-run', '-a', '-s', '-screen 0 640x480x24 -nolisten tcp',
+        subprocess.run(['xvfb-run', '-a', '-e', '/dev/stderr', '-s', '-screen 0 640x480x24 -nolisten tcp',
                         sys.executable, __file__, '--drive', str(Path(sys.argv[1]).resolve())],
                        timeout=25, check=True)

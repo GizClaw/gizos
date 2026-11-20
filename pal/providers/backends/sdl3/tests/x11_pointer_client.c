@@ -2,6 +2,9 @@
 #include "h2_sdl3.h"
 
 #include <SDL3/SDL.h>
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
