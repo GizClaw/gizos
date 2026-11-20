@@ -1895,8 +1895,8 @@ static uint16_t title_symbol(uint32_t* offset) {
   return (uint16_t)(-node - 1);
 }
 
-/* Expand rows in order into one scanline. An indexed group starts with a
- * complete row, and copy tokens leave spans of the previous row in place. */
+/* Expand rows in order into two scanlines. A group starts with a complete
+ * row, and copy tokens predict spans from the preceding row. */
 static void draw_title_art(h2_garden_guard_canvas_t* canvas, float x, float y,
                            float scale) {
   region_t bounds;
@@ -1904,7 +1904,7 @@ static void draw_title_art(h2_garden_guard_canvas_t* canvas, float x, float y,
                     y + TITLE_ART_HEIGHT * scale, &bounds))
     return;
   const float inverse = 1.0f / scale;
-  uint8_t line[TITLE_ART_WIDTH];
+  uint8_t lines[2][TITLE_ART_WIDTH];
   int32_t decoded = -1;
   uint32_t offset = 0;
   for (int32_t py = bounds.y0; py < bounds.y1; ++py) {
@@ -1917,6 +1917,9 @@ static void draw_title_art(h2_garden_guard_canvas_t* canvas, float x, float y,
       offset = k_title_bit_offsets[group];
     }
     while (decoded < sy) {
+      ++decoded;
+      uint8_t* const line = lines[decoded & 1];
+      const uint8_t* const previous = lines[(decoded & 1) ^ 1];
       int32_t sx = 0;
       while (sx < TITLE_ART_WIDTH) {
         const uint16_t token = title_symbol(&offset);
@@ -1927,11 +1930,20 @@ static void draw_title_art(h2_garden_guard_canvas_t* canvas, float x, float y,
           memset(&line[sx], title_symbol(&offset), count);
           sx += (int32_t)count;
         } else {
-          sx += (int32_t)(token - 256u + 3u);
+          int32_t start = sx;
+          size_t count = token - 256u + 3u;
+          if (token >= TITLE_ART_SHIFTED_COPY) {
+            const unsigned predictor = token - TITLE_ART_SHIFTED_COPY;
+            const unsigned lengths = TITLE_ART_SHIFT_MAX_RUN - 2u;
+            start += k_title_copy_shifts[predictor / lengths];
+            count = predictor % lengths + 3u;
+          }
+          memcpy(line + sx, previous + start, count);
+          sx += (int32_t)count;
         }
       }
-      ++decoded;
     }
+    const uint8_t* line = lines[decoded & 1];
     uint16_t* row = row_at(canvas, py);
     for (int32_t px = bounds.x0; px < bounds.x1; ++px) {
       const int32_t sx = (int32_t)clampf(((float)px + 0.5f - x) * inverse, 0.0f,

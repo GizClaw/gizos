@@ -54,7 +54,7 @@ The game thread coalesces sound cues in a single atomic word. A separate task ow
 
 The courtyard is drawn once, including the tiled entry, back border and retaining wall. The toolbar and parked carts are cached separately. While playing, the renderer draws plants, zombies, projectiles and moving carts from far lane to near, with a one-byte-per-pixel occlusion map for the parked carts. The scene restores and presents only the horizontal bands and column ranges covered in the current or previous frame. The three RGB565 buffers and depth map together use 7 bytes per pixel (1.03 MiB at 480×320, 2.56 MiB at 480×800). There are no frame-time allocations.
 
-Quiet leaves and blinks update on a 120 ms clock. Growth, bloom, shot recoil, jaw strikes, hits and falls follow gameplay events at the default 40 ms frame period. The planted pose also drives the shovel hit area. An idle title screen presents only its first frame. Its dedicated cover illustration uses a 128-color RGB565 palette and 16-row groups in flash. It is decoded into one 480-byte stack buffer and needs no extra framebuffer.
+Quiet leaves and blinks update on a 120 ms clock. Growth, bloom, shot recoil, jaw strikes, hits and falls follow gameplay events at the default 40 ms frame period. The planted pose also drives the shovel hit area. An idle title screen presents only its first frame. Its dedicated cover illustration uses a 128-color RGB565 palette and 16-row groups in flash. The decoder uses two 480-byte scanline buffers on the stack.
 
 The Field Journal and Plant Shop open from the title or result. The journal unlocks a card when that zombie first becomes visible. Select a discovered card to inspect its portrait, trait, and counter. Close it or press Escape on Web and desktop to return it to the shelf. The Web game observes the browser’s reduced-motion preference. Every finished match adds its run score to the total once. Plant defeats earn 3 coins per 10 defense points, rounded up, with another 12 for a win with plant defeats. Carts still score, but their kills do not earn coins. Purchases permanently unlock cards while each new run begins with its ordinary sun allowance.
 
@@ -82,7 +82,7 @@ python3 projects/garden_guard/tools/generate_droid.py \
   "$scratch/DroidSansFallback.ttf" "$scratch/generate_han" "$scratch/DroidSans.ttf"
 ```
 
-The cover retains its original RGB565 palette and pixels. Each 16-row group starts with a complete row. The following rows use horizontal runs and spans copied in place from the previous row. A Huffman table encodes the tokens. To reproduce the conversion, pass the original row-RLE table from commit `8c48db3a899fe6ee367dd58f253c2188d4540ea0` to `tools/compress_cover.py ORIGINAL_INCLUDE app/src/h2_garden_guard_title.inc`. The tool round-trips every pixel against the input.
+The cover retains its original RGB565 palette and pixels. Each 16-row group starts with a complete row. The following rows use horizontal runs and spans copied from the previous row, including offsets of up to three pixels. A Huffman table encodes the tokens. To reproduce the conversion, pass the original row-RLE table from commit `8c48db3a899fe6ee367dd58f253c2188d4540ea0` to `tools/compress_cover.py ORIGINAL_INCLUDE app/src/h2_garden_guard_title.inc`. The tool round-trips every pixel against the input.
 
 The zombie sprites and journal portraits are generated from the original drawing paths. See the [sprite sources](tools/zombie_art/) for the format and regeneration command.
 
