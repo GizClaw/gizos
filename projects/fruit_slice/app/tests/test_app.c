@@ -330,7 +330,7 @@ static h2_pal_result_t touch_poll(void* user, h2_pal_touch_event_t* out) {
     }
     *out = (h2_pal_touch_event_t){
         point % 2u == 0u ? H2_PAL_TOUCH_EVENT_DOWN : H2_PAL_TOUCH_EVENT_UP, x,
-        y};
+        y, 0};
     if (fx.layout_sweep && point >= 2u) {
       const unsigned leg = (point - 2u) % 6u;
       out->kind = leg == 0u   ? H2_PAL_TOUCH_EVENT_DOWN
@@ -353,7 +353,7 @@ static h2_pal_result_t touch_poll(void* user, h2_pal_touch_event_t* out) {
     t->last_frame = fx.frames;
     *out = (h2_pal_touch_event_t){
         fx.frames % 2u == 0u ? H2_PAL_TOUCH_EVENT_DOWN : H2_PAL_TOUCH_EVENT_UP,
-        5, 100};
+        5, 100, 0};
     return H2_PAL_OK;
   }
   /* One event per frame keeps strokes spread over game time. */
