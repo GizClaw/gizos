@@ -214,7 +214,10 @@ cc_test(
 
 cc_test(
     name = "audio_worker_test",
-    srcs = _PRIVATE_HEADERS + ["tests/input_clock.h", "tests/test_audio_worker.c"],
+    srcs = _PRIVATE_HEADERS + [
+        "tests/input_clock.h",
+        "tests/test_audio_worker.c",
+    ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     includes = ["src"],
@@ -234,7 +237,10 @@ cc_test(
 
 cc_test(
     name = "app_test",
-    srcs = _PRIVATE_HEADERS + ["tests/input_clock.h", "tests/test_app.c"],
+    srcs = _PRIVATE_HEADERS + [
+        "tests/input_clock.h",
+        "tests/test_app.c",
+    ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     includes = ["src"],

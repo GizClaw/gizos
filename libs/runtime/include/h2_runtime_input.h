@@ -41,8 +41,9 @@ typedef struct h2_runtime_input_poll_config {
 /**
  * Start Runtime-owned input acquisition.
  *
- * `h2_runtime_init()` does not start the poller. The caller that owns the
- * Runtime lifecycle starts it explicitly once component validation has
+ * Serialize switch operations and Test Control lifecycle with the Runtime's
+ * owner. `h2_runtime_init()` does not start the poller. The caller that owns
+ * the Runtime lifecycle starts it explicitly once component validation has
  * passed, and uses the same entry point to resume after
  * `h2_runtime_input_stop()`. A Runtime whose poller is never started delivers
  * no Button, NFC, IMU or sensor event.
@@ -52,7 +53,8 @@ typedef struct h2_runtime_input_poll_config {
  * the private input task (plus the NFC task when an NFC reader is mapped).
  * Opted-in Touch delivers H2_RUNTIME_EVENT_TOUCH_POINTER through poll_event().
  * A read failure or a refused edge cancels the stroke. After a device error,
- * acquisition waits for an observed release before admitting a new stroke.
+ * acquisition waits for an observed release or an explicitly verified fresh
+ * DOWN in the same open session before admitting a new stroke.
  * Repeated device errors are logged and retried on the Touch reader.
  * Opening the required provider and obtaining its geometry are startup checks.
  * The input source table, the writer mutex and the state publication are
@@ -82,10 +84,12 @@ h2_pal_result_t h2_runtime_input_start(
  * Requests acquisition tasks to stop and joins them, then closes opted-in
  * Touch. Consumers cancel any held pointer on stop. A subsequent start
  * discards undelivered pointer events from the old session and isolates a
- * contact still held across stop. Other component state is untouched, so `h2_runtime_component_state_*()`
- * keeps returning the last published snapshot with its own `updated_at_ms`,
- * which is still the most recent observation the Runtime actually made.
- * Queued push edges are kept and delivered by a later start.
+ * contact still held across stop. After a reopen, an ambiguous first tap may
+ * supply that release boundary. Other component state is untouched, so
+ * `h2_runtime_component_state_*()` keeps returning the last published snapshot
+ * with its own `updated_at_ms`, which is still the most recent observation the
+ * Runtime actually made. Queued push edges are kept and delivered by a later
+ * start.
  *
  * Because state is not reset, a button released while the poller was off is
  * observed only by the next start's first frame, which then reports a
@@ -133,7 +137,6 @@ typedef enum h2_runtime_input_stage {
   H2_RUNTIME_INPUT_STAGE_SNAPSHOT_PUBLISH,
   H2_RUNTIME_INPUT_STAGE_SLEEP,
   H2_RUNTIME_INPUT_STAGE_NFC_SCAN,
-  H2_RUNTIME_INPUT_STAGE_TOUCH,
 } h2_runtime_input_stage_t;
 
 /**
@@ -176,6 +179,10 @@ typedef struct h2_runtime_input_status {
   h2_runtime_timestamp_ms_t last_poll_ok_at_ms;
   /** State publications deferred because readers pinned every slot. */
   uint32_t snapshot_deferred_count;
+  /** Touch read and recovery failures over this Runtime's lifetime. The
+   * last observed error remains available after recovery or stop. */
+  uint32_t touch_error_count;
+  h2_pal_result_t last_touch_error;
 } h2_runtime_input_status_t;
 
 /**

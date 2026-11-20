@@ -482,7 +482,12 @@ struct h2_runtime_private {
    * mutex guards it, so a worker that cannot take the writer mutex can
    * still record that, and status never reads it unlocked.
    */
+  /* Fields below use the init-owned health mutex for mapped sources and
+   * this short critical section for runtimes with only singleton Touch. */
+  h2_atomic_flag_t input_health_fallback;
   h2_pal_mutex_t* input_health_mutex;
+  uint32_t touch_error_count;
+  h2_pal_result_t last_touch_error;
   h2_pal_result_t input_last_error;
   h2_runtime_input_stage_t input_last_error_stage;
   h2_runtime_timestamp_ms_t input_last_error_at_ms;

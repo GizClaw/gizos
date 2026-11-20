@@ -454,11 +454,30 @@ static h2_pal_result_t touch_close(void* user) {
 
 #endif
 
+/* The reader either latches the error until close or (when the controller
+ * resynchronizes) queues points from a new contact after the verified lift.
+ * Runtime treats the first level from a reopened sensor separately. */
+static h2_pal_result_t touch_poll_pointer(void* user,
+                                          h2_pal_touch_sample_t* sample) {
+  const h2_pal_result_t rc = touch_poll_event(user, &sample->event);
+#if defined(CONFIG_TP) && CONFIG_TP
+  sample->fresh_down =
+      rc == H2_PAL_OK && sample->event.kind == H2_PAL_TOUCH_EVENT_DOWN;
+  if (rc != H2_PAL_OK && rc != H2_PAL_ERR_WOULD_BLOCK) {
+    uint32_t flags = rtos_enter_critical();
+    sample->needs_reopen = s_touch.error != H2_PAL_OK;
+    rtos_exit_critical(flags);
+  }
+#endif
+  return rc;
+}
+
 static const h2_pal_touch_vtable_t s_touch_vtable = {
     .open = touch_open,
     .get_info = touch_get_info,
     .poll_event = touch_poll_event,
     .close = touch_close,
+    .poll_pointer = touch_poll_pointer,
 };
 
 static const h2_pal_touch_api_t s_touch_api = {

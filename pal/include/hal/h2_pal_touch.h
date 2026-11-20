@@ -3,6 +3,7 @@
 
 #include "core/h2_pal_errors.h"
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -32,6 +33,17 @@ typedef struct h2_pal_touch_event {
   int32_t y;
 } h2_pal_touch_event_t;
 
+/** Result of a loss-aware poll. Flags default to false. */
+typedef struct h2_pal_touch_sample {
+  h2_pal_touch_event_t event;
+  /** A successful DOWN after a failed poll in this same session starts a
+   * verified new contact. The provider may have consumed the prior lift. */
+  bool fresh_down;
+  /** On error, the provider knows this session cannot acquire again until
+   * closed and reopened. The poll still returns the original device error. */
+  bool needs_reopen;
+} h2_pal_touch_sample_t;
+
 /**
  * Touch provider lifecycle and nonblocking event source.
  *
@@ -47,7 +59,7 @@ typedef struct h2_pal_touch_vtable {
   /** Optional loss-aware view of the same stream, for gesture recognition.
    * Reports capacity loss before later samples and distinguishes CANCEL from
    * a physical UP. A session uses just one poll method and reader. */
-  h2_pal_result_t (*poll_pointer)(void* user, h2_pal_touch_event_t* out_event);
+  h2_pal_result_t (*poll_pointer)(void* user, h2_pal_touch_sample_t* sample);
 } h2_pal_touch_vtable_t;
 
 typedef struct h2_pal_touch_api {
@@ -90,11 +102,12 @@ static inline h2_pal_result_t h2_pal_touch_poll_event(
 /** Poll the provider's loss-aware stream, or its native edge stream on a
  * device without a separate compatibility projection. Nonblocking. */
 static inline h2_pal_result_t h2_pal_touch_poll_pointer(
-    const h2_pal_touch_api_t* api, h2_pal_touch_event_t* out) {
+    const h2_pal_touch_api_t* api, h2_pal_touch_sample_t* out) {
   if (out == NULL) return H2_PAL_ERR_INVALID_ARG;
+  out->fresh_down = out->needs_reopen = false;
   if (api && api->vtable && api->vtable->poll_pointer)
     return api->vtable->poll_pointer(api->user, out);
-  return h2_pal_touch_poll_event(api, out);
+  return h2_pal_touch_poll_event(api, &out->event);
 }
 
 /** Close the Touch provider and release its session resources. */

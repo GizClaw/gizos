@@ -49,7 +49,10 @@ EM_JS(void, h2_web_install_pointer_js,
           canvas.setPointerCapture(owner);
           update(event, 1);
         };
-        const move = event => { if (event.pointerId === owner) update(event, 1); };
+        const move = event => {
+          if (event.pointerId === owner) update(event, 1);
+          else if (owner === null && !event.buttons) update(event, 0);
+        };
         const end = (event, pressed) => {
           if (event.pointerId !== owner) return;
           owner = null;
@@ -255,11 +258,16 @@ static h2_pal_result_t read_touch(void* user, h2_pal_touch_event_t* out_event,
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t h2_web_touch_poll(void* user, h2_pal_touch_event_t* out) {
+static h2_pal_result_t h2_web_touch_poll(void* user,
+                                         h2_pal_touch_event_t* out) {
   return read_touch(user, out, false);
 }
-static h2_pal_result_t h2_web_touch_pointer(void* user, h2_pal_touch_event_t* out) {
-  return read_touch(user, out, true);
+static h2_pal_result_t h2_web_touch_pointer(void* user,
+                                            h2_pal_touch_sample_t* sample) {
+  const h2_pal_result_t rc = read_touch(user, &sample->event, true);
+  sample->fresh_down =
+      rc == H2_PAL_OK && sample->event.kind == H2_PAL_TOUCH_EVENT_DOWN;
+  return rc;
 }
 
 static h2_pal_result_t h2_web_touch_close(void* user) {

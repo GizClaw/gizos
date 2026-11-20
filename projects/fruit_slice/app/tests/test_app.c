@@ -43,7 +43,8 @@ typedef struct fake_touch {
   h2_pal_touch_event_t script[SCRIPT_MAX];
   unsigned script_frame[SCRIPT_MAX];
   size_t script_count, script_next;
-  unsigned last_frame;
+  unsigned last_frame, error_frame, error_until;
+  bool burst, latched, verified_down;
 } fake_touch_t;
 
 typedef struct fixture {
@@ -76,7 +77,9 @@ typedef struct fixture {
   const char* capture_name;
   unsigned capture_every, capture_from, capture_until;
   unsigned capture_frames[48], capture_count;
-  unsigned header_from, header_check, claim_check;
+  unsigned header_from, header_check, header_changed, claim_check;
+  size_t event_capacity;
+  uint32_t drops, touch_errors;
   uint32_t header_hash;
   const h2_pal_pref_api_t* pref_override;
   const h2_pal_task_api_t* task_override;
@@ -301,6 +304,9 @@ static h2_pal_result_t touch_info(void* user, h2_pal_touch_info_t* out) {
 static h2_pal_result_t touch_poll(void* user, h2_pal_touch_event_t* out) {
   fake_touch_t* t = user;
   CHECK(t->opened && input_thread);
+  if (t->error_frame && fx.frames >= t->error_frame &&
+      fx.frames <= (t->error_until ? t->error_until : t->error_frame))
+    return H2_PAL_ERR_TIMEOUT;
   if (t->poll_error != H2_PAL_OK) return t->poll_error;
   /* Accelerated first-install regression: ordinary pointer strokes play
    * real rounds, then leave enough game time for misses to end the last run. */
@@ -358,7 +364,8 @@ static h2_pal_result_t touch_poll(void* user, h2_pal_touch_event_t* out) {
     return H2_PAL_OK;
   }
   /* One event per frame keeps strokes spread over game time. */
-  if (fx.frames < fx.touch_from_frame || t->last_frame == fx.frames ||
+  if (fx.frames < fx.touch_from_frame ||
+      (!t->burst && t->last_frame == fx.frames) ||
       t->script_next == t->script_count ||
       fx.frames < t->script_frame[t->script_next])
     return H2_PAL_ERR_WOULD_BLOCK;
@@ -381,16 +388,27 @@ static h2_pal_result_t touch_poll(void* user, h2_pal_touch_event_t* out) {
   *out = t->script[t->script_next++];
   return H2_PAL_OK;
 }
+static h2_pal_result_t touch_pointer(void* user,
+                                     h2_pal_touch_sample_t* sample) {
+  fake_touch_t* t = user;
+  const h2_pal_result_t rc = touch_poll(user, &sample->event);
+  sample->needs_reopen = t->latched && rc == H2_PAL_ERR_IO;
+  sample->fresh_down = t->verified_down && rc == H2_PAL_OK &&
+                       sample->event.kind == H2_PAL_TOUCH_EVENT_DOWN;
+  return rc;
+}
 static h2_pal_result_t touch_close(void* user) {
   fake_touch_t* t = user;
   ++t->close_calls;
   t->opened = 0;
   return H2_PAL_OK;
 }
-static const h2_pal_touch_vtable_t touch_vtable = {.open = touch_open,
-                                                   .get_info = touch_info,
-                                                   .poll_event = touch_poll,
-                                                   .close = touch_close};
+static const h2_pal_touch_vtable_t touch_vtable = {
+    .open = touch_open,
+    .get_info = touch_info,
+    .poll_event = touch_poll,
+    .close = touch_close,
+    .poll_pointer = touch_pointer};
 
 static void* counted_alloc(void* user, size_t length) {
   (void)user;
@@ -519,12 +537,15 @@ static void capture_frame(const fixture_t* f) {
 static bool should_exit(void* user) {
   fixture_t* f = user;
   bool requested = false;
-  if (f->frames == f->header_from || f->frames == f->header_check) {
+  if (f->frames == f->header_from || f->frames == f->header_check ||
+      f->frames == f->header_changed) {
     uint32_t hash = 2166136261u;
     for (int y = 0; y < 20; ++y)
       for (int x = 0; x < f->display.info.width; ++x)
         hash = (hash ^ f->display.shadow[y * SHADOW_STRIDE + x]) * 16777619u;
     if (f->frames == f->header_from) f->header_hash = hash;
+    if (f->header_changed && f->frames == f->header_changed)
+      CHECK(hash != f->header_hash);
     if (f->header_check != 0u && f->frames == f->header_check)
       CHECK(hash ==
             f->header_hash); /* Claim leaves the Tasks heading visible. */
@@ -611,6 +632,7 @@ static h2_pal_result_t run(void) {
   const h2_pal_time_api_t time_api = {.user = real_time->user,
                                       .vtable = &time_vtable};
   h2_runtime_config_t config = {0};
+  config.event_queue_capacity = fx.event_capacity;
   config.board = "fruit-slice-test";
   config.target = "desktop";
   config.chip = "host";
@@ -676,6 +698,10 @@ static h2_pal_result_t run(void) {
                                         .background_saves = fx.background_saves,
                                         .user = &fx};
   const h2_pal_result_t rc = h2_fruit_slice_run(runtime, &game);
+  CHECK(h2_runtime_dropped_event_count(runtime, &fx.drops) == H2_PAL_OK);
+  h2_runtime_input_status_t input_status;
+  CHECK(h2_runtime_input_status(runtime, &input_status) == H2_PAL_OK);
+  fx.touch_errors = input_status.touch_error_count;
   CHECK(h2_runtime_destroy(&runtime) == H2_PAL_OK);
   CHECK(fx.allocations == fx.frees);
   CHECK(fx.display.opened == 0 && fx.touch.opened == 0);
@@ -742,9 +768,72 @@ static void test_persistent_touch_failure(void) {
   reset(120u);
   fx.paced_clock = true;
   fx.touch.poll_error = H2_PAL_ERR_IO;
+  fx.touch.latched = true;
   CHECK(run() == H2_PAL_OK);
   CHECK(fx.display.presents == 120u && fx.failure_count == 0u);
   CHECK(fx.touch.open_calls > 1 && fx.touch.close_calls == fx.touch.open_calls);
+}
+
+/* Losing a release must cancel even with no more device reports. A device
+ * error may be followed by a synthetic DOWN for the still-held pointer. */
+static void test_interrupted_tap(bool queue_full) {
+  reset(14u);
+  fx.paced_clock = true;
+  fx.touch_from_frame = 3u;
+  fx.header_from = 2u;
+  fx.header_check = 8u;
+  fx.header_changed = 13u;
+  fx.event_capacity = queue_full ? 1u : 4u;
+  fx.touch.burst = true;
+  fx.touch.error_frame = queue_full ? 0u : 4u;
+  fx.touch.script[0] =
+      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_DOWN, 120, 450};
+  fx.touch.script_frame[0] = 3u;
+  fx.touch.script_count = 1u;
+  if (!queue_full) {
+    /* No real release yet, including over a successful empty poll. */
+    fx.touch.script[1] = fx.touch.script[0];
+    fx.touch.script_frame[1] = 6u;
+    ++fx.touch.script_count;
+  }
+  size_t i = fx.touch.script_count++;
+  fx.touch.script[i] = (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_UP, 120, 450};
+  fx.touch.script_frame[i] = queue_full ? 3u : 7u;
+  fx.touch.script[fx.touch.script_count] = fx.touch.script[0];
+  fx.touch.script_frame[fx.touch.script_count++] = 10u;
+  fx.touch.script[fx.touch.script_count] = fx.touch.script[i];
+  fx.touch.script_frame[fx.touch.script_count++] = 11u;
+  CHECK(run() == H2_PAL_OK);
+  CHECK(fx.touch.script_next == fx.touch.script_count &&
+        fx.drops == (queue_full ? 1u : 0u));
+}
+
+static void test_consumed_device_release(void) {
+  reset(42u);
+  fx.paced_clock = true;
+  fx.header_from = 2u;
+  fx.header_check = 36u;
+  fx.header_changed = 41u;
+  fx.touch_from_frame = 3u;
+  fx.touch.burst = fx.touch.verified_down = true;
+  fx.touch.error_frame = 4u;
+  fx.touch.error_until = 33u;
+  fx.touch.script[0] =
+      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_DOWN, 120, 450};
+  fx.touch.script_frame[0] = 3u;
+  /* Recovery confirmed and consumed the old release before this poll. */
+  fx.touch.script[1] = fx.touch.script[0];
+  fx.touch.script_frame[1] = 38u;
+  fx.touch.script[2] = (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_UP, 120, 450};
+  fx.touch.script_frame[2] = 38u;
+  fx.touch.script_count = 3u;
+  CHECK(run() == H2_PAL_OK);
+  /* The Tasks page is static after the verified new tap. Every title frame
+   * during the 30-error window must still have presented. */
+  CHECK(fx.frames == 43u && fx.display.presents >= 36u &&
+        fx.touch_errors == 30u);
+  CHECK(fx.touch.script_next == 3u);
+  CHECK(fx.touch.open_calls == 1 && fx.touch.close_calls == 1);
 }
 
 static void test_ready_failure_stops(void) {
@@ -2375,6 +2464,9 @@ int main(void) {
   test_scaled_touch_slices_title_melon();
   test_display_open_failure();
   test_unsupported_display();
+  test_consumed_device_release();
+  test_interrupted_tap(true);
+  test_interrupted_tap(false);
   test_persistent_touch_failure();
   test_ready_failure_stops();
   test_audio_gesture_pause_and_exit();

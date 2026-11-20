@@ -476,11 +476,21 @@ int main(void) {
   clean();
 
   assert(h2_pal_touch_open(touch) == H2_PAL_OK);
+  h2_pal_touch_sample_t sample;
+  emit(TP_EVENT_TYPE_DOWN, 0, 4, 5);
+  emit(TP_EVENT_TYPE_UP, 0, 4, 5);
+  assert(h2_pal_touch_poll_pointer(touch, &sample) == H2_PAL_OK);
+  assert(sample.event.kind == H2_PAL_TOUCH_EVENT_DOWN && sample.fresh_down);
+  assert(!sample.needs_reopen && sample.event.x == 4 && sample.event.y == 5);
+  assert(h2_pal_touch_poll_pointer(touch, &sample) == H2_PAL_OK);
+  assert(sample.event.kind == H2_PAL_TOUCH_EVENT_UP && !sample.fresh_down);
   for (unsigned i = 0; i < 17; ++i) {
     emit(TP_EVENT_TYPE_DOWN, 0, 10, 10);
     emit(TP_EVENT_TYPE_UP, 0, 10, 10);
   }
   assert(h2_pal_touch_poll_event(touch, &event) == H2_PAL_ERR_FULL);
+  assert(h2_pal_touch_poll_pointer(touch, &sample) == H2_PAL_ERR_FULL &&
+         sample.needs_reopen);
   clean();
   assert(starts == joins);
   return 0;

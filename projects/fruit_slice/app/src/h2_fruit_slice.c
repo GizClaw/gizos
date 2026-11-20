@@ -73,14 +73,14 @@ static int failure_at(session_t* s, const char* operation, int rc) {
   if (rc != H2_PAL_OK && !s->failure_reported) {
     s->failure_reported = true;
     char message[224];
-    (void)snprintf(
-        message, sizeof(message),
-        "H2_FRUIT_SLICE_FAILURE op=%s rc=%d phase=%u frames=%u "
-        "reveal=%u game_ms=%llu size=%dx%d save_pending=%u",
-        operation, rc, (unsigned)s->game.phase, (unsigned)s->frames,
-        (unsigned)s->game.cards.reveal_active,
-        (unsigned long long)s->game.time_ms, (int)s->display.width,
-        (int)s->display.height, (unsigned)(s->save_worker.task != NULL));
+    (void)snprintf(message, sizeof(message),
+                   "H2_FRUIT_SLICE_FAILURE op=%s rc=%d phase=%u frames=%u "
+                   "reveal=%u game_ms=%llu size=%dx%d save_pending=%u",
+                   operation, rc, (unsigned)s->game.phase, (unsigned)s->frames,
+                   (unsigned)s->game.cards.reveal_active,
+                   (unsigned long long)s->game.time_ms, (int)s->display.width,
+                   (int)s->display.height,
+                   (unsigned)(s->save_worker.task != NULL));
     log_line(s, H2_PAL_LOG_ERROR, message);
   }
   return rc;
@@ -353,7 +353,8 @@ static void service_saves(session_t* s, uint64_t now) {
 
 static void dispatch_pointer(session_t* s, const h2_runtime_event_t* event) {
   if (event->kind != H2_RUNTIME_EVENT_TOUCH_POINTER ||
-      event->payload_size != sizeof(h2_runtime_touch_pointer_event_t)) return;
+      event->payload_size != sizeof(h2_runtime_touch_pointer_event_t))
+    return;
   h2_runtime_touch_pointer_event_t p;
   memcpy(&p, event->payload, sizeof(p));
   h2_fruit_slice_pointer_t kind;
@@ -936,8 +937,8 @@ h2_pal_result_t h2_fruit_slice_run(h2_runtime_t* runtime,
     if (rc == H2_PAL_OK && status.phase != H2_RUNTIME_INPUT_PHASE_STOPPED)
       rc = H2_PAL_ERR_BUSY;
     if (rc == H2_PAL_OK) {
-      const h2_runtime_input_poll_config_t input = {
-          .touch_poll_interval_ms = TOUCH_POLL_INTERVAL_MS};
+      const h2_runtime_input_poll_config_t input = {.touch_poll_interval_ms =
+                                                        TOUCH_POLL_INTERVAL_MS};
       owns_input = true;
       rc = h2_runtime_input_start(runtime, &input);
     }

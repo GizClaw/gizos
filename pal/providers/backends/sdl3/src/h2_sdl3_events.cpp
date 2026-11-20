@@ -85,7 +85,8 @@ h2_pal_result_t touch_get_info(void* user, h2_pal_touch_info_t* out_info) {
   return H2_PAL_OK;
 }
 
-h2_pal_result_t poll_touch(void* user, h2_pal_touch_event_t* out_event, bool loss_aware) {
+h2_pal_result_t poll_touch(void* user, h2_pal_touch_event_t* out_event,
+                           bool loss_aware) {
   auto* provider = static_cast<h2_sdl3_t*>(user);
   if (provider == nullptr || out_event == nullptr) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -113,8 +114,11 @@ h2_pal_result_t poll_touch(void* user, h2_pal_touch_event_t* out_event, bool los
 h2_pal_result_t touch_poll(void* user, h2_pal_touch_event_t* out) {
   return poll_touch(user, out, false);
 }
-h2_pal_result_t touch_poll_pointer(void* user, h2_pal_touch_event_t* out) {
-  return poll_touch(user, out, true);
+h2_pal_result_t touch_poll_pointer(void* user, h2_pal_touch_sample_t* sample) {
+  const auto rc = poll_touch(user, &sample->event, true);
+  sample->fresh_down =
+      rc == H2_PAL_OK && sample->event.kind == H2_PAL_TOUCH_EVENT_DOWN;
+  return rc;
 }
 
 h2_pal_result_t touch_close(void* user) {
@@ -135,11 +139,7 @@ h2_pal_result_t touch_close(void* user) {
 }
 
 const h2_pal_touch_vtable_t kTouchVtable = {
-    touch_open,
-    touch_get_info,
-    touch_poll,
-    touch_close,
-    touch_poll_pointer,
+    touch_open, touch_get_info, touch_poll, touch_close, touch_poll_pointer,
 };
 
 }  // namespace

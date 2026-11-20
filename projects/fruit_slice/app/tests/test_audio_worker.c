@@ -572,7 +572,8 @@ static uint64_t hold_main_callback(uint32_t ms, bool verify_progress) {
 }
 static int present(void* u) {
   if ((exit_intent_trial == 2u && frames == 21u) ||
-      (exit_intent_trial == 3u && frames == 20u)) return H2_PAL_ERR_BUSY;
+      (exit_intent_trial == 3u && frames == 20u))
+    return H2_PAL_ERR_BUSY;
   if (toggle_trial && tap_pending) {
     const uint64_t elapsed = now() - tap_started;
     if (elapsed > toggle_max_ms) toggle_max_ms = elapsed;

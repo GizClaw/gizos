@@ -3421,6 +3421,126 @@ static void test_runtime_owns_input_task_lifecycle(void) {
   assert(env.task_state.joins == 1u);
 }
 
+typedef struct test_touch {
+  bool opened;
+  unsigned opens, closes;
+  h2_pal_result_t info_rc, close_rc;
+  const h2_pal_touch_event_t* script;
+  size_t count;
+} test_touch_t;
+
+static int pointer_open(void* user) {
+  test_touch_t* t = user;
+  assert(!t->opened);
+  t->opened = true;
+  ++t->opens;
+  return H2_PAL_OK;
+}
+static int pointer_close(void* user) {
+  test_touch_t* t = user;
+  assert(t->opened);
+  if (t->close_rc == H2_PAL_OK) {
+    t->opened = false;
+    ++t->closes;
+  }
+  return t->close_rc;
+}
+static int pointer_info(void* user, h2_pal_touch_info_t* out) {
+  test_touch_t* t = user;
+  assert(t->opened);
+  *out = (h2_pal_touch_info_t){800u, 480u};
+  return t->info_rc;
+}
+static int pointer_read(void* user, h2_pal_touch_event_t* out) {
+  test_touch_t* t = user;
+  assert(t->opened);
+  if (!t->count) return H2_PAL_ERR_WOULD_BLOCK;
+  --t->count;
+  *out = *t->script++;
+  return H2_PAL_OK;
+}
+
+static void test_touch_lifecycle_and_mapped_input(void) {
+  test_runtime_env_t env;
+  test_env_init(&env);
+  add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+  env.button_state.single_state = H2_PAL_BUTTON_STATE_RELEASED;
+  test_touch_t t = {0};
+  const h2_pal_touch_vtable_t ops = {.open = pointer_open,
+                                     .get_info = pointer_info,
+                                     .poll_event = pointer_read,
+                                     .close = pointer_close};
+  const h2_pal_touch_api_t touch = {&t, &ops};
+  h2_runtime_config_t config = test_runtime_config(&env);
+  config.touch = &touch;
+  config.event_queue_capacity = 8;
+  h2_runtime_t* rt = NULL;
+  assert(h2_runtime_init(&config, &rt) == H2_PAL_OK);
+  assert(h2_runtime_input_start(rt, NULL) == H2_PAL_OK && !t.opens);
+  assert(h2_runtime_input_stop(rt) == H2_PAL_OK);
+  const h2_runtime_input_poll_config_t input = {.touch_poll_interval_ms = 8};
+  t.info_rc = H2_PAL_ERR_IO;
+  t.close_rc = H2_PAL_ERR_BUSY;
+  assert(h2_runtime_input_start(rt, &input) == H2_PAL_ERR_BUSY);
+  assert(t.opened && env.task_state.handle_count == 0);
+  assert(h2_runtime_destroy(&rt) == H2_PAL_ERR_BUSY && rt != NULL);
+  t.info_rc = t.close_rc = H2_PAL_OK;
+  assert(h2_runtime_input_stop(rt) == H2_PAL_OK && !t.opened);
+  assert(h2_runtime_input_start(rt, &input) == H2_PAL_OK);
+  assert(env.task_state.handle_count == 2 && t.opened);
+  assert(h2_runtime_input_start(rt, &input) == H2_PAL_ERR_INVALID_STATE);
+  h2_runtime_test_control_t* control = NULL;
+  assert(h2_runtime_test_control_open(rt, &control) ==
+             H2_PAL_ERR_INVALID_STATE &&
+         !control);
+  const h2_pal_touch_event_t held = {H2_PAL_TOUCH_EVENT_DOWN, 33, 44};
+  t.script = &held;
+  t.count = 1;
+  /* Drive only the Touch task. Its undelivered DOWN must die with this run. */
+  env.time_state.stop_after_sleep_runtime = rt;
+  env.task_state.handles[1]->entry(rt);
+  env.time_state.stop_after_sleep_runtime = NULL;
+  assert(!t.count);
+  env.task_state.join_rc = H2_PAL_ERR_TASK;
+  assert(h2_runtime_destroy(&rt) == H2_PAL_ERR_TASK && rt != NULL);
+  assert(t.opened && env.task_state.handle_count == 2);
+  env.task_state.join_rc = H2_PAL_OK;
+  assert(h2_runtime_input_stop(rt) == H2_PAL_OK && !t.opened);
+  env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
+  assert(h2_runtime_input_start(rt, &input) == H2_PAL_OK);
+  uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+  h2_runtime_event_t event = event_with_payload(payload);
+  assert(h2_runtime_poll_event(rt, &event) == H2_PAL_OK &&
+         event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
+  assert(h2_runtime_poll_event(rt, &event) == H2_PAL_OK &&
+         event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION);
+  assert(h2_runtime_poll_event(rt, &event) == H2_PAL_ERR_WOULD_BLOCK);
+  const h2_pal_touch_event_t points[] = {{H2_PAL_TOUCH_EVENT_DOWN, 33, 44},
+                                         {H2_PAL_TOUCH_EVENT_UP, 33, 44},
+                                         {H2_PAL_TOUCH_EVENT_DOWN, 50, 60},
+                                         {H2_PAL_TOUCH_EVENT_MOVE, 70, 80},
+                                         {H2_PAL_TOUCH_EVENT_UP, 90, 100}};
+  t.script = points;
+  t.count = sizeof(points) / sizeof(points[0]);
+  env.time_state.stop_after_sleep_runtime = rt;
+  env.task_state.handles[1]->entry(rt);
+  env.time_state.stop_after_sleep_runtime = NULL;
+  const h2_runtime_pointer_phase_t phases[] = {
+      H2_RUNTIME_POINTER_DOWN, H2_RUNTIME_POINTER_MOVE, H2_RUNTIME_POINTER_UP};
+  for (size_t i = 0; i < 3; ++i) {
+    assert(h2_runtime_poll_event(rt, &event) == H2_PAL_OK &&
+           event.kind == H2_RUNTIME_EVENT_TOUCH_POINTER);
+    h2_runtime_touch_pointer_event_t p;
+    assert(event.payload_size == sizeof(p));
+    memcpy(&p, payload, sizeof(p));
+    assert(p.phase == phases[i] && p.x == points[i + 2].x &&
+           p.y == points[i + 2].y && p.width == 800 && p.height == 480);
+  }
+  assert(h2_runtime_poll_event(rt, &event) == H2_PAL_ERR_WOULD_BLOCK);
+  assert(h2_runtime_destroy(&rt) == H2_PAL_OK && rt == NULL);
+  assert(t.opens == t.closes && env.task_state.handle_count == 0);
+}
+
 static void test_input_task_start_failure_leaves_input_stopped(void) {
   test_runtime_env_t env;
   test_env_init(&env);
@@ -5560,6 +5680,7 @@ int main(void) {
   test_radio_group_is_read_once_for_child_buttons();
   test_radio_group_error_advances_child_buttons();
   test_runtime_owns_input_task_lifecycle();
+  test_touch_lifecycle_and_mapped_input();
   test_input_task_start_failure_leaves_input_stopped();
   test_input_worker_failure_closes_event_queue();
   test_input_join_failure_is_retryable();

@@ -698,18 +698,25 @@ static int android_touch_info(void* user, h2_pal_touch_info_t* out) {
   pthread_mutex_unlock(&host->mutex);
   return rc;
 }
-static int android_touch_pointer(void* user, h2_pal_touch_event_t* out) {
+static int read_touch(void* user, h2_pal_touch_event_t* out, bool loss_aware) {
   h2_android_platform_t* host = user;
   if (!host || !out) return H2_PAL_ERR_INVALID_ARG;
   pthread_mutex_lock(&host->mutex);
-  int rc = h2_android_touch_poll(&host->touch_state, out);
+  const bool lost = host->touch_state.lost_move;
+  host->touch_state.lost_move = false;
+  int rc = loss_aware && lost ? H2_PAL_ERR_FULL
+                              : h2_android_touch_poll(&host->touch_state, out);
   pthread_mutex_unlock(&host->mutex);
+  if (!loss_aware && rc == H2_PAL_OK && out->kind == H2_PAL_TOUCH_EVENT_CANCEL)
+    out->kind = H2_PAL_TOUCH_EVENT_UP;
   return rc;
 }
 static int android_touch_poll(void* user, h2_pal_touch_event_t* out) {
-  int rc = android_touch_pointer(user, out);
-  if (rc == H2_PAL_OK && out->kind == H2_PAL_TOUCH_EVENT_CANCEL) out->kind = H2_PAL_TOUCH_EVENT_UP;
-  return rc;
+  return read_touch(user, out, false);
+}
+static int android_touch_pointer(void* user, h2_pal_touch_sample_t* sample) {
+  /* A recovered Android snapshot can begin with a still-held contact. */
+  return read_touch(user, &sample->event, true);
 }
 static int android_touch_close(void* user) {
   h2_android_platform_t* host = user;

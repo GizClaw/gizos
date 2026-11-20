@@ -1,6 +1,7 @@
 /* The scripted App fixtures advance virtual time by frames. Let the real
  * Runtime input worker run a complete acquisition tick at each frame boundary
- * before the fixture mutates its next sample. All other tasks keep real time. */
+ * before the fixture mutates its next sample. All other tasks keep real time.
+ */
 #ifndef H2_FRUIT_TEST_INPUT_CLOCK_H
 #define H2_FRUIT_TEST_INPUT_CLOCK_H
 #include "h2_runtime_task_names.h"
@@ -18,11 +19,13 @@ static struct {
   void* ctx;
   const h2_pal_task_api_t* tasks;
   const h2_pal_time_api_t* time;
-} input_clock = {.lock = PTHREAD_MUTEX_INITIALIZER, .changed = PTHREAD_COND_INITIALIZER};
+} input_clock = {.lock = PTHREAD_MUTEX_INITIALIZER,
+                 .changed = PTHREAD_COND_INITIALIZER};
 static _Thread_local bool input_thread;
 
 static void await_tick(void) {
-  while (!input_clock.stopping && input_clock.completed == input_clock.requested)
+  while (!input_clock.stopping &&
+         input_clock.completed == input_clock.requested)
     pthread_cond_wait(&input_clock.changed, &input_clock.lock);
 }
 static void input_entry(void* unused) {
@@ -52,7 +55,8 @@ static void input_tick(void) {
   pthread_mutex_unlock(&input_clock.lock);
 }
 static int input_start(void* user, const h2_pal_task_options_t* options,
-                       h2_pal_task_entry_t entry, void* ctx, h2_pal_task_t** out) {
+                       h2_pal_task_entry_t entry, void* ctx,
+                       h2_pal_task_t** out) {
   (void)user;
   if (strcmp(options->name, h2_runtime_input_task_name) != 0)
     return h2_pal_task_start(input_clock.tasks, options, entry, ctx, out);
@@ -60,13 +64,15 @@ static int input_start(void* user, const h2_pal_task_options_t* options,
   input_clock.stopping = false;
   input_clock.entry = entry;
   input_clock.ctx = ctx;
-  const int rc = h2_pal_task_start(h2_desktop_platform_task_api(), options, input_entry, NULL, out);
+  const int rc = h2_pal_task_start(h2_desktop_platform_task_api(), options,
+                                   input_entry, NULL, out);
   if (rc == H2_PAL_OK) input_clock.worker = *out;
   return rc;
 }
 static int input_join(void* user, h2_pal_task_t* task) {
   (void)user;
-  if (task != input_clock.worker) return h2_pal_task_join(input_clock.tasks, task);
+  if (task != input_clock.worker)
+    return h2_pal_task_join(input_clock.tasks, task);
   pthread_mutex_lock(&input_clock.lock);
   input_clock.stopping = true;
   pthread_cond_broadcast(&input_clock.changed);
@@ -76,7 +82,8 @@ static int input_join(void* user, h2_pal_task_t* task) {
   return rc;
 }
 static void input_clock_install(h2_runtime_config_t* cfg) {
-  static const h2_pal_task_vtable_t task_ops = {.start = input_start, .join = input_join};
+  static const h2_pal_task_vtable_t task_ops = {.start = input_start,
+                                                .join = input_join};
   static const h2_pal_task_api_t tasks = {.vtable = &task_ops};
   static h2_pal_time_vtable_t time_ops;
   static h2_pal_time_api_t time;

@@ -101,7 +101,8 @@ typedef struct h2_fruit_slice_config {
  *
  * @return H2_PAL_OK after a requested exit; INVALID_ARG for a NULL Runtime;
  *         UNSUPPORTED for an unusable Display format or extent; NO_MEMORY;
- *         or the first Display, input lifecycle, clock, Runtime wait or ready error.
+ *         or the first Display, input lifecycle, clock, Runtime wait or ready
+ * error.
  */
 h2_pal_result_t h2_fruit_slice_run(h2_runtime_t* runtime,
                                    const h2_fruit_slice_config_t* config);

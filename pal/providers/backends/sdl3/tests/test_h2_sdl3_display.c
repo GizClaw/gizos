@@ -146,6 +146,26 @@ static void test_lifecycle_and_events(void) {
   assert(h2_sdl3_poll_event(provider, &projected) == H2_PAL_OK);
   assert(projected.kind == H2_SDL3_EVENT_FOCUS_GAINED);
 
+  input.type = SDL_EVENT_MOUSE_BUTTON_DOWN;
+  input.button.button = SDL_BUTTON_LEFT;
+  assert(SDL_PushEvent(&input));
+  input.type = SDL_EVENT_WINDOW_FOCUS_LOST;
+  assert(SDL_PushEvent(&input));
+  drain_host_events(provider);
+  h2_pal_touch_sample_t sample;
+  assert(h2_pal_touch_poll_pointer(touch, &sample) == H2_PAL_OK);
+  assert(sample.event.kind == H2_PAL_TOUCH_EVENT_DOWN && sample.fresh_down);
+  assert(h2_pal_touch_poll_pointer(touch, &sample) == H2_PAL_OK);
+  assert(sample.event.kind == H2_PAL_TOUCH_EVENT_CANCEL);
+  for (unsigned i = 0; i < 100u; ++i) {
+    input.type =
+        i % 2u ? SDL_EVENT_MOUSE_BUTTON_UP : SDL_EVENT_MOUSE_BUTTON_DOWN;
+    input.button.button = SDL_BUTTON_LEFT;
+    assert(SDL_PushEvent(&input));
+  }
+  drain_host_events(provider);
+  assert(h2_pal_touch_poll_pointer(touch, &sample) == H2_PAL_ERR_FULL);
+
   assert(h2_pal_touch_close(touch) == H2_PAL_OK);
   assert(h2_pal_display_close(display) == H2_DISPLAY_OK);
   assert(h2_pal_display_get_info(display, &info) ==

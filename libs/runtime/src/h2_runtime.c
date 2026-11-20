@@ -285,6 +285,7 @@ static void runtime_atomic_destroy(h2_runtime_private_t* state) {
   h2_atomic_int_destroy(&state->system_event_active);
   h2_atomic_int_destroy(&state->input_phase);
   h2_atomic_uint_destroy(&state->touch_session);
+  h2_atomic_flag_destroy(&state->input_health_fallback);
   h2_atomic_int_destroy(&state->input_stop_requested);
   h2_atomic_int_destroy(&state->input_worker_result);
   for (size_t i = 0; i < H2_RUNTIME_STATE_SLOT_COUNT; ++i)
@@ -356,6 +357,9 @@ static h2_pal_result_t runtime_atomic_init(h2_runtime_private_t* state) {
       H2_ATOMIC_OK)
     goto atomic_failure;
   if ((atomic_rc = h2_atomic_int_init(&state->system_event_active, 0)) !=
+      H2_ATOMIC_OK)
+    goto atomic_failure;
+  if ((atomic_rc = h2_atomic_flag_init(&state->input_health_fallback)) !=
       H2_ATOMIC_OK)
     goto atomic_failure;
   if ((atomic_rc = h2_atomic_uint_init(&state->touch_session, 0u)) !=
