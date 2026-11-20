@@ -78,44 +78,162 @@
       error: '庭院启动失败，请刷新重试。',
     },
   };
+  const artwork = document.getElementById('canvas');
+  const garden = document.getElementById('garden');
   const menuCanvas = document.getElementById('menu-labels');
   const menuContext = menuCanvas.getContext('2d');
-  let menu = null;
-  function paintMenuLabels() {
-    menuCanvas.hidden = !menu;
-    if (!menu) return;
-    const artwork = document.getElementById('canvas');
-    const bounds = artwork.getBoundingClientRect();
-    const width = Math.round(bounds.width * devicePixelRatio);
-    const height = Math.round(bounds.height * devicePixelRatio);
-    if (menuCanvas.width !== width) menuCanvas.width = width;
-    if (menuCanvas.height !== height) menuCanvas.height = height;
-    menuContext.setTransform(width / artwork.width, 0, 0, height / artwork.height, 0, 0);
-    menuContext.clearRect(0, 0, artwork.width, artwork.height);
-    for (const [i, label] of menu.labels.entries()) {
-      if (i === menu.foreground && menu.card[2] > 0) {
-        menuContext.globalCompositeOperation = 'destination-out';
-        menuContext.globalAlpha = menu.shade;
-        menuContext.fillRect(0, 0, artwork.width, artwork.height);
-        menuContext.globalCompositeOperation = 'source-over';
-        menuContext.clearRect(...menu.card);
-      }
-      const size = label.height * (/[^\x00-\x7f]/.test(label.text) ? 1.04 : 1.34);
-      menuContext.font = `${size}px "Garden Latin", "Garden Droid", sans-serif`;
-      menuContext.textBaseline = 'alphabetic';
-      menuContext.textAlign = label.centered ? 'center' : 'left';
-      const metrics = menuContext.measureText(label.text);
-      const inkHeight = metrics.actualBoundingBoxAscent + metrics.actualBoundingBoxDescent;
-      const baseline = label.y + (label.height - inkHeight) * 0.5 + metrics.actualBoundingBoxAscent;
-      menuContext.globalAlpha = label.alpha;
-      menuContext.fillStyle = label.color;
-      menuContext.fillText(label.text, label.x, baseline, label.width);
+  const gamesFonts = '"Garden Latin", "Garden Droid", sans-serif';
+  let labelFrame = null;
+  let pendingLabels = null;
+  let painted = null;
+  let scaleX = 1, scaleY = 1;
+
+  function layoutLabel(label) {
+    const han = [...label.text].some(character => character.charCodeAt(0) > 127);
+    const fontSize = label.height * (han ? 1.08 : 1.34);
+    function useFont(size) {
+      menuContext.font = `${size}px ${gamesFonts}`;
+      menuContext.letterSpacing = han ? `${size * .025}px` : '0px';
     }
-    menuContext.globalAlpha = 1;
+    menuContext.textAlign = label.centered ? 'center' : 'left';
+    useFont(fontSize);
+    const advance = menuContext.measureText(label.text).width;
+    if (advance > label.width) useFont(fontSize * label.width / advance);
+    // Keep changing numbers on the same baseline as the label they belong to.
+    const reference = menuContext.measureText(han ? '植' : 'H');
+    const baseline = label.y + (label.height + reference.actualBoundingBoxAscent -
+                                 reference.actualBoundingBoxDescent) / 2;
+    const ink = menuContext.measureText(label.text);
+    const left = Math.floor((label.x - ink.actualBoundingBoxLeft) * scaleX) - 2;
+    const right = Math.ceil((label.x + ink.actualBoundingBoxRight) * scaleX) + 2;
+    const top = Math.floor((baseline - ink.actualBoundingBoxAscent) * scaleY) - 2;
+    const bottom = Math.ceil((baseline + ink.actualBoundingBoxDescent) * scaleY) + 2;
+    return {...label, box: [left, top, right, bottom], baseline,
+      font: menuContext.font, spacing: menuContext.letterSpacing};
   }
-  new ResizeObserver(paintMenuLabels).observe(document.getElementById('garden'));
-  window.addEventListener('resize', paintMenuLabels);
-  document.fonts.addEventListener('loadingdone', paintMenuLabels);
+
+  const intersects = (a, b) => a[0] < b[2] && a[2] > b[0] && a[1] < b[3] && a[3] > b[1];
+  function paintLabels(force = false) {
+    const frame = labelFrame;
+    if (!frame || !(frame.hud.length + frame.panel.length + frame.scene.length)) {
+      menuCanvas.hidden = true;
+      painted = null;
+      return;
+    }
+    menuCanvas.hidden = false;
+    force ||= painted === null;
+    if (force) {
+      const bounds = artwork.getBoundingClientRect();
+      const width = Math.max(1, Math.round(bounds.width * devicePixelRatio));
+      const height = Math.max(1, Math.round(bounds.height * devicePixelRatio));
+      if (menuCanvas.width !== width) menuCanvas.width = width;
+      if (menuCanvas.height !== height) menuCanvas.height = height;
+      scaleX = width / artwork.width;
+      scaleY = height / artwork.height;
+    }
+    const frames = {};
+    const dirty = [];
+    const cardChanged = JSON.stringify([frame.card, frame.shade]) !== painted?.cardKey;
+    const hudChanged = frame.hudAlpha !== painted?.hudAlpha;
+    const sunKey = JSON.stringify(frame.suns);
+    const sunsChanged = sunKey !== painted?.sunKey;
+    const sunBoxes = [...(painted?.suns ?? []), ...frame.suns].map(([x, y, r]) =>
+      [(x - 1.45 * r) * scaleX - 2, (y - 1.45 * r) * scaleY - 2,
+       (x + 1.45 * r) * scaleX + 2, (y + 1.45 * r) * scaleY + 2]);
+    for (const group of ['hud', 'panel', 'scene']) {
+      const old = painted?.[group] ?? [];
+      frames[group] = frame[group].map((label, i) => {
+        const key = JSON.stringify(label);
+        return !force && old[i]?.key === key ? old[i] : {...layoutLabel(label), key};
+      });
+      for (let i = 0; i < Math.max(old.length, frames[group].length); ++i) {
+        const before = old[i], after = frames[group][i];
+        const occlusionChanged = (group === 'panel' && cardChanged) ||
+          (group === 'hud' && (hudChanged || (sunsChanged &&
+            sunBoxes.some(box => after && intersects(box, after.box)))));
+        if (before !== after || occlusionChanged) {
+          if (before) dirty.push(before.box);
+          if (after && after !== before) dirty.push(after.box);
+        }
+      }
+    }
+    painted = {...frames, cardKey: JSON.stringify([frame.card, frame.shade]),
+      hudAlpha: frame.hudAlpha, sunKey, suns: frame.suns};
+    if (!dirty.length) return;
+    menuContext.save();
+    menuContext.resetTransform();
+    if (force) {
+      menuContext.clearRect(0, 0, menuCanvas.width, menuCanvas.height);
+    } else {
+      // Union disjoint ink rectangles in backing pixels. Never clear a full
+      // high-DPR surface for changing HUD copy or one fading announcement.
+      menuContext.beginPath();
+      for (const [x, y, right, bottom] of dirty) {
+        menuContext.rect(x, y, right - x, bottom - y);
+        menuContext.clearRect(x, y, right - x, bottom - y);
+      }
+      menuContext.clip();
+    }
+    menuContext.setTransform(scaleX, 0, 0, scaleY, 0, 0);
+    function drawGroup(group, opacity) {
+      for (const label of group) {
+        if (!force && !dirty.some(box => intersects(box, label.box))) continue;
+        menuContext.font = label.font;
+        menuContext.letterSpacing = label.spacing;
+        menuContext.textAlign = label.centered ? 'center' : 'left';
+        menuContext.globalAlpha = label.alpha * opacity;
+        menuContext.fillStyle = label.color;
+        menuContext.fillText(label.text, label.x, label.baseline);
+      }
+    }
+    drawGroup(frames.hud, frame.hudAlpha);
+    menuContext.globalCompositeOperation = 'destination-out';
+    for (const [x, y, radius, spin] of frame.suns) {
+      // Match the silhouette and transparent halo drawn by draw_sun in RGB565.
+      menuContext.globalAlpha = 70 / 256;
+      menuContext.beginPath();
+      menuContext.arc(x, y, radius * 1.45, 0, 2 * Math.PI);
+      menuContext.fill();
+      menuContext.globalAlpha = 1;
+      menuContext.beginPath();
+      menuContext.arc(x, y, radius, 0, 2 * Math.PI);
+      menuContext.fill();
+      menuContext.beginPath();
+      menuContext.lineWidth = radius * .22;
+      menuContext.lineCap = 'round';
+      for (let ray = 0; ray < 8; ++ray) {
+        const angle = spin + ray * Math.PI / 4;
+        const dx = Math.cos(angle) * radius, dy = Math.sin(angle) * radius;
+        menuContext.moveTo(x + dx * .95, y + dy * .95);
+        menuContext.lineTo(x + dx * 1.3, y + dy * 1.3);
+      }
+      menuContext.stroke();
+    }
+    menuContext.globalCompositeOperation = 'source-over';
+    const [x, y, w, h] = frame.card;
+    drawGroup(frames.panel, 1 - frame.shade);
+    if (w > 0) {
+      menuContext.globalCompositeOperation = 'destination-out';
+      menuContext.globalAlpha = 1;
+      menuContext.beginPath();
+      menuContext.roundRect(x, y, w, h, w / 16);
+      menuContext.fill();
+      menuContext.globalCompositeOperation = 'source-over';
+    }
+    drawGroup(frames.scene, 1);
+    menuContext.restore();
+  }
+  const refreshLabels = () => paintLabels(true);
+  new ResizeObserver(refreshLabels).observe(garden);
+  function watchDensity() {
+    matchMedia(`(resolution: ${devicePixelRatio}dppx)`).addEventListener('change', () => {
+      refreshLabels();
+      watchDensity();
+    }, {once: true});
+  }
+  watchDensity();
+  document.fonts.load('16px "Garden Droid"').then(refreshLabels, refreshLabels);
+  document.fonts.load('16px "Garden Latin"').then(refreshLabels, refreshLabels);
   const cover = document.getElementById('cover');
   const coverTitle = document.getElementById('cover-title');
   const coverNote = document.getElementById('cover-note');
@@ -172,7 +290,16 @@
         Object.assign(controls[i].style, {left, top, width, height});
       }
     },
-    h2GardenMenuLabels: labels => { menu = labels; paintMenuLabels(); },
+    h2GardenLabels: (frame, withArtwork) => {
+      if (withArtwork) pendingLabels = frame;
+      else { labelFrame = frame; paintLabels(); }
+    },
+    h2WebDisplayDidPresent: () => {
+      if (!pendingLabels) return;
+      labelFrame = pendingLabels;
+      pendingLabels = null;
+      paintLabels();
+    },
     print: text => console.log(text),
     printErr: text => console.error(text),
     onRuntimeInitialized: () => {
@@ -187,7 +314,7 @@
           Module['_h2_garden_guard_web_back']();
       });
     },
-    onAbort: () => { cover.hidden = true; menu = null; paintMenuLabels(); state = 'error'; showStatus(); },
+    onAbort: () => { cover.hidden = true; labelFrame = null; paintLabels(); state = 'error'; showStatus(); },
   };
 </script>
 {{{ SCRIPT }}}

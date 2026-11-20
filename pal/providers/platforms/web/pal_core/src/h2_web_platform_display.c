@@ -19,6 +19,8 @@ EM_JS(void, h2_web_present_rgba,
         const image = new ImageData(new Uint8ClampedArray(source), width,
                                     height);
         context.putImageData(image, 0, 0);
+        // A page can commit its own layers in the same browser paint turn.
+        Module['h2WebDisplayDidPresent']?.();
         return 1;
       });
 });
