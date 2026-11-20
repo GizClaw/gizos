@@ -45,6 +45,7 @@ struct h2_web_platform {
   int32_t pointer_x;
   int32_t pointer_y;
   int pointer_pressed;
+  bool multi_touch;
   h2_pal_touch_event_t touch_events[H2_WEB_TOUCH_EVENT_CAPACITY];
   size_t touch_head;
   size_t touch_count;

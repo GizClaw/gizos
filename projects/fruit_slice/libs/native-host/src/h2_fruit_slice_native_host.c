@@ -78,7 +78,7 @@ static h2_pal_result_t pointer_poll(void* user, h2_pal_touch_event_t* out) {
       return H2_PAL_ERR_WOULD_BLOCK;
     *out = (h2_pal_touch_event_t){
         pointer->pressed ? H2_PAL_TOUCH_EVENT_MOVE : H2_PAL_TOUCH_EVENT_DOWN, x,
-        y};
+        y, 0};
     pointer->last_x = x;
     pointer->last_y = y;
     pointer->pressed = true;
@@ -86,7 +86,7 @@ static h2_pal_result_t pointer_poll(void* user, h2_pal_touch_event_t* out) {
   }
   if (!pointer->pressed) return H2_PAL_ERR_WOULD_BLOCK;
   *out = (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_UP, pointer->last_x,
-                                pointer->last_y};
+                                pointer->last_y, 0};
   pointer->pressed = false;
   return H2_PAL_OK;
 }

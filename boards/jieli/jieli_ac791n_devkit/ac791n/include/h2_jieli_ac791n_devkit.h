@@ -25,6 +25,8 @@ extern "C" {
 #endif
 
 const char* h2_jieli_ac791n_devkit_board_name(void);
+/* H2Loader layout. Bits 0/1 sample CPU0/1 reports awaiting a joint feed. */
+uint32_t h2_jieli_ac791n_devkit_watchdog_pending(void);
 /** Persisted BLE identity address, formatted as 12 lowercase hex digits. */
 const char* h2_jieli_ac791n_devkit_device_uid(void);
 
@@ -73,8 +75,22 @@ void h2_jieli_ac791n_devkit_pref_set_diagnostic(
 /* 320x480 ILI9481/ILI9488 panel selected by the board strap pins. */
 const h2_pal_display_api_t* h2_jieli_ac791n_devkit_display_api(void);
 
-/* FT6236 single-pointer touch controller on the board software-I2C bus. */
+/* Optional image-owned timing hook, invoked from the display owner's task.
+ * A hook must never perform I/O, re-enter the device or wait for DMA. */
+typedef enum h2_jieli_display_stage {
+  H2_JIELI_DISPLAY_DRAIN,
+  H2_JIELI_DISPLAY_WINDOW,
+  H2_JIELI_DISPLAY_PACK,
+  H2_JIELI_DISPLAY_SUBMIT,
+} h2_jieli_display_stage_t;
+void h2_jieli_ac791n_devkit_display_trace(h2_jieli_display_stage_t stage);
+
+/* FT6236 touch provider on the board software-I2C bus. Defaults to ID 0. */
 const h2_pal_touch_api_t* h2_jieli_ac791n_devkit_touch_api(void);
+/** Enable contact IDs and cancellation before opening Touch. Persists across
+ * close/reopen. Returns BUSY during another input operation or INVALID_STATE
+ * if Touch is already open. */
+h2_pal_result_t h2_jieli_ac791n_devkit_enable_multi_touch(void);
 
 enum {
   H2_JIELI_AC791N_ADKEY_GROUP_ID = 1,

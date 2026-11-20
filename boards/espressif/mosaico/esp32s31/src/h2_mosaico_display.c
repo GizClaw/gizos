@@ -263,12 +263,12 @@ static int touch_poll(void* user, h2_pal_touch_event_t* out) {
       rc = H2_PAL_ERR_IO;
     else if (down && (!pressed || x != last_x || y != last_y)) {
       *out = (h2_pal_touch_event_t){
-          pressed ? H2_PAL_TOUCH_EVENT_MOVE : H2_PAL_TOUCH_EVENT_DOWN, x, y};
+          pressed ? H2_PAL_TOUCH_EVENT_MOVE : H2_PAL_TOUCH_EVENT_DOWN, x, y, 0};
       pressed = true;
       last_x = x;
       last_y = y;
     } else if (!down && pressed) {
-      *out = (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_UP, last_x, last_y};
+      *out = (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_UP, last_x, last_y, 0};
       pressed = false;
     } else
       rc = H2_PAL_ERR_WOULD_BLOCK;
