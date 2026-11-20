@@ -51,6 +51,10 @@ typedef struct h2_pal_touch_sample {
   /** On error, the provider knows this session cannot acquire again until
    * closed and reopened. The poll still returns the original device error. */
   bool needs_reopen;
+  /** On a fresh DOWN, the exclusive provider can also prove the press began
+   * after its current open_pointer(). A held level sampled on open cannot
+   * supply this guarantee. */
+  bool down_after_open;
 } h2_pal_touch_sample_t;
 
 /**
@@ -143,7 +147,7 @@ static inline h2_pal_result_t h2_pal_touch_poll_event(
 static inline h2_pal_result_t h2_pal_touch_poll_pointer(
     const h2_pal_touch_api_t* api, h2_pal_touch_sample_t* out) {
   if (out == NULL) return H2_PAL_ERR_INVALID_ARG;
-  out->fresh_down = out->needs_reopen = false;
+  out->fresh_down = out->needs_reopen = out->down_after_open = false;
   if (api && api->vtable && api->vtable->poll_pointer)
     return api->vtable->poll_pointer(api->user, out);
   return h2_pal_touch_poll_event(api, &out->event);

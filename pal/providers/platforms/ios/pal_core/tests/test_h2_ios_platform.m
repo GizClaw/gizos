@@ -4,8 +4,12 @@
 
 @interface H2TestTouch : UITouch
 @property(nonatomic) CGPoint point;
+@property(nonatomic) NSTimeInterval sampleTime;
 @end
 @implementation H2TestTouch
+- (NSTimeInterval)timestamp {
+  return self.sampleTime;
+}
 - (CGPoint)locationInView:(UIView *)view {
   (void)view;
   return self.point;
@@ -72,6 +76,7 @@ extern void h2_ios_test_system_event(void);
   XCTAssertEqual(info.width, 480u);
   XCTAssertEqual(info.height, 800u);
   H2TestTouch *finger = [H2TestTouch new];
+  finger.sampleTime = NSProcessInfo.processInfo.systemUptime;
   NSSet<UITouch *> *points = [NSSet setWithObject:finger];
   finger.point = CGPointMake(200, 100);
   [view touchesBegan:points withEvent:nil];
@@ -86,6 +91,7 @@ extern void h2_ios_test_system_event(void);
   for (unsigned i = 0; i < sizeof(kinds) / sizeof(kinds[0]); ++i) {
     XCTAssertEqual(h2_pal_touch_poll_pointer(touch, &event), H2_PAL_OK);
     XCTAssertEqual(event.event.kind, kinds[i]);
+    XCTAssertEqual(event.down_after_open, kinds[i] == H2_PAL_TOUCH_EVENT_DOWN);
     XCTAssertEqual(event.event.x, i == 0 ? 40 : 240);
     XCTAssertEqual(event.event.y, i == 0 ? 100 : 200);
   }
@@ -95,6 +101,20 @@ extern void h2_ios_test_system_event(void);
     [view touchesEnded:points withEvent:nil];
   }
   XCTAssertEqual(h2_pal_touch_poll_pointer(touch, &event), H2_PAL_ERR_FULL);
+  XCTAssertEqual(h2_pal_touch_close_pointer(touch), H2_PAL_OK);
+  XCTAssertEqual(h2_pal_touch_open_pointer(touch, &needsClose), H2_PAL_OK);
+  [view touchesBegan:points withEvent:nil];  // Delayed callback with the old timestamp.
+  XCTAssertEqual(h2_pal_touch_poll_pointer(touch, &event), H2_PAL_ERR_WOULD_BLOCK);
+  finger.sampleTime = NSProcessInfo.processInfo.systemUptime;
+  [view touchesEnded:points withEvent:nil];
+  [view touchesBegan:points withEvent:nil];
+  [view touchesEnded:points withEvent:nil];
+  for (int i = 0; i < 3; ++i) {
+    XCTAssertEqual(h2_pal_touch_poll_pointer(touch, &event), H2_PAL_OK);
+    XCTAssertEqual(event.event.kind, i == 1 ? H2_PAL_TOUCH_EVENT_DOWN : H2_PAL_TOUCH_EVENT_UP);
+    XCTAssertEqual(event.fresh_down && event.down_after_open, i == 1);
+  }
+  XCTAssertEqual(h2_pal_touch_poll_pointer(touch, &event), H2_PAL_ERR_WOULD_BLOCK);
   XCTAssertEqual(h2_pal_touch_close_pointer(touch), H2_PAL_OK);
   h2_ios_platform_destroy(platform);
 }

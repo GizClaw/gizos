@@ -45,6 +45,7 @@ struct h2_sdl3 {
   size_t touch_count = 0u;
   bool touch_overflow = false;
   SDL_MouseID pointer_device = 0;
+  Uint64 pointer_open_ns = 0;
   bool pointer_owned = false;
   size_t touch_open_count = 0u;
   h2_pal_display_t display = {};

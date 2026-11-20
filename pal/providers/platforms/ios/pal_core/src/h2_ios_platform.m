@@ -22,6 +22,7 @@ struct h2_ios_platform {
   h2_pal_touch_event_t events[64];
   size_t head, count;
   bool touch_open, pointer_owned, overflow;
+  NSTimeInterval pointer_opened_at;
   H2IOSPlatformView *view;
   h2_pal_display_api_t display;
   int opened;
@@ -119,7 +120,7 @@ static CGRect h2_ios_platform_content_rect(h2_ios_platform_t *host, CGRect bound
   host->pointer_x = x;
   host->pointer_y = y;
   host->pointer_pressed = kind == H2_PAL_TOUCH_EVENT_DOWN || kind == H2_PAL_TOUCH_EVENT_MOVE;
-  if (host->touch_open) {
+  if (host->touch_open && (!host->pointer_owned || touch.timestamp > host->pointer_opened_at)) {
     const size_t capacity = sizeof(host->events) / sizeof(host->events[0]);
     if (host->count == capacity) {
       host->overflow = true;
@@ -266,7 +267,16 @@ static const h2_pal_display_vtable_t s_h2_ios_platform_display_vtable = {
 static h2_pal_result_t open_touch(void *user, bool exclusive) {
   h2_ios_platform_t *host = user;
   pthread_mutex_lock(&host->mutex);
-  const int rc = host->touch_open ? H2_PAL_ERR_BUSY : H2_PAL_OK;
+  int rc = host->touch_open ? H2_PAL_ERR_BUSY : H2_PAL_OK;
+  if (rc == H2_PAL_OK && exclusive) {
+    /* UITouch timestamps count seconds of uptime. Compare capture time,
+     * even when UIKit dispatches the callback after acquisition. */
+    struct timespec now;
+    if (clock_gettime(CLOCK_UPTIME_RAW, &now) != 0)
+      rc = H2_PAL_ERR_IO;
+    else
+      host->pointer_opened_at = now.tv_sec + now.tv_nsec / 1e9;
+  }
   if (rc == H2_PAL_OK) {
     host->touch_open = true;
     host->pointer_owned = exclusive;
@@ -290,7 +300,8 @@ static h2_pal_result_t touch_info(void *user, h2_pal_touch_info_t *out) {
   return rc;
 }
 
-static h2_pal_result_t touch_poll(void *user, h2_pal_touch_event_t *out) {
+static h2_pal_result_t read_touch(void *user, h2_pal_touch_event_t *out,
+                                  h2_pal_touch_sample_t *sample) {
   h2_ios_platform_t *host = user;
   pthread_mutex_lock(&host->mutex);
   int rc = H2_PAL_ERR_WOULD_BLOCK;
@@ -301,12 +312,23 @@ static h2_pal_result_t touch_poll(void *user, h2_pal_touch_event_t *out) {
     rc = H2_PAL_ERR_FULL;
   } else if (host->count) {
     *out = host->events[host->head];
+    if (sample) {
+      sample->fresh_down = out->kind == H2_PAL_TOUCH_EVENT_DOWN;
+      sample->down_after_open = host->pointer_owned && sample->fresh_down;
+    }
     host->head = (host->head + 1u) % (sizeof(host->events) / sizeof(host->events[0]));
     --host->count;
     rc = H2_PAL_OK;
   }
   pthread_mutex_unlock(&host->mutex);
   return rc;
+}
+
+static h2_pal_result_t touch_poll(void *user, h2_pal_touch_event_t *out) {
+  return read_touch(user, out, NULL);
+}
+static h2_pal_result_t touch_poll_pointer(void *user, h2_pal_touch_sample_t *sample) {
+  return read_touch(user, &sample->event, sample);
 }
 
 static h2_pal_result_t close_touch(void *user, bool exclusive) {
@@ -327,6 +349,7 @@ static const h2_pal_touch_vtable_t touch_vtable = {.open = touch_open,
                                                    .get_info = touch_info,
                                                    .poll_event = touch_poll,
                                                    .close = touch_close,
+                                                   .poll_pointer = touch_poll_pointer,
                                                    .open_pointer = touch_open_pointer,
                                                    .close_pointer = touch_close_pointer};
 

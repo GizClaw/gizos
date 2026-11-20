@@ -990,7 +990,7 @@ static int check_touch_contacts(const h2_pal_touch_api_t* touch, bool ids,
   /* clang-format off */
   MAIN_THREAD_EM_ASM({
     const point = (id, x, primary) => ({pointerId: id, button: 0, buttons: 1,
-      clientX: x, clientY: 1, isPrimary: primary, preventDefault() {}});
+      clientX: x, clientY: 1, isPrimary: primary, timeStamp: performance.now(), preventDefault() {}});
     const a = point(17, 0, true);
     const b = point(29, 1, false);
     h2FakeCanvasListeners.get('pointerdown')(a);
@@ -1011,7 +1011,9 @@ static int check_touch_contacts(const h2_pal_touch_api_t* touch, bool ids,
     const h2_pal_touch_event_kind_t phase =
         !ids && i == 3 ? H2_PAL_TOUCH_EVENT_UP : phases[i];
     if (rc != H2_PAL_OK || sample.event.kind != phase ||
-        sample.event.pointer_id != (ids ? contacts[i] : 0))
+        sample.event.pointer_id != (ids ? contacts[i] : 0) ||
+        (exclusive &&
+         sample.down_after_open != (phase == H2_PAL_TOUCH_EVENT_DOWN)))
       return 0;
   }
   h2_pal_touch_sample_t last;
@@ -1388,6 +1390,32 @@ MAIN_THREAD_EM_ASM_INT({
       !check_touch_contacts(other, true, false) ||
       h2_pal_touch_close(other) != H2_PAL_OK ||
       h2_web_platform_destroy(alias) != H2_PAL_OK)
+    return 8;
+  /* Leave an old native press held over close. On reopen the old timestamps,
+   * motion and lift of that contact cannot create another DOWN. */
+  if (h2_pal_touch_open_pointer(touch, &owned) != H2_PAL_OK) return 8;
+  /* clang-format off */
+  MAIN_THREAD_EM_ASM({
+    globalThis.h2HeldTouch = ({pointerId: 17, button: 0, buttons: 1, isPrimary: true,
+      clientX: 1, clientY: 1, timeStamp: performance.now(), preventDefault() {}});
+    h2FakeCanvasListeners.get('pointerdown')(h2HeldTouch);
+  });
+  /* clang-format on */
+  if (h2_pal_touch_close_pointer(touch) != H2_PAL_OK ||
+      h2_pal_touch_open_pointer(touch, &owned) != H2_PAL_OK)
+    return 8;
+  /* clang-format off */
+  MAIN_THREAD_EM_ASM({
+    h2FakeCanvasListeners.get('pointerdown')(h2HeldTouch);
+    h2FakeCanvasListeners.get('pointermove')(h2HeldTouch);
+    h2FakeCanvasListeners.get('pointerup')(h2HeldTouch);
+    delete globalThis.h2HeldTouch;
+  });
+  /* clang-format on */
+  h2_pal_touch_sample_t prior;
+  if (h2_pal_touch_poll_pointer(touch, &prior) != H2_PAL_ERR_WOULD_BLOCK ||
+      !check_touch_contacts(touch, true, true) ||
+      h2_pal_touch_close_pointer(touch) != H2_PAL_OK)
     return 8;
   if (h2_web_platform_serial_request_port(platform) != H2_PAL_OK) {
     return 9;

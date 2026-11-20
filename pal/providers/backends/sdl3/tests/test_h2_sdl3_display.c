@@ -157,7 +157,8 @@ static void test_lifecycle_and_events(void) {
   drain_host_events(provider);
   h2_pal_touch_sample_t sample;
   assert(h2_pal_touch_poll_pointer(touch, &sample) == H2_PAL_OK);
-  assert(sample.event.kind == H2_PAL_TOUCH_EVENT_DOWN && sample.fresh_down);
+  assert(sample.event.kind == H2_PAL_TOUCH_EVENT_DOWN && sample.fresh_down &&
+         !sample.down_after_open);
   assert(h2_pal_touch_poll_pointer(touch, &sample) == H2_PAL_OK);
   assert(sample.event.kind == H2_PAL_TOUCH_EVENT_CANCEL);
   for (unsigned i = 0; i < 100u; ++i) {
@@ -177,8 +178,20 @@ static void test_lifecycle_and_events(void) {
   input.type = SDL_EVENT_MOUSE_BUTTON_UP;
   assert(SDL_PushEvent(&input));
   drain_host_events(provider);
+  /* Also leave a press in SDL's native queue before reacquiring. Its old
+   * DOWN and new release must not look like a tap to the new reader. */
+  input.type = SDL_EVENT_MOUSE_BUTTON_DOWN;
+  input.common.timestamp = 0;
+  assert(SDL_PushEvent(&input));
   assert(h2_pal_touch_open_pointer(touch, &owned) == H2_PAL_OK && owned);
+  drain_host_events(provider);
   assert(h2_pal_touch_poll_pointer(touch, &sample) == H2_PAL_ERR_WOULD_BLOCK);
+  input.type = SDL_EVENT_MOUSE_BUTTON_UP;
+  input.common.timestamp = 0;
+  assert(SDL_PushEvent(&input));
+  drain_host_events(provider);
+  assert(h2_pal_touch_poll_pointer(touch, &sample) == H2_PAL_OK &&
+         sample.event.kind == H2_PAL_TOUCH_EVENT_UP && !sample.down_after_open);
   assert(h2_pal_touch_open_pointer(touch, &owned) == H2_PAL_ERR_BUSY && !owned);
   assert(h2_pal_touch_open(touch) == H2_PAL_ERR_BUSY);
   assert(h2_pal_touch_close(touch) == H2_PAL_ERR_BUSY);
@@ -210,7 +223,8 @@ static void test_lifecycle_and_events(void) {
     assert(SDL_PushEvent(&input));
     drain_host_events(provider);
     assert(h2_pal_touch_poll_pointer(touch, &sample) == H2_PAL_OK &&
-           sample.event.kind == H2_PAL_TOUCH_EVENT_DOWN && sample.event.x == 5);
+           sample.event.kind == H2_PAL_TOUCH_EVENT_DOWN &&
+           sample.event.x == 5 && sample.fresh_down && sample.down_after_open);
     assert(h2_pal_touch_poll_pointer(touch, &sample) == H2_PAL_OK &&
            sample.event.kind == H2_PAL_TOUCH_EVENT_UP && sample.event.x == 7);
     assert(h2_pal_touch_poll_pointer(touch, &sample) == H2_PAL_ERR_WOULD_BLOCK);

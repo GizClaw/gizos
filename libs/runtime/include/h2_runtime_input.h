@@ -75,10 +75,10 @@ h2_pal_result_t h2_runtime_input_start(
  * first DOWN through the same contact's UP or CANCEL. Other contacts cannot
  * move or release it. Each edge carries the source ID and viewport geometry.
  * Device errors and refused edges cancel the stroke. Acquisition resumes at
- * its release, an all-contact cancellation or a verified fresh DOWN in the
- * same session. Opening the required
- * provider and obtaining its geometry are startup checks. Stop and errors
- * otherwise follow h2_runtime_input_start(). */
+ * its release, an all-contact cancellation or a verified fresh DOWN. After a
+ * reopen the provider must verify that the press began after acquisition.
+ * Opening the provider and obtaining its geometry are startup checks. Stop
+ * and errors otherwise follow h2_runtime_input_start(). */
 h2_pal_result_t h2_runtime_input_start_with_touch(
     h2_runtime_t* runtime, const h2_runtime_input_poll_config_t* config,
     uint32_t interval_ms);
@@ -89,8 +89,9 @@ h2_pal_result_t h2_runtime_input_start_with_touch(
  * Requests acquisition tasks to stop and joins them, then closes opted-in
  * Touch. Consumers cancel any held pointer on stop. A subsequent start
  * discards undelivered pointer events from the old session and isolates a
- * contact still held across stop. After a reopen, an ambiguous first tap may
- * supply that release boundary. Other component state is untouched, so
+ * contact still held across stop. A verified post-open press starts its own
+ * stroke immediately. A snapshot source may need an ambiguous first tap to
+ * supply a release boundary. Other component state is untouched, so
  * `h2_runtime_component_state_*()` keeps returning the last published snapshot
  * with its own `updated_at_ms`, which is still the most recent observation the
  * Runtime actually made. Queued push edges are kept and delivered by a later

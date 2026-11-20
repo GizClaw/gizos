@@ -75,6 +75,7 @@ h2_pal_result_t open_touch(void* user, bool exclusive) {
      * belong to the preceding session. A held mouse still has to lift. */
     provider->touch_head = provider->touch_count = 0u;
     provider->touch_overflow = false;
+    provider->pointer_open_ns = SDL_GetTicksNS();
   }
   ++provider->touch_open_count;
   return H2_PAL_OK;
@@ -100,7 +101,7 @@ h2_pal_result_t touch_get_info(void* user, h2_pal_touch_info_t* out_info) {
 }
 
 h2_pal_result_t poll_touch(void* user, h2_pal_touch_event_t* out_event,
-                           bool loss_aware) {
+                           h2_pal_touch_sample_t* sample) {
   auto* provider = static_cast<h2_sdl3_t*>(user);
   if (provider == nullptr || out_event == nullptr) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -111,14 +112,18 @@ h2_pal_result_t poll_touch(void* user, h2_pal_touch_event_t* out_event,
   }
   if (provider->touch_overflow) {
     provider->touch_overflow = false;
-    if (loss_aware) return H2_PAL_ERR_FULL;
+    if (sample) return H2_PAL_ERR_FULL;
   }
   if (provider->touch_count == 0u) {
     return H2_PAL_ERR_WOULD_BLOCK;
   }
   *out_event = provider->touches[provider->touch_head];
-  if (!loss_aware && out_event->kind == H2_PAL_TOUCH_EVENT_CANCEL)
+  if (sample) {
+    sample->fresh_down = out_event->kind == H2_PAL_TOUCH_EVENT_DOWN;
+    sample->down_after_open = provider->pointer_owned && sample->fresh_down;
+  } else if (out_event->kind == H2_PAL_TOUCH_EVENT_CANCEL) {
     out_event->kind = H2_PAL_TOUCH_EVENT_UP;
+  }
   provider->touch_head =
       (provider->touch_head + 1u) % H2_SDL3_TOUCH_QUEUE_CAPACITY;
   --provider->touch_count;
@@ -126,13 +131,10 @@ h2_pal_result_t poll_touch(void* user, h2_pal_touch_event_t* out_event,
 }
 
 h2_pal_result_t touch_poll(void* user, h2_pal_touch_event_t* out) {
-  return poll_touch(user, out, false);
+  return poll_touch(user, out, nullptr);
 }
 h2_pal_result_t touch_poll_pointer(void* user, h2_pal_touch_sample_t* sample) {
-  const auto rc = poll_touch(user, &sample->event, true);
-  sample->fresh_down =
-      rc == H2_PAL_OK && sample->event.kind == H2_PAL_TOUCH_EVENT_DOWN;
-  return rc;
+  return poll_touch(user, &sample->event, sample);
 }
 
 h2_pal_result_t close_touch(void* user, bool exclusive) {
@@ -179,8 +181,12 @@ void h2_sdl3_enqueue_event(h2_sdl3_t* provider, const h2_sdl3_event_t& event) {
   ++provider->event_count;
 }
 
-static void enqueue_touch_locked(h2_sdl3_t* provider,
+static void enqueue_touch_locked(h2_sdl3_t* provider, Uint64 timestamp_ns,
                                  const h2_pal_touch_event_t& event) {
+  /* SDL may still hold input generated before the exclusive open, even
+   * after the PAL ring is cleared. Use SDL's own monotonic event clock. */
+  if (provider->pointer_owned && timestamp_ns <= provider->pointer_open_ns)
+    return;
   if (provider->touch_count == H2_SDL3_TOUCH_QUEUE_CAPACITY) {
     provider->touch_overflow = true;
     provider->touch_head =
@@ -250,7 +256,7 @@ void h2_sdl3_pump(h2_sdl3_t* provider) {
       provider->pointer.x = static_cast<int32_t>(event.motion.x);
       provider->pointer.y = static_cast<int32_t>(event.motion.y);
       if (provider->pointer.pressed) {
-        enqueue_touch_locked(provider,
+        enqueue_touch_locked(provider, event.common.timestamp,
                              {H2_PAL_TOUCH_EVENT_MOVE, provider->pointer.x,
                               provider->pointer.y});
       }
@@ -270,13 +276,13 @@ void h2_sdl3_pump(h2_sdl3_t* provider) {
       provider->pointer.x = static_cast<int32_t>(event.button.x);
       provider->pointer.y = static_cast<int32_t>(event.button.y);
       provider->pointer.pressed = kind == H2_PAL_TOUCH_EVENT_DOWN ? 1 : 0;
-      enqueue_touch_locked(provider,
+      enqueue_touch_locked(provider, event.common.timestamp,
                            {kind, provider->pointer.x, provider->pointer.y});
     } else if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST) {
       {
         std::lock_guard<std::mutex> lock(provider->event_mutex);
         if (provider->pointer.pressed) {
-          enqueue_touch_locked(provider,
+          enqueue_touch_locked(provider, event.common.timestamp,
                                {H2_PAL_TOUCH_EVENT_CANCEL, provider->pointer.x,
                                 provider->pointer.y});
           provider->pointer.pressed = 0;

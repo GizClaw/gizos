@@ -44,7 +44,7 @@ typedef struct fake_touch {
   unsigned script_frame[SCRIPT_MAX];
   size_t script_count, script_next;
   unsigned last_frame, error_frame, error_until;
-  bool burst, latched, verified_down;
+  bool burst, latched, verified_down, session_down;
 } fake_touch_t;
 
 typedef struct fixture {
@@ -60,7 +60,7 @@ typedef struct fixture {
   unsigned touch_from_frame;
   uint16_t probe_before;
   bool use_pref, fast_clock, layout_sweep;
-  bool paced_clock, prewarm_audio, sink_started;
+  bool paced_clock, prewarm_audio, sink_started, cycle_input;
   uint32_t present_cost_ms, sink_queued_ms, sink_starved_ms, audio_open_cost_ms;
   uint64_t sink_updated_ms;
   unsigned sink_full_writes;
@@ -311,7 +311,7 @@ static h2_pal_result_t touch_poll(void* user, h2_pal_touch_event_t* out) {
   CHECK(t->opened && input_thread);
   if (t->error_frame && fx.frames >= t->error_frame &&
       fx.frames <= (t->error_until ? t->error_until : t->error_frame))
-    return H2_PAL_ERR_TIMEOUT;
+    return t->latched ? H2_PAL_ERR_IO : H2_PAL_ERR_TIMEOUT;
   if (t->poll_error != H2_PAL_OK) return t->poll_error;
   /* Accelerated first-install regression: ordinary pointer strokes play
    * real rounds, then leave enough game time for misses to end the last run. */
@@ -398,8 +398,10 @@ static h2_pal_result_t touch_pointer(void* user,
   fake_touch_t* t = user;
   const h2_pal_result_t rc = touch_poll(user, &sample->event);
   sample->needs_reopen = t->latched && rc == H2_PAL_ERR_IO;
-  sample->fresh_down = t->verified_down && rc == H2_PAL_OK &&
-                       sample->event.kind == H2_PAL_TOUCH_EVENT_DOWN;
+  const bool down =
+      rc == H2_PAL_OK && sample->event.kind == H2_PAL_TOUCH_EVENT_DOWN;
+  sample->fresh_down = down && (t->verified_down || t->session_down);
+  sample->down_after_open = down && t->verified_down;
   return rc;
 }
 static h2_pal_result_t touch_close(void* user) {
@@ -691,6 +693,11 @@ static h2_pal_result_t run(void) {
   h2_runtime_t* runtime = NULL;
   input_clock_install(&config);
   CHECK(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+  if (fx.cycle_input) {
+    CHECK(h2_runtime_input_start_with_touch(runtime, NULL, 8u) == H2_PAL_OK);
+    input_tick();
+    CHECK(h2_runtime_input_stop(runtime) == H2_PAL_OK);
+  }
   const h2_fruit_slice_config_t game = {.seed = fx.seed,
                                         .brightness_percent = 80u,
                                         .frame_period_ms = fx.paced_clock ? 25u
@@ -826,7 +833,7 @@ static void test_consumed_device_release(void) {
   fx.header_check = 36u;
   fx.header_changed = 41u;
   fx.touch_from_frame = 3u;
-  fx.touch.burst = fx.touch.verified_down = true;
+  fx.touch.burst = fx.touch.session_down = true;
   fx.touch.error_frame = 4u;
   fx.touch.error_until = 33u;
   fx.touch.script[0] =
@@ -924,6 +931,39 @@ static void script_tap_at(unsigned frame, int32_t x, int32_t y) {
   script_tap(x, y);
   fx.touch.script_frame[next] = frame;
   fx.touch.script_frame[next + 1u] = frame + 1u;
+}
+
+static void test_tap_after_reopen(bool recovery, bool snapshot) {
+  reset(17u);
+  fx.paced_clock = fx.touch.burst = true;
+  fx.cycle_input = !recovery;
+  fx.touch_from_frame = 0u;
+  fx.touch.verified_down = !snapshot;
+  fx.touch.session_down = snapshot;
+  if (snapshot || recovery) {
+    /* Keep the old DOWN queued across stop, or interrupt the active tap. */
+    fx.touch.script[0] =
+        (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_DOWN, 120, 450, 9};
+    fx.touch.script_frame[0] = recovery ? 3u : 0u;
+    fx.touch.script_count = 1u;
+  }
+  if (recovery) {
+    fx.touch.latched = true;
+    fx.touch.error_frame = 4u;
+  }
+  script_tap_at(7u, 120, 450);
+  script_tap_at(12u, 120, 450);
+  for (size_t i = 0; i < fx.touch.script_count; ++i)
+    fx.touch.script[i].pointer_id = 9u;
+  /* Tasks and its Back button share this coordinate. For a native edge the
+   * first tap opens Tasks and the second returns. For a held snapshot the
+   * first pair establishes release. Only the next tap opens Tasks. */
+  fx.header_from = 2u;
+  fx.header_check = snapshot ? 10u : 15u;
+  fx.header_changed = snapshot ? 15u : 10u;
+  CHECK(run() == H2_PAL_OK && fx.touch.script_next == fx.touch.script_count);
+  CHECK(fx.touch.open_calls == 2 && fx.touch.close_calls == 2 &&
+        fx.touch_errors == (recovery ? 1u : 0u) && !fx.drops);
 }
 
 static void test_progress_persists_across_sessions(void) {
@@ -2533,6 +2573,10 @@ int main(void) {
   test_display_open_failure();
   test_unsupported_display();
   test_consumed_device_release();
+  test_tap_after_reopen(false, false);
+  test_tap_after_reopen(false, true);
+  test_tap_after_reopen(true, false);
+  test_tap_after_reopen(true, true);
   test_interleaved_contacts();
   test_refused_move_with_two_contacts();
   test_interrupted_tap(true);

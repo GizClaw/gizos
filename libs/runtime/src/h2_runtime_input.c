@@ -1829,8 +1829,9 @@ static void input_touch_task_entry(void* ctx) {
         break;
       }
       if (state->touch_wait_release) {
-        const bool fresh = same_session && sample.fresh_down &&
-                           point.kind == H2_PAL_TOUCH_EVENT_DOWN;
+        const bool fresh = point.kind == H2_PAL_TOUCH_EVENT_DOWN &&
+                           sample.fresh_down &&
+                           (same_session || sample.down_after_open);
         if (!fresh) {
           /* Keep an interrupted ID across same-session failures. After a
            * reopen, bind the first ambiguous contact until its own lift. */
