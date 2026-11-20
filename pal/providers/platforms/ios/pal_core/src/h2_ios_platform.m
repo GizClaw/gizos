@@ -21,7 +21,7 @@ struct h2_ios_platform {
   h2_pal_touch_api_t touch;
   h2_pal_touch_event_t events[64];
   size_t head, count;
-  bool touch_open, overflow;
+  bool touch_open, pointer_owned, overflow;
   H2IOSPlatformView *view;
   h2_pal_display_api_t display;
   int opened;
@@ -263,13 +263,22 @@ static const h2_pal_display_vtable_t s_h2_ios_platform_display_vtable = {
     .close = h2_ios_platform_display_close,
 };
 
-static h2_pal_result_t touch_open(void *user) {
+static h2_pal_result_t open_touch(void *user, bool exclusive) {
   h2_ios_platform_t *host = user;
   pthread_mutex_lock(&host->mutex);
   const int rc = host->touch_open ? H2_PAL_ERR_BUSY : H2_PAL_OK;
-  host->touch_open = true;
+  if (rc == H2_PAL_OK) {
+    host->touch_open = true;
+    host->pointer_owned = exclusive;
+  }
   pthread_mutex_unlock(&host->mutex);
   return rc;
+}
+
+static h2_pal_result_t touch_open(void *user) { return open_touch(user, false); }
+static h2_pal_result_t touch_open_pointer(void *user, bool *needs_close) {
+  *needs_close = false;
+  return open_touch(user, true);
 }
 
 static h2_pal_result_t touch_info(void *user, h2_pal_touch_info_t *out) {
@@ -300,17 +309,26 @@ static h2_pal_result_t touch_poll(void *user, h2_pal_touch_event_t *out) {
   return rc;
 }
 
-static h2_pal_result_t touch_close(void *user) {
+static h2_pal_result_t close_touch(void *user, bool exclusive) {
   h2_ios_platform_t *host = user;
   pthread_mutex_lock(&host->mutex);
-  host->touch_open = host->overflow = false;
-  host->head = host->count = 0u;
+  const int rc = host->touch_open && host->pointer_owned != exclusive ? H2_PAL_ERR_BUSY : H2_PAL_OK;
+  if (rc == H2_PAL_OK) {
+    host->touch_open = host->pointer_owned = host->overflow = false;
+    host->head = host->count = 0u;
+  }
   pthread_mutex_unlock(&host->mutex);
-  return H2_PAL_OK;
+  return rc;
 }
+static h2_pal_result_t touch_close(void *user) { return close_touch(user, false); }
+static h2_pal_result_t touch_close_pointer(void *user) { return close_touch(user, true); }
 
-static const h2_pal_touch_vtable_t touch_vtable = {
-    .open = touch_open, .get_info = touch_info, .poll_event = touch_poll, .close = touch_close};
+static const h2_pal_touch_vtable_t touch_vtable = {.open = touch_open,
+                                                   .get_info = touch_info,
+                                                   .poll_event = touch_poll,
+                                                   .close = touch_close,
+                                                   .open_pointer = touch_open_pointer,
+                                                   .close_pointer = touch_close_pointer};
 
 const h2_pal_touch_api_t *h2_ios_platform_touch_api(h2_ios_platform_t *host) {
   return host ? &host->touch : NULL;

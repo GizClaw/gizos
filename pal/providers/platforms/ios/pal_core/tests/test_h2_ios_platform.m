@@ -60,8 +60,13 @@ extern void h2_ios_test_system_event(void);
   const h2_pal_touch_api_t *touch = h2_ios_platform_touch_api(platform);
   h2_pal_touch_sample_t event;
   XCTAssertEqual(h2_pal_touch_poll_pointer(touch, &event), H2_PAL_ERR_INVALID_STATE);
-  XCTAssertEqual(h2_pal_touch_open(touch), H2_PAL_OK);
+  bool needsClose = false;
+  XCTAssertEqual(h2_pal_touch_open_pointer(touch, &needsClose), H2_PAL_OK);
+  XCTAssertTrue(needsClose);
   XCTAssertEqual(h2_pal_touch_open(touch), H2_PAL_ERR_BUSY);
+  XCTAssertEqual(h2_pal_touch_open_pointer(touch, &needsClose), H2_PAL_ERR_BUSY);
+  XCTAssertFalse(needsClose);
+  XCTAssertEqual(h2_pal_touch_close(touch), H2_PAL_ERR_BUSY);
   h2_pal_touch_info_t info;
   XCTAssertEqual(h2_pal_touch_get_info(touch, &info), H2_PAL_OK);
   XCTAssertEqual(info.width, 480u);
@@ -90,7 +95,7 @@ extern void h2_ios_test_system_event(void);
     [view touchesEnded:points withEvent:nil];
   }
   XCTAssertEqual(h2_pal_touch_poll_pointer(touch, &event), H2_PAL_ERR_FULL);
-  XCTAssertEqual(h2_pal_touch_close(touch), H2_PAL_OK);
+  XCTAssertEqual(h2_pal_touch_close_pointer(touch), H2_PAL_OK);
   h2_ios_platform_destroy(platform);
 }
 

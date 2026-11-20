@@ -7,7 +7,7 @@
  * Adjacent MOVE events coalesce; DOWN/UP edges remain ordered between polls. */
 enum { H2_ANDROID_TOUCH_QUEUE_CAPACITY = 64 };
 typedef struct h2_android_touch_state {
-  bool opened, pressed, pending_error, lost_move;
+  bool opened, pressed, pending_error, lost_move, pointer_owned;
   int32_t last_x, last_y;
   unsigned head, count;
   h2_pal_touch_event_t events[H2_ANDROID_TOUCH_QUEUE_CAPACITY];

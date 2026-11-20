@@ -109,6 +109,9 @@ static void test_lifecycle_and_events(void) {
 
   const h2_pal_touch_api_t* touch = h2_sdl3_touch(provider);
   assert(h2_pal_touch_open(touch) == H2_PAL_OK);
+  bool owned = true;
+  assert(h2_pal_touch_open_pointer(touch, &owned) == H2_PAL_ERR_BUSY && !owned);
+  assert(h2_pal_touch_close_pointer(touch) == H2_PAL_ERR_BUSY);
   h2_pal_touch_info_t touch_info = {0};
   assert(h2_pal_touch_get_info(touch, &touch_info) == H2_PAL_OK);
   assert(touch_info.width == 32u && touch_info.height == 24u);
@@ -167,6 +170,11 @@ static void test_lifecycle_and_events(void) {
   assert(h2_pal_touch_poll_pointer(touch, &sample) == H2_PAL_ERR_FULL);
 
   assert(h2_pal_touch_close(touch) == H2_PAL_OK);
+  assert(h2_pal_touch_open_pointer(touch, &owned) == H2_PAL_OK && owned);
+  assert(h2_pal_touch_open_pointer(touch, &owned) == H2_PAL_ERR_BUSY && !owned);
+  assert(h2_pal_touch_open(touch) == H2_PAL_ERR_BUSY);
+  assert(h2_pal_touch_close(touch) == H2_PAL_ERR_BUSY);
+  assert(h2_pal_touch_close_pointer(touch) == H2_PAL_OK);
   assert(h2_pal_display_close(display) == H2_DISPLAY_OK);
   assert(h2_pal_display_get_info(display, &info) ==
          H2_DISPLAY_ERR_INVALID_STATE);

@@ -686,10 +686,26 @@ static int touch_poll(void* u, h2_pal_touch_event_t* e) {
       (uint16_t)((r.x0 + r.x1) / 2), (uint16_t)((r.y0 + r.y1) / 2)};
   return 0;
 }
+static bool touch_owned;
+static int touch_open_pointer(void* user, bool* needs_close) {
+  (void)user;
+  *needs_close = false;
+  if (touch_owned) return H2_PAL_ERR_BUSY;
+  touch_owned = true;
+  return H2_PAL_OK;
+}
+static int touch_close_pointer(void* user) {
+  (void)user;
+  assert(touch_owned);
+  touch_owned = false;
+  return H2_PAL_OK;
+}
 static const h2_pal_touch_vtable_t tvt = {.open = touch_open,
                                           .get_info = touch_info,
                                           .poll_event = touch_poll,
-                                          .close = touch_open};
+                                          .close = touch_open,
+                                          .open_pointer = touch_open_pointer,
+                                          .close_pointer = touch_close_pointer};
 static const h2_pal_touch_api_t touch_api = {.vtable = &tvt};
 typedef struct pref_namespace {
   h2_pal_pref_namespace_t pal;

@@ -58,6 +58,7 @@ static h2_display_state_t display_state;
 static h2_touch_state_t touch_state;
 static uint32_t adkey_initialized;
 static uint32_t display_operation;
+static bool pointer_owned;
 static uint32_t touch_operation;
 
 /* Nonwaiting operation reservations serialize each singleton device. SDK
@@ -392,6 +393,7 @@ static int touch_read_register(uint8_t reg, uint8_t* value) {
 static h2_pal_result_t touch_open_impl(void* user) {
   h2_touch_state_t* state = user;
   uint8_t chip_id = 0u;
+  if (pointer_owned) return H2_PAL_ERR_BUSY;
   if (state->open) return H2_PAL_OK;
   gpio_set_direction(H2_TOUCH_INT_PIN, 1);
   gpio_set_pull_up(H2_TOUCH_INT_PIN, 1);
@@ -468,6 +470,7 @@ static h2_pal_result_t touch_poll_event_impl(void* user,
 
 static h2_pal_result_t touch_close_impl(void* user) {
   h2_touch_state_t* state = user;
+  if (pointer_owned) return H2_PAL_ERR_BUSY;
   int result = state->iic == NULL ? 0 : dev_close(state->iic);
   *state = (h2_touch_state_t){0};
   return result == 0 ? H2_PAL_OK : H2_PAL_ERR_IO;
@@ -482,12 +485,33 @@ INPUT_OPERATION(touch_poll_event, h2_pal_result_t, touch_operation,
 INPUT_OPERATION(touch_close, h2_pal_result_t, touch_operation, (void* user),
                 (user))
 
+static h2_pal_result_t touch_open_pointer_impl(void* user, bool* needs_close) {
+  *needs_close = false;
+  if (((h2_touch_state_t*)user)->open) return H2_PAL_ERR_BUSY;
+  const h2_pal_result_t rc = touch_open_impl(user);
+  if (rc == H2_PAL_OK) pointer_owned = true;
+  return rc;
+}
+static h2_pal_result_t touch_close_pointer_impl(void* user) {
+  if (!pointer_owned) return H2_PAL_ERR_BUSY;
+  pointer_owned = false;
+  const h2_pal_result_t rc = touch_close_impl(user);
+  if (rc != H2_PAL_OK) pointer_owned = true;
+  return rc;
+}
+INPUT_OPERATION(touch_open_pointer, h2_pal_result_t, touch_operation,
+                (void* user, bool* needs_close), (user, needs_close))
+INPUT_OPERATION(touch_close_pointer, h2_pal_result_t, touch_operation,
+                (void* user), (user))
+
 const h2_pal_touch_api_t* h2_jieli_ac791n_devkit_touch_api(void) {
   static const h2_pal_touch_vtable_t vtable = {
       .open = touch_open,
       .get_info = touch_get_info,
       .poll_event = touch_poll_event,
       .close = touch_close,
+      .open_pointer = touch_open_pointer,
+      .close_pointer = touch_close_pointer,
   };
   static const h2_pal_touch_api_t api = {.user = &touch_state,
                                          .vtable = &vtable};

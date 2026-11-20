@@ -54,6 +54,28 @@ static struct {
   bool bus_owned;
 } s_touch;
 
+/* Reserve the physical port before leaving the SMP critical section. The
+ * session stays reserved through hardware setup, cleanup and failed joins. */
+typedef enum {
+  TOUCH_IDLE,
+  TOUCH_TRANSITION,
+  TOUCH_DIRECT,
+  TOUCH_POINTER
+} touch_owner_t;
+static touch_owner_t owner;
+static touch_owner_t reserve(touch_owner_t expected) {
+  uint32_t flags = rtos_enter_critical();
+  const touch_owner_t previous = owner;
+  if (previous == expected) owner = TOUCH_TRANSITION;
+  rtos_exit_critical(flags);
+  return previous;
+}
+static void finish(touch_owner_t next) {
+  uint32_t flags = rtos_enter_critical();
+  owner = next;
+  rtos_exit_critical(flags);
+}
+
 static const tp_i2c_callback_t s_touch_i2c = {
     .read_uint8 = tp_i2c_read_uint8,
     .write_uint8 = tp_i2c_write_uint8,
@@ -233,17 +255,14 @@ static h2_pal_result_t touch_cleanup(void) {
       return H2_PAL_ERR_IO;
     s_touch.interrupt_owned = false;
   }
+  flags = rtos_enter_critical();
   memset(&s_touch, 0, sizeof(s_touch));
+  rtos_exit_critical(flags);
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t touch_open_pointer(void* user, bool* needs_close) {
-  (void)user;
-  if (needs_close) *needs_close = false;
-  if (s_touch.opened) return H2_PAL_ERR_BUSY;
-  if (s_touch.task != NULL || s_touch.reset_owned || s_touch.interrupt_owned ||
-      s_touch.bus_owned)
-    return H2_PAL_ERR_BUSY;
+static h2_pal_result_t open_hardware(bool* needs_close, bool legacy) {
+  *needs_close = false;
   /* Share the display's actual viewport; do not infer it from a sensor model.
    */
   h2_display_info_t display;
@@ -375,25 +394,36 @@ static h2_pal_result_t touch_open_pointer(void* user, bool* needs_close) {
   s_touch.pending = true;
   s_touch.opened = true;
   rtos_exit_critical(flags);
-  if (needs_close) *needs_close = true;
+  *needs_close = true;
   return H2_PAL_OK;
 fail: {
   h2_pal_result_t cleanup = touch_cleanup();
-  if (needs_close) {
-    *needs_close = cleanup != H2_PAL_OK;
-    return result;
-  }
-  return cleanup != H2_PAL_OK ? cleanup : result;
+  *needs_close = cleanup != H2_PAL_OK;
+  return legacy && *needs_close ? cleanup : result;
 }
+}
+
+static h2_pal_result_t touch_open_pointer(void* user, bool* needs_close) {
+  (void)user;
+  bool owed = false;
+  if (needs_close) *needs_close = false;
+  if (reserve(TOUCH_IDLE) != TOUCH_IDLE) return H2_PAL_ERR_BUSY;
+  const bool legacy = needs_close == NULL;
+  h2_pal_result_t rc = open_hardware(&owed, legacy);
+  finish(owed ? (legacy ? TOUCH_DIRECT : TOUCH_POINTER) : TOUCH_IDLE);
+  if (needs_close) *needs_close = owed;
+  return rc;
 }
 
 static h2_pal_result_t touch_get_info(void* user,
                                       h2_pal_touch_info_t* out_info) {
   (void)user;
   if (out_info == NULL) return H2_PAL_ERR_INVALID_ARG;
-  if (!s_touch.opened) return H2_PAL_ERR_INVALID_STATE;
-  *out_info = s_touch.info;
-  return H2_PAL_OK;
+  uint32_t flags = rtos_enter_critical();
+  const bool opened = s_touch.opened;
+  if (opened) *out_info = s_touch.info;
+  rtos_exit_critical(flags);
+  return opened ? H2_PAL_OK : H2_PAL_ERR_INVALID_STATE;
 }
 
 static h2_pal_result_t touch_poll_event(void* user,
@@ -427,9 +457,21 @@ static h2_pal_result_t touch_poll_event(void* user,
   return result;
 }
 
+static h2_pal_result_t close_session(touch_owner_t expected) {
+  const touch_owner_t previous = reserve(expected);
+  if (previous != expected)
+    return previous == TOUCH_IDLE ? H2_PAL_OK : H2_PAL_ERR_BUSY;
+  const h2_pal_result_t rc = touch_cleanup();
+  finish(rc == H2_PAL_OK ? TOUCH_IDLE : expected);
+  return rc;
+}
 static h2_pal_result_t touch_close(void* user) {
   (void)user;
-  return touch_cleanup();
+  return close_session(TOUCH_DIRECT);
+}
+static h2_pal_result_t touch_close_pointer(void* user) {
+  (void)user;
+  return close_session(TOUCH_POINTER);
 }
 
 #else
@@ -458,6 +500,7 @@ static h2_pal_result_t touch_close(void* user) {
   (void)user;
   return H2_PAL_ERR_UNAVAILABLE;
 }
+#define touch_close_pointer touch_close
 
 #endif
 
@@ -490,6 +533,7 @@ static const h2_pal_touch_vtable_t s_touch_vtable = {
     .close = touch_close,
     .poll_pointer = touch_poll_pointer,
     .open_pointer = touch_open_pointer,
+    .close_pointer = touch_close_pointer,
 };
 
 static const h2_pal_touch_api_t s_touch_api = {

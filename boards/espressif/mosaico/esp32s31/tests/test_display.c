@@ -151,6 +151,11 @@ static void test_partial_updates(void) {
 static void test_touch_reports(void) {
   const h2_pal_touch_api_t* touch = h2_mosaico_touch();
   assert(h2_pal_touch_open(touch) == 0);
+  const h2_pal_touch_api_t alias = *touch;
+  bool acquired = true;
+  assert(h2_pal_touch_open_pointer(&alias, &acquired) == H2_PAL_ERR_BUSY &&
+         !acquired);
+  assert(h2_pal_touch_close_pointer(&alias) == H2_PAL_ERR_BUSY);
   h2_pal_touch_event_t event;
   touch_down = true;
   touch_x = 100;
@@ -186,6 +191,20 @@ static void test_touch_reports(void) {
   touch_x = 480;
   assert(h2_pal_touch_poll_event(touch, &event) == H2_PAL_ERR_IO);
   assert(h2_pal_touch_close(touch) == 0);
+  assert(h2_pal_touch_open_pointer(touch, &acquired) == H2_PAL_OK && acquired);
+  assert(h2_pal_touch_open_pointer(&alias, &acquired) == H2_PAL_ERR_BUSY &&
+         !acquired);
+  assert(h2_pal_touch_open(&alias) == H2_PAL_ERR_BUSY);
+  assert(h2_pal_touch_close(&alias) == H2_PAL_ERR_BUSY);
+  touch_x = 12;
+  touch_y = 34;
+  h2_pal_touch_sample_t sample;
+  assert(h2_pal_touch_poll_pointer(touch, &sample) == 0 &&
+         sample.event.kind == H2_PAL_TOUCH_EVENT_DOWN);
+  touch_down = false;
+  assert(h2_pal_touch_poll_pointer(touch, &sample) == 0 &&
+         sample.event.kind == H2_PAL_TOUCH_EVENT_UP);
+  assert(h2_pal_touch_close_pointer(touch) == 0);
 }
 int main(void) {
   assert(h2_mosaico_display_init() == 0);

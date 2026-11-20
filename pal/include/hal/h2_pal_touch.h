@@ -60,10 +60,14 @@ typedef struct h2_pal_touch_vtable {
    * Reports capacity loss before later samples and distinguishes CANCEL from
    * a physical UP. A session uses just one poll method and reader. */
   h2_pal_result_t (*poll_pointer)(void* user, h2_pal_touch_sample_t* sample);
-  /** Optional acquisition for providers whose failed open can retain resources.
-   * On failure set needs_close only if this call acquired resources whose
-   * rollback failed. BUSY from an existing owner transfers no ownership. */
+  /** Acquire exclusive access to this input stream. Reserve before native
+   * setup and reject competing pointer or direct opens with BUSY. Aliases
+   * for one device share its reservation. Set needs_close on failure only
+   * for a partially acquired session that this caller must clean up. */
   h2_pal_result_t (*open_pointer)(void* user, bool* needs_close);
+  /** Release an exclusive acquisition. A failure retains the reservation for
+   * retry. Legacy close must respect an outstanding exclusive acquisition. */
+  h2_pal_result_t (*close_pointer)(void* user);
 } h2_pal_touch_vtable_t;
 
 typedef struct h2_pal_touch_api {
@@ -79,17 +83,26 @@ static inline h2_pal_result_t h2_pal_touch_open(const h2_pal_touch_api_t* api) {
   return api->vtable->open(api->user);
 }
 
-/** Acquire a pointer session. Every successful open requires close. An
- * extended provider may also transfer a cleanup obligation on failure. */
+/** Acquire one stream for its sole pointer reader. Providers opt in with a
+ * matched acquisition/release pair. The caller pairs an acquired session or
+ * a partial cleanup obligation with close_pointer(). */
 static inline h2_pal_result_t h2_pal_touch_open_pointer(
     const h2_pal_touch_api_t* api, bool* needs_close) {
   if (needs_close == NULL) return H2_PAL_ERR_INVALID_ARG;
   *needs_close = false;
-  h2_pal_result_t rc = api && api->vtable && api->vtable->open_pointer
-                           ? api->vtable->open_pointer(api->user, needs_close)
-                           : h2_pal_touch_open(api);
+  if (!api || !api->vtable || !api->vtable->open_pointer ||
+      !api->vtable->close_pointer)
+    return H2_PAL_ERR_UNSUPPORTED;
+  h2_pal_result_t rc = api->vtable->open_pointer(api->user, needs_close);
   if (rc == H2_PAL_OK) *needs_close = true;
   return rc;
+}
+
+static inline h2_pal_result_t h2_pal_touch_close_pointer(
+    const h2_pal_touch_api_t* api) {
+  if (!api || !api->vtable || !api->vtable->close_pointer)
+    return H2_PAL_ERR_UNSUPPORTED;
+  return api->vtable->close_pointer(api->user);
 }
 
 /** Read logical viewport metadata for an open provider. */

@@ -3477,12 +3477,25 @@ static void test_touch_lifecycle_and_mapped_input(void) {
                                      .get_info = pointer_info,
                                      .poll_event = pointer_read,
                                      .close = pointer_close,
-                                     .open_pointer = pointer_open_owned};
+                                     .open_pointer = pointer_open_owned,
+                                     .close_pointer = pointer_close};
   const h2_pal_touch_api_t touch = {&t, &ops};
   h2_runtime_config_t config = test_runtime_config(&env);
+  h2_runtime_t* rt = NULL;
+  /* A legacy open alone cannot promise one pointer reader. */
+  const h2_pal_touch_vtable_t legacy_only = {.open = pointer_open,
+                                             .get_info = pointer_info,
+                                             .poll_event = pointer_read,
+                                             .close = pointer_close};
+  const h2_pal_touch_api_t legacy_touch = {&t, &legacy_only};
+  config.touch = &legacy_touch;
+  assert(h2_runtime_init(&config, &rt) == H2_PAL_OK);
+  assert(h2_runtime_input_start_with_touch(rt, NULL, 8u) ==
+             H2_PAL_ERR_UNSUPPORTED &&
+         !t.opens);
+  assert(h2_runtime_destroy(&rt) == H2_PAL_OK && !rt);
   config.touch = &touch;
   config.event_queue_capacity = 8;
-  h2_runtime_t* rt = NULL;
   assert(h2_runtime_init(&config, &rt) == H2_PAL_OK);
   assert(h2_runtime_input_start(rt, NULL) == H2_PAL_OK && !t.opens);
   assert(h2_runtime_input_stop(rt) == H2_PAL_OK);

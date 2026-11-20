@@ -27,12 +27,19 @@ EM_JS(void, h2_web_present_rgba,
 /* clang-format off */
 EM_JS(void, h2_web_install_pointer_js,
       (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
-  h2WebMain(context, result, completion, ["u32", "i32", "i32"], "i32",
-    (address, width, height) => {
-        const canvas = Module['canvas'];
+  h2WebMain(context, result, completion, ["u32", "i32", "i32", "i32"], "i32",
+    (address, width, height, exclusive) => {
         const cleanups = Module['h2WebPlatformPointerCleanups'] ||= new Map();
+        const binding = cleanups.get(address);
+        const canvas = binding ? binding.canvas : Module['canvas'];
         if (!canvas) return 0;
-        if (cleanups.has(address)) return 1;
+        for (const other of cleanups.values()) {
+          if (other !== binding && other.canvas === canvas && (exclusive || other.exclusive)) return -1;
+        }
+        if (binding) {
+          if (exclusive) binding.exclusive = true;
+          return 1;
+        }
         const update = (event, pressed) => {
           event.preventDefault();
           const rect = canvas.getBoundingClientRect();
@@ -65,13 +72,13 @@ EM_JS(void, h2_web_install_pointer_js,
         canvas.addEventListener('pointerup', up);
         canvas.addEventListener('pointercancel', cancel);
         canvas.addEventListener('lostpointercapture', cancel);
-        cleanups.set(address, () => {
+        cleanups.set(address, {canvas, exclusive, remove() {
           canvas.removeEventListener('pointerdown', down);
           canvas.removeEventListener('pointermove', move);
           canvas.removeEventListener('pointerup', up);
           canvas.removeEventListener('pointercancel', cancel);
           canvas.removeEventListener('lostpointercapture', cancel);
-        });
+        }});
         return 1;
       });
 });
@@ -85,7 +92,7 @@ EM_JS(void, h2_web_remove_pointer_js,
   const cleanups = Module['h2WebPlatformPointerCleanups'];
   const cleanup = cleanups && cleanups.get(address);
   if (cleanup) {
-    cleanup();
+    cleanup.remove();
     cleanups.delete(address);
   }
 });
@@ -175,16 +182,23 @@ EMSCRIPTEN_KEEPALIVE void h2_web_platform_pointer(uintptr_t address, int32_t x,
   h2_web_touch_push(platform, kind, x, y);
 }
 
+static int install_pointer(h2_web_platform_t* platform, bool exclusive) {
+  if (platform->pointer_installed && !exclusive) return H2_PAL_OK;
+  const int installed =
+      h2_web_main_call(
+          h2_web_install_pointer_js,
+          (const void*[]){&(uintptr_t){(uintptr_t)platform},
+                          &(int){platform->width}, &(int){platform->height},
+                          &(int){exclusive}})
+          .i32;
+  if (installed < 0) return H2_PAL_ERR_BUSY;
+  platform->pointer_installed = installed != 0;
+  return installed ? H2_PAL_OK : H2_PAL_ERR_UNAVAILABLE;
+}
 void h2_web_platform_install_pointer(h2_web_platform_t* platform) {
   H2_WEB_STATE_GUARD();
-  if (platform != NULL && !platform->pointer_installed) {
-    platform->pointer_installed =
-        ((int)h2_web_main_call(
-             h2_web_install_pointer_js,
-             (const void*[]){&(uintptr_t){(uintptr_t)platform},
-                             &(int){platform->width}, &(int){platform->height}})
-             .i32) != 0;
-  }
+  if (platform && !platform->touch_transition)
+    (void)install_pointer(platform, false);
 }
 
 h2_pal_result_t h2_web_platform_read_pointer(void* user, int32_t* out_x,
@@ -201,22 +215,36 @@ h2_pal_result_t h2_web_platform_read_pointer(void* user, int32_t* out_x,
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t h2_web_touch_open(void* user) {
+static h2_pal_result_t open_touch(void* user, bool exclusive) {
   H2_WEB_STATE_GUARD();
   h2_web_platform_t* platform = user;
   if (platform == NULL || platform->shutting_down) {
     return H2_PAL_ERR_INVALID_STATE;
   }
+  if (platform->touch_transition || platform->pointer_owned ||
+      (exclusive && platform->touch_opened))
+    return H2_PAL_ERR_BUSY;
+  /* The UI proxy temporarily releases the Web state guard. Retain the
+   * reservation while installing or removing the native event listeners. */
+  platform->touch_transition = true;
   platform->touch_head = 0u;
   platform->touch_count = 0u;
   platform->touch_opened = true;
   platform->touch_overflow = false;
-  h2_web_platform_install_pointer(platform);
-  if (!platform->pointer_installed) {
-    platform->touch_opened = false;
-    return H2_PAL_ERR_UNAVAILABLE;
-  }
-  return H2_PAL_OK;
+  const int rc = install_pointer(platform, exclusive);
+  platform->touch_transition = false;
+  platform->pointer_owned = exclusive && rc == H2_PAL_OK;
+  if (rc != H2_PAL_OK) platform->touch_opened = false;
+  return rc;
+}
+
+static h2_pal_result_t h2_web_touch_open(void* user) {
+  return open_touch(user, false);
+}
+static h2_pal_result_t h2_web_touch_open_pointer(void* user,
+                                                 bool* needs_close) {
+  *needs_close = false;
+  return open_touch(user, true);
 }
 
 static h2_pal_result_t h2_web_touch_get_info(void* user,
@@ -270,12 +298,16 @@ static h2_pal_result_t h2_web_touch_pointer(void* user,
   return rc;
 }
 
-static h2_pal_result_t h2_web_touch_close(void* user) {
+static h2_pal_result_t close_touch(void* user, bool exclusive) {
   H2_WEB_STATE_GUARD();
   h2_web_platform_t* platform = user;
   if (platform == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
+  if (platform->touch_transition ||
+      (platform->touch_opened && platform->pointer_owned != exclusive))
+    return H2_PAL_ERR_BUSY;
+  platform->touch_transition = true;
   platform->touch_opened = false;
   platform->touch_head = 0u;
   platform->touch_count = 0u;
@@ -284,7 +316,14 @@ static h2_pal_result_t h2_web_touch_close(void* user) {
                            (const void*[]){&(uintptr_t){(uintptr_t)platform}});
     platform->pointer_installed = false;
   }
+  platform->pointer_owned = platform->touch_transition = false;
   return H2_PAL_OK;
+}
+static h2_pal_result_t h2_web_touch_close(void* user) {
+  return close_touch(user, false);
+}
+static h2_pal_result_t h2_web_touch_close_pointer(void* user) {
+  return close_touch(user, true);
 }
 
 static h2_pal_result_t h2_web_display_open(void* user) {
@@ -420,6 +459,8 @@ void h2_web_platform_display_init(h2_web_platform_t* platform) {
       .poll_event = h2_web_touch_poll,
       .close = h2_web_touch_close,
       .poll_pointer = h2_web_touch_pointer,
+      .open_pointer = h2_web_touch_open_pointer,
+      .close_pointer = h2_web_touch_close_pointer,
   };
   platform->display_api = (h2_pal_display_api_t){
       .user = platform,

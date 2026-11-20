@@ -23,7 +23,7 @@ enum { DMA_BANDS = H2_MOSAICO_HEIGHT / H2_MOSAICO_DMA_ROWS };
 static uint64_t dirty_bands;
 static uint16_t dirty_x0[DMA_BANDS], dirty_x1[DMA_BANDS];
 static bool opened;
-static bool touch_opened;
+static bool touch_opened, pointer_owned;
 static bool pressed;
 static uint16_t last_x, last_y;
 static StaticSemaphore_t lock_storage;
@@ -212,19 +212,30 @@ static int display_close(void* user) {
   xSemaphoreGive(mutex);
   return rc;
 }
-static int touch_open(void* user) {
-  (void)user;
+static int open_touch(bool exclusive) {
   int rc = lock();
   if (rc != H2_PAL_OK) return rc;
-  if (!touch_opened) {
+  if (touch_opened && (exclusive || pointer_owned)) {
+    rc = H2_PAL_ERR_BUSY;
+  } else if (!touch_opened) {
     rc = result(bsp_touch_new(BSP_LCD_ROTATION_DEFAULT, &touch));
     if (rc == H2_PAL_OK) {
       touch_opened = true;
+      pointer_owned = exclusive;
       pressed = false;
     }
   }
   xSemaphoreGive(mutex);
   return rc;
+}
+static int touch_open(void* user) {
+  (void)user;
+  return open_touch(false);
+}
+static int touch_open_pointer(void* user, bool* needs_close) {
+  (void)user;
+  *needs_close = false;
+  return open_touch(true);
 }
 static int touch_info(void* user, h2_pal_touch_info_t* out) {
   (void)user;
@@ -276,14 +287,24 @@ static int touch_poll(void* user, h2_pal_touch_event_t* out) {
   xSemaphoreGive(mutex);
   return rc;
 }
-static int touch_close(void* user) {
-  (void)user;
+static int close_touch(bool exclusive) {
   int rc = lock();
   if (rc != H2_PAL_OK) return rc;
-  touch_opened = false;
-  pressed = false;
+  if (touch_opened && pointer_owned != exclusive) {
+    rc = H2_PAL_ERR_BUSY;
+  } else {
+    touch_opened = pointer_owned = pressed = false;
+  }
   xSemaphoreGive(mutex);
-  return H2_PAL_OK;
+  return rc;
+}
+static int touch_close(void* user) {
+  (void)user;
+  return close_touch(false);
+}
+static int touch_close_pointer(void* user) {
+  (void)user;
+  return close_touch(true);
 }
 int h2_mosaico_display_deinit(void) {
   if (!mutex) return H2_PAL_OK;
@@ -303,6 +324,8 @@ static const h2_pal_touch_vtable_t touch_ops = {
     .get_info = touch_info,
     .poll_event = touch_poll,
     .close = touch_close,
+    .open_pointer = touch_open_pointer,
+    .close_pointer = touch_close_pointer,
 };
 static const h2_pal_display_api_t display_api = {.vtable = &display_ops};
 static const h2_pal_touch_api_t touch_api = {.vtable = &touch_ops};

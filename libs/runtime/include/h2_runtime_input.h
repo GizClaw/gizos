@@ -66,7 +66,8 @@ h2_pal_result_t h2_runtime_input_start(
 
 /** Start the same poller with exclusive acquisition of singleton Touch.
  * interval_ms must be nonzero. Open any display supplying its geometry first.
- * Compile the opted-in Touch provider against the current Touch vtable.
+ * The injected provider must implement exclusive pointer open and close.
+ * An unsupported provider causes startup to return H2_PAL_ERR_UNSUPPORTED.
  * Touch-only targets use $runtime/input. Targets with mapped inputs also
  * declare
  * //libs/runtime:touch_tasks for the independent $runtime/touch reader.

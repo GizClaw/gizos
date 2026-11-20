@@ -1745,7 +1745,7 @@ static h2_pal_result_t touch_open(h2_runtime_t* runtime) {
 static h2_pal_result_t touch_close(h2_runtime_t* runtime) {
   h2_runtime_private_t* state = runtime->private_state;
   if (!state->touch_open) return H2_PAL_OK;
-  const h2_pal_result_t rc = h2_pal_touch_close(runtime->touch);
+  const h2_pal_result_t rc = h2_pal_touch_close_pointer(runtime->touch);
   if (rc == H2_PAL_OK) state->touch_open = false;
   return rc;
 }

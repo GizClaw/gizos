@@ -61,14 +61,22 @@ h2_sdl3_event_t make_event(h2_sdl3_event_kind_t kind) {
   return event;
 }
 
-h2_pal_result_t touch_open(void* user) {
+h2_pal_result_t open_touch(void* user, bool exclusive) {
   auto* provider = static_cast<h2_sdl3_t*>(user);
   if (provider == nullptr || !provider->active) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   std::lock_guard<std::mutex> lock(provider->event_mutex);
+  if (provider->pointer_owned || (exclusive && provider->touch_open_count))
+    return H2_PAL_ERR_BUSY;
+  provider->pointer_owned = exclusive;
   ++provider->touch_open_count;
   return H2_PAL_OK;
+}
+h2_pal_result_t touch_open(void* user) { return open_touch(user, false); }
+h2_pal_result_t touch_open_pointer(void* user, bool* needs_close) {
+  *needs_close = false;
+  return open_touch(user, true);
 }
 
 h2_pal_result_t touch_get_info(void* user, h2_pal_touch_info_t* out_info) {
@@ -121,16 +129,18 @@ h2_pal_result_t touch_poll_pointer(void* user, h2_pal_touch_sample_t* sample) {
   return rc;
 }
 
-h2_pal_result_t touch_close(void* user) {
+h2_pal_result_t close_touch(void* user, bool exclusive) {
   auto* provider = static_cast<h2_sdl3_t*>(user);
   if (provider == nullptr) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   std::lock_guard<std::mutex> lock(provider->event_mutex);
   if (provider->touch_open_count != 0u) {
+    if (provider->pointer_owned != exclusive) return H2_PAL_ERR_BUSY;
     --provider->touch_open_count;
   }
   if (provider->touch_open_count == 0u) {
+    provider->pointer_owned = false;
     provider->touch_head = 0u;
     provider->touch_count = 0u;
     provider->touch_overflow = false;
@@ -138,9 +148,14 @@ h2_pal_result_t touch_close(void* user) {
   return H2_PAL_OK;
 }
 
+h2_pal_result_t touch_close(void* user) { return close_touch(user, false); }
+h2_pal_result_t touch_close_pointer(void* user) {
+  return close_touch(user, true);
+}
+
 const h2_pal_touch_vtable_t kTouchVtable = {
-    touch_open,  touch_get_info,     touch_poll,
-    touch_close, touch_poll_pointer, nullptr,
+    touch_open,         touch_get_info,     touch_poll,          touch_close,
+    touch_poll_pointer, touch_open_pointer, touch_close_pointer,
 };
 
 }  // namespace

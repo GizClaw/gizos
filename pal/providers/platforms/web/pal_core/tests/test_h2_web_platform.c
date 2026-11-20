@@ -1329,10 +1329,23 @@ MAIN_THREAD_EM_ASM_INT({
       ran != 1) {
     return 7;
   }
-  if (h2_pal_touch_open(h2_web_platform_touch_api(platform)) != H2_PAL_OK ||
-      h2_pal_touch_close(h2_web_platform_touch_api(platform)) != H2_PAL_OK) {
+  const h2_pal_touch_api_t* touch = h2_web_platform_touch_api(platform);
+  h2_web_platform_t* alias = h2_web_platform_create(&valid);
+  if (!alias) return 8;
+  const h2_pal_touch_api_t* other = h2_web_platform_touch_api(alias);
+  bool owned = true;
+  if (h2_pal_touch_open(touch) != H2_PAL_OK ||
+      h2_pal_touch_open_pointer(other, &owned) != H2_PAL_ERR_BUSY || owned ||
+      h2_pal_touch_close(touch) != H2_PAL_OK ||
+      h2_pal_touch_open_pointer(touch, &owned) != H2_PAL_OK || !owned ||
+      h2_pal_touch_open(other) != H2_PAL_ERR_BUSY ||
+      h2_pal_touch_open_pointer(other, &owned) != H2_PAL_ERR_BUSY || owned ||
+      h2_pal_touch_close(touch) != H2_PAL_ERR_BUSY ||
+      h2_pal_touch_close_pointer(touch) != H2_PAL_OK ||
+      h2_pal_touch_open_pointer(other, &owned) != H2_PAL_OK || !owned ||
+      h2_pal_touch_close_pointer(other) != H2_PAL_OK ||
+      h2_web_platform_destroy(alias) != H2_PAL_OK)
     return 8;
-  }
   if (h2_web_platform_serial_request_port(platform) != H2_PAL_OK) {
     return 9;
   }

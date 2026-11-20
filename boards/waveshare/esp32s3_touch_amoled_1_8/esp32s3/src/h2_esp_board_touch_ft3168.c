@@ -9,6 +9,7 @@
 #include "freertos/task.h"
 
 #include <stdbool.h>
+#include <stdatomic.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -30,12 +31,15 @@ typedef struct h2_esp_ft3168_state {
   int32_t last_x;
   int32_t last_y;
   bool opened;
+  bool gpio_owned, reset_owned;
   bool contact_active;
   bool read_error_reported;
 } h2_esp_ft3168_state_t;
 
 static const char* TAG = "h2_ft3168";
 static h2_esp_ft3168_state_t s_touch;
+static atomic_flag lifecycle = ATOMIC_FLAG_INIT;
+static bool pointer_owned;
 
 static h2_pal_result_t map_esp_err(esp_err_t err) {
   if (err == ESP_OK) {
@@ -82,8 +86,33 @@ static esp_err_t reset_touch(void) {
   return err;
 }
 
-static h2_pal_result_t touch_open(void* user) {
-  (void)user;
+static bool owns_hardware(void) {
+  return s_touch.gpio_owned || s_touch.reset_owned || s_touch.device != NULL;
+}
+
+static h2_pal_result_t close_hardware(void) {
+  s_touch.opened = false;
+  s_touch.contact_active = false;
+  esp_err_t rc;
+  if (s_touch.reset_owned) {
+    rc = h2_esp_amoled_board_io_update_outputs(H2_FT3168_RESET_MASK, 0u);
+    if (rc != ESP_OK) return map_esp_err(rc);
+    s_touch.reset_owned = false;
+  }
+  if (s_touch.device != NULL) {
+    rc = i2c_master_bus_rm_device(s_touch.device);
+    if (rc != ESP_OK) return map_esp_err(rc);
+    s_touch.device = NULL;
+  }
+  if (s_touch.gpio_owned) {
+    rc = gpio_reset_pin(H2_FT3168_INTERRUPT_GPIO);
+    if (rc != ESP_OK) return map_esp_err(rc);
+    s_touch.gpio_owned = false;
+  }
+  return H2_PAL_OK;
+}
+
+static h2_pal_result_t open_hardware(void) {
   if (s_touch.opened) {
     return H2_PAL_OK;
   }
@@ -101,6 +130,7 @@ static h2_pal_result_t touch_open(void* user) {
   };
   esp_err_t err = gpio_config(&interrupt_config);
   if (err == ESP_OK) {
+    s_touch.gpio_owned = s_touch.reset_owned = true;
     err = reset_touch();
   }
   if (err == ESP_OK) {
@@ -108,9 +138,7 @@ static h2_pal_result_t touch_open(void* user) {
   }
   if (err != ESP_OK) {
     ESP_LOGE(TAG, "FT3168 probe at 0x38 failed: %s", esp_err_to_name(err));
-    (void)h2_esp_amoled_board_io_update_outputs(H2_FT3168_RESET_MASK, 0u);
-    (void)gpio_reset_pin(H2_FT3168_INTERRUPT_GPIO);
-    return map_esp_err(err);
+    goto fail;
   }
 
   const i2c_device_config_t device_config = {
@@ -121,11 +149,8 @@ static h2_pal_result_t touch_open(void* user) {
   err = i2c_master_bus_add_device(bus, &device_config, &s_touch.device);
   if (err != ESP_OK) {
     s_touch.device = NULL;
-    (void)h2_esp_amoled_board_io_update_outputs(H2_FT3168_RESET_MASK, 0u);
-    (void)gpio_reset_pin(H2_FT3168_INTERRUPT_GPIO);
-    return map_esp_err(err);
+    goto fail;
   }
-
   uint8_t device_id = 0u;
   err = read_registers(H2_FT3168_REG_DEVICE_ID, &device_id, sizeof(device_id));
   if (err == ESP_OK && device_id != H2_FT3168_DEVICE_ID) {
@@ -135,19 +160,37 @@ static h2_pal_result_t touch_open(void* user) {
   if (err == ESP_OK) {
     err = write_register(H2_FT3168_REG_POWER_MODE, H2_FT3168_POWER_ACTIVE);
   }
-  if (err != ESP_OK) {
-    (void)i2c_master_bus_rm_device(s_touch.device);
-    s_touch.device = NULL;
-    (void)h2_esp_amoled_board_io_update_outputs(H2_FT3168_RESET_MASK, 0u);
-    (void)gpio_reset_pin(H2_FT3168_INTERRUPT_GPIO);
-    return map_esp_err(err);
-  }
+  if (err != ESP_OK) goto fail;
 
   s_touch.opened = true;
   s_touch.contact_active = false;
   s_touch.read_error_reported = false;
   ESP_LOGI(TAG, "FT3168 ready address=0x38 id=0x%02x", device_id);
   return H2_PAL_OK;
+fail:
+  (void)close_hardware();
+  return map_esp_err(err);
+}
+
+static h2_pal_result_t open_touch(bool* needs_close) {
+  const bool exclusive = needs_close != NULL;
+  if (exclusive) *needs_close = false;
+  if (atomic_flag_test_and_set(&lifecycle)) return H2_PAL_ERR_BUSY;
+  h2_pal_result_t rc = H2_PAL_ERR_BUSY;
+  if (!pointer_owned && (!owns_hardware() || (!exclusive && s_touch.opened))) {
+    rc = open_hardware();
+    if (exclusive) *needs_close = pointer_owned = owns_hardware();
+  }
+  atomic_flag_clear(&lifecycle);
+  return rc;
+}
+static h2_pal_result_t touch_open(void* user) {
+  (void)user;
+  return open_touch(NULL);
+}
+static h2_pal_result_t touch_open_pointer(void* user, bool* needs_close) {
+  (void)user;
+  return open_touch(needs_close);
 }
 
 static h2_pal_result_t touch_get_info(void* user,
@@ -231,25 +274,23 @@ static h2_pal_result_t touch_poll_event(void* user,
   return H2_PAL_OK;
 }
 
+static h2_pal_result_t close_touch(bool exclusive) {
+  if (atomic_flag_test_and_set(&lifecycle)) return H2_PAL_ERR_BUSY;
+  h2_pal_result_t rc = H2_PAL_ERR_BUSY;
+  if (exclusive == pointer_owned) {
+    rc = close_hardware();
+    if (rc == H2_PAL_OK) pointer_owned = false;
+  }
+  atomic_flag_clear(&lifecycle);
+  return rc;
+}
 static h2_pal_result_t touch_close(void* user) {
   (void)user;
-  if (!s_touch.opened) {
-    return H2_PAL_OK;
-  }
-  esp_err_t err =
-      h2_esp_amoled_board_io_update_outputs(H2_FT3168_RESET_MASK, 0u);
-  esp_err_t remove_err = i2c_master_bus_rm_device(s_touch.device);
-  if (err == ESP_OK) {
-    err = remove_err;
-  }
-  esp_err_t gpio_err = gpio_reset_pin(H2_FT3168_INTERRUPT_GPIO);
-  if (err == ESP_OK) {
-    err = gpio_err;
-  }
-  s_touch.device = NULL;
-  s_touch.opened = false;
-  s_touch.contact_active = false;
-  return map_esp_err(err);
+  return close_touch(false);
+}
+static h2_pal_result_t touch_close_pointer(void* user) {
+  (void)user;
+  return close_touch(true);
 }
 
 const h2_pal_touch_api_t* h2_esp_board_touch_api(void) {
@@ -258,6 +299,8 @@ const h2_pal_touch_api_t* h2_esp_board_touch_api(void) {
       .get_info = touch_get_info,
       .poll_event = touch_poll_event,
       .close = touch_close,
+      .open_pointer = touch_open_pointer,
+      .close_pointer = touch_close_pointer,
   };
   static const h2_pal_touch_api_t api = {
       .user = NULL,

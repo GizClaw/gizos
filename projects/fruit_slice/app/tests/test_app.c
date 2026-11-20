@@ -295,6 +295,11 @@ static h2_pal_result_t touch_open(void* user) {
   t->opened = 1;
   return H2_PAL_OK;
 }
+static h2_pal_result_t touch_open_pointer(void* user, bool* needs_close) {
+  *needs_close = false;
+  if (((fake_touch_t*)user)->opened) return H2_PAL_ERR_BUSY;
+  return touch_open(user);
+}
 static h2_pal_result_t touch_info(void* user, h2_pal_touch_info_t* out) {
   fake_touch_t* t = user;
   if (!t->opened) return H2_PAL_ERR_INVALID_STATE;
@@ -408,7 +413,9 @@ static const h2_pal_touch_vtable_t touch_vtable = {
     .get_info = touch_info,
     .poll_event = touch_poll,
     .close = touch_close,
-    .poll_pointer = touch_pointer};
+    .poll_pointer = touch_pointer,
+    .open_pointer = touch_open_pointer,
+    .close_pointer = touch_close};
 
 static void* counted_alloc(void* user, size_t length) {
   (void)user;
