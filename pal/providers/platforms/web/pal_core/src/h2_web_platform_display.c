@@ -80,18 +80,20 @@ EM_JS(void, h2_web_install_pointer_js,
           for (const [id, contact] of contacts) send(id, contact, Cancel);
           contacts.clear();
         };
+        const page = globalThis.window;
+        const document = page?.document;
         const visibility = () => { if (document.hidden) cancelAll(); };
         const handlers = {pointerdown: down, pointermove: move, pointerup: up,
                           pointercancel: cancel, lostpointercapture: cancel};
         for (const [type, listener] of Object.entries(handlers))
           canvas.addEventListener(type, listener);
-        window.addEventListener('blur', cancelAll);
-        document.addEventListener('visibilitychange', visibility);
+        page?.addEventListener('blur', cancelAll);
+        document?.addEventListener('visibilitychange', visibility);
         cleanups.set(address, () => {
           for (const [type, listener] of Object.entries(handlers))
             canvas.removeEventListener(type, listener);
-          window.removeEventListener('blur', cancelAll);
-          document.removeEventListener('visibilitychange', visibility);
+          page?.removeEventListener('blur', cancelAll);
+          document?.removeEventListener('visibilitychange', visibility);
         });
         return 1;
       });
