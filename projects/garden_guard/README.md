@@ -7,10 +7,15 @@ A touch lane-defense garden game. Plants hold five lanes of a nine-cell lawn aga
 | [`targets/h2_loader_tar_zlib/espressif/mosaico`](targets/h2_loader_tar_zlib/espressif/mosaico/) | ESP-Mosaico, 480x480 | `--config=esp32s31 …:package` |
 | [`targets/h2_loader_tar_zlib/waveshare/esp32p4_wifi6_touch_lcd_4_3`](targets/h2_loader_tar_zlib/waveshare/esp32p4_wifi6_touch_lcd_4_3/) | Waveshare ESP32-P4 4.3", 480x800 | `--config=esp32p4 …:package` |
 | [`targets/h2_loader_tar_zlib/waveshare/esp32s3_touch_amoled_1_8`](targets/h2_loader_tar_zlib/waveshare/esp32s3_touch_amoled_1_8/) | Waveshare AMOLED 1.8", 368x448 | `--config=esp32s3 …:package` |
+| [`targets/h2_loader_tar_zlib/jieli/jieli_ac791n_devkit`](targets/h2_loader_tar_zlib/jieli/jieli_ac791n_devkit/) | JieLi AC791N DevKit, 480x320 | `--config=ac791n …:package` |
 | [`targets/pkg_tar/web`](targets/pkg_tar/web/) | Browser (WebAssembly), 480x320 | `:garden_guard`, `:serve` |
 | [`targets/cc_binary/desktop`](targets/cc_binary/desktop/) | macOS/Linux SDL3 window | `:garden_guard` |
 
-Each firmware image is an H2Loader App: it keeps App commands on the board console and confirms its trial boot after the first frame is presented with Touch open. Install the package through GizMoth like other H2Loader Apps.
+Each firmware image is an H2Loader App: it keeps App commands on the board console and confirms its trial boot after the first frame is presented with Touch open. Install the package through GizMoth like other H2Loader Apps. The AC791N App uses the DevKit display, FT6236 touch, and flash preferences. Its Loader stages updates on the SD card. Build it with the pinned JieLi SDK and Linux x86_64 vendor tools on a supported runner.
+
+```sh
+bazel build --config=ac791n //projects/garden_guard/targets/h2_loader_tar_zlib/jieli/jieli_ac791n_devkit:package
+```
 
 ```sh
 bazel test //projects/garden_guard/app:all
@@ -45,7 +50,7 @@ Quiet leaves and blinks update on a 120 ms clock. Growth, bloom, shot recoil, ja
 
 The Field Journal and Plant Shop open from the title or result. The journal unlocks a card when that zombie first becomes visible. Select a discovered card to inspect its portrait, trait, and counter. Close it or press Escape on Web and desktop to return it to the shelf. The Web game observes the browser’s reduced-motion preference. Every finished match adds its run score to the total once. Plant defeats earn 3 coins per 10 defense points, rounded up, with another 12 for a win with plant defeats. Carts still score, but their kills do not earn coins. Purchases permanently unlock cards while each new run begins with its ordinary sun allowance.
 
-The versioned `profile` blob in the `garden_guard` Pref namespace holds the journal, total score, coins, best and unlocks. The App also reads and preserves the legacy `best` key. The Web target saves in the current browser origin and uses a single writable tab where Web Locks are available. The ESP launchers use their board Runtime Pref. The desktop target and unsupported storage keep progress for the session. Runtime statistics are logged every 10 s as `H2_GARDEN_GUARD_STATS`.
+The versioned `profile` blob in the `garden_guard` Pref namespace holds the journal, total score, coins, best and unlocks. The App also reads and preserves the legacy `best` key. The Web target saves in the current browser origin and uses a single writable tab where Web Locks are available. The ESP and JieLi launchers use their board Runtime Pref. The desktop target and unsupported storage keep progress for the session. Runtime statistics are logged every 10 s as `H2_GARDEN_GUARD_STATS`.
 
 ## Language
 
