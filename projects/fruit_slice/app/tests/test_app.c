@@ -342,7 +342,7 @@ static h2_pal_result_t touch_poll(void* user, h2_pal_touch_event_t* out) {
     }
     *out = (h2_pal_touch_event_t){
         point % 2u == 0u ? H2_PAL_TOUCH_EVENT_DOWN : H2_PAL_TOUCH_EVENT_UP, x,
-        y};
+        y, 0};
     if (fx.layout_sweep && point >= 2u) {
       const unsigned leg = (point - 2u) % 6u;
       out->kind = leg == 0u   ? H2_PAL_TOUCH_EVENT_DOWN
@@ -365,7 +365,7 @@ static h2_pal_result_t touch_poll(void* user, h2_pal_touch_event_t* out) {
     t->last_frame = fx.frames;
     *out = (h2_pal_touch_event_t){
         fx.frames % 2u == 0u ? H2_PAL_TOUCH_EVENT_DOWN : H2_PAL_TOUCH_EVENT_UP,
-        5, 100};
+        5, 100, 0};
     return H2_PAL_OK;
   }
   /* One event per frame keeps strokes spread over game time. */
@@ -741,12 +741,12 @@ static void test_scaled_touch_slices_title_melon(void) {
   fx.touch.info = (h2_pal_touch_info_t){WIDTH / 2, HEIGHT / 2};
   fx.touch_from_frame = 5u;
   fx.touch.script[fx.touch.script_count++] =
-      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_DOWN, 30, 144};
+      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_DOWN, 30, 144, 0};
   for (int x = 60; x <= 210; x += 30)
     fx.touch.script[fx.touch.script_count++] =
-        (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_MOVE, x, 144};
+        (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_MOVE, x, 144, 0};
   fx.touch.script[fx.touch.script_count++] =
-      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_UP, 210, 144};
+      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_UP, 210, 144, 0};
   CHECK(run() == H2_PAL_OK);
   CHECK(fx.touch.script_next == fx.touch.script_count);
   /* The melon at the display center is gone once its halves fell away. */
@@ -794,17 +794,21 @@ static void test_interrupted_tap(bool queue_full) {
   fx.touch.burst = true;
   fx.touch.error_frame = queue_full ? 0u : 4u;
   fx.touch.script[0] =
-      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_DOWN, 120, 450};
+      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_DOWN, 120, 450, 3};
   fx.touch.script_frame[0] = 3u;
   fx.touch.script_count = 1u;
   if (!queue_full) {
-    /* No real release yet, including over a successful empty poll. */
-    fx.touch.script[1] = fx.touch.script[0];
-    fx.touch.script_frame[1] = 6u;
-    ++fx.touch.script_count;
+    /* A foreign release cannot re-arm the interrupted finger. */
+    fx.touch.script[1] =
+        (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_UP, 120, 450, 9};
+    fx.touch.script_frame[1] = 5u;
+    fx.touch.script[2] = fx.touch.script[0];
+    fx.touch.script_frame[2] = 6u;
+    fx.touch.script_count = 3u;
   }
   size_t i = fx.touch.script_count++;
-  fx.touch.script[i] = (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_UP, 120, 450};
+  fx.touch.script[i] =
+      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_UP, 120, 450, 3};
   fx.touch.script_frame[i] = queue_full ? 3u : 7u;
   fx.touch.script[fx.touch.script_count] = fx.touch.script[0];
   fx.touch.script_frame[fx.touch.script_count++] = 10u;
@@ -826,12 +830,13 @@ static void test_consumed_device_release(void) {
   fx.touch.error_frame = 4u;
   fx.touch.error_until = 33u;
   fx.touch.script[0] =
-      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_DOWN, 120, 450};
+      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_DOWN, 120, 450, 3};
   fx.touch.script_frame[0] = 3u;
   /* Recovery confirmed and consumed the old release before this poll. */
   fx.touch.script[1] = fx.touch.script[0];
   fx.touch.script_frame[1] = 38u;
-  fx.touch.script[2] = (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_UP, 120, 450};
+  fx.touch.script[2] =
+      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_UP, 120, 450, 3};
   fx.touch.script_frame[2] = 38u;
   fx.touch.script_count = 3u;
   CHECK(run() == H2_PAL_OK);
@@ -841,6 +846,62 @@ static void test_consumed_device_release(void) {
         fx.touch_errors == 30u);
   CHECK(fx.touch.script_next == 3u);
   CHECK(fx.touch.open_calls == 1 && fx.touch.close_calls == 1);
+}
+
+static void test_refused_move_with_two_contacts(void) {
+  reset(16u);
+  fx.paced_clock = fx.touch.burst = true;
+  fx.event_capacity = 1u;
+  fx.touch_from_frame = 3u;
+  fx.header_from = 2u;
+  fx.header_check = 10u;
+  fx.header_changed = 15u;
+  const h2_pal_touch_event_t points[] = {
+      {H2_PAL_TOUCH_EVENT_DOWN, 120, 450, 9},
+      {H2_PAL_TOUCH_EVENT_MOVE, 121, 450, 9}, /* Same burst, full queue. */
+      {H2_PAL_TOUCH_EVENT_UP, 120, 450, 3},
+      {H2_PAL_TOUCH_EVENT_DOWN, 120, 450, 9}, /* Ambiguous held sample. */
+      {H2_PAL_TOUCH_EVENT_UP, 120, 450, 9},
+      {H2_PAL_TOUCH_EVENT_DOWN, 120, 450, 9}, /* Fresh physical tap. */
+      {H2_PAL_TOUCH_EVENT_UP, 120, 450, 9},
+  };
+  const unsigned frames[] = {3, 3, 5, 6, 7, 11, 12};
+  fx.touch.script_count = sizeof(points) / sizeof(points[0]);
+  memcpy(fx.touch.script, points, sizeof(points));
+  memcpy(fx.touch.script_frame, frames, sizeof(frames));
+  CHECK(run() == H2_PAL_OK && fx.touch.script_next == fx.touch.script_count);
+  CHECK(!fx.touch_errors && fx.drops == 1u);
+}
+
+static void test_interleaved_contacts(void) {
+  reset(23u);
+  fx.touch.info = (h2_pal_touch_info_t){WIDTH / 2, HEIGHT / 2};
+  fx.touch_from_frame = 3u;
+  fx.header_from = 2u;
+  fx.header_check = 17u;
+  fx.header_changed = 22u;
+  const h2_pal_touch_event_t points[] = {
+      {H2_PAL_TOUCH_EVENT_DOWN, 20, 144, 3}, /* Left of title melon. */
+      {H2_PAL_TOUCH_EVENT_DOWN, 210, 144, 9},
+      {H2_PAL_TOUCH_EVENT_MOVE, 220, 144, 9},
+      {H2_PAL_TOUCH_EVENT_UP, 220, 144, 9}, /* No slice between fingers. */
+      {H2_PAL_TOUCH_EVENT_UP, 20, 144, 3},
+      {H2_PAL_TOUCH_EVENT_DOWN, 60, 225, 9}, /* Tasks button. */
+      {H2_PAL_TOUCH_EVENT_DOWN, 60, 225, 3},
+      {H2_PAL_TOUCH_EVENT_UP, 60, 225, 3}, /* Cannot click for ID 9. */
+      {H2_PAL_TOUCH_EVENT_CANCEL, 60, 225, 9},
+      {H2_PAL_TOUCH_EVENT_UP, 60, 225, 9},
+      {H2_PAL_TOUCH_EVENT_DOWN, 60, 225, 3},
+      {H2_PAL_TOUCH_EVENT_CANCEL, 0, 0, H2_PAL_TOUCH_ALL_POINTERS},
+      {H2_PAL_TOUCH_EVENT_UP, 60, 225, 3},
+      {H2_PAL_TOUCH_EVENT_DOWN, 60, 225, 3}, /* Same ID, new stroke. */
+      {H2_PAL_TOUCH_EVENT_UP, 60, 225, 3},
+  };
+  fx.touch.script_count = sizeof(points) / sizeof(points[0]);
+  memcpy(fx.touch.script, points, sizeof(points));
+  fx.touch.script_frame[13] = 18u;
+  CHECK(run() == H2_PAL_OK && fx.touch.script_next == fx.touch.script_count);
+  CHECK(!fx.touch_errors && !fx.drops && fx.touch.close_calls == 1);
 }
 
 static void test_ready_failure_stops(void) {
@@ -853,9 +914,9 @@ static void test_ready_failure_stops(void) {
 static void script_tap(int32_t x, int32_t y) {
   CHECK(fx.touch.script_count + 2u <= SCRIPT_MAX);
   fx.touch.script[fx.touch.script_count++] =
-      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_DOWN, x, y};
+      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_DOWN, x, y, 0};
   fx.touch.script[fx.touch.script_count++] =
-      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_UP, x, y};
+      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_UP, x, y, 0};
 }
 
 static void script_tap_at(unsigned frame, int32_t x, int32_t y) {
@@ -1151,9 +1212,9 @@ static void test_paced_audio_through_public_entry(bool prewarm) {
   fx.present_cost_ms = 8u;
   fx.touch_from_frame = 5u;
   fx.touch.script[fx.touch.script_count++] =
-      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_DOWN, 20, 160};
+      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_DOWN, 20, 160, 0};
   fx.touch.script[fx.touch.script_count++] =
-      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_UP, 20, 160};
+      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_UP, 20, 160, 0};
   CHECK(run() == H2_PAL_OK);
   printf(
       "public-entry simulated 480x320: elapsed=%llu starvation=%u full=%u writes=%u\n",
@@ -1171,11 +1232,11 @@ static void test_audio_gesture_pause_and_exit(void) {
   fx.pause_until = 24u;
   fx.touch_from_frame = 5u;
   fx.touch.script[fx.touch.script_count++] =
-      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_DOWN, 60, 288};
+      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_DOWN, 60, 288, 0};
   fx.touch.script[fx.touch.script_count++] =
-      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_MOVE, 400, 288};
+      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_MOVE, 400, 288, 0};
   fx.touch.script[fx.touch.script_count++] =
-      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_UP, 400, 288};
+      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_UP, 400, 288, 0};
   CHECK(run() == H2_PAL_OK);
   CHECK(fx.audio_writes > 0u);
   CHECK(fx.audio_opens == 2u && fx.audio_closes == 2u);
@@ -1189,11 +1250,11 @@ static void test_audio_backpressure_keeps_stream_playing(void) {
   fx.audio_block_writes = 3u;
   fx.touch_from_frame = 5u;
   fx.touch.script[fx.touch.script_count++] =
-      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_DOWN, 60, 288};
+      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_DOWN, 60, 288, 0};
   fx.touch.script[fx.touch.script_count++] =
-      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_MOVE, 400, 288};
+      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_MOVE, 400, 288, 0};
   fx.touch.script[fx.touch.script_count++] =
-      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_UP, 400, 288};
+      (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_UP, 400, 288, 0};
   CHECK(run() == H2_PAL_OK);
   CHECK(fx.audio_block_writes == 0u && fx.audio_successful_writes > 0u);
   CHECK(fx.audio_writes == fx.audio_successful_writes + 3u);
@@ -1213,11 +1274,11 @@ static void test_audio_close_errors_release_runtime_wrapped_track(void) {
     }
     fx.touch_from_frame = 5u;
     fx.touch.script[fx.touch.script_count++] =
-        (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_DOWN, 60, 288};
+        (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_DOWN, 60, 288, 0};
     fx.touch.script[fx.touch.script_count++] =
-        (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_MOVE, 400, 288};
+        (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_MOVE, 400, 288, 0};
     fx.touch.script[fx.touch.script_count++] =
-        (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_UP, 400, 288};
+        (h2_pal_touch_event_t){H2_PAL_TOUCH_EVENT_UP, 400, 288, 0};
     CHECK(run() == H2_PAL_ERR_IO);
     CHECK(fx.audio_opens == 1u && fx.audio_closes == 1u);
     CHECK(fx.audio_starts == 1u);
@@ -2472,6 +2533,8 @@ int main(void) {
   test_display_open_failure();
   test_unsupported_display();
   test_consumed_device_release();
+  test_interleaved_contacts();
+  test_refused_move_with_two_contacts();
   test_interrupted_tap(true);
   test_interrupted_tap(false);
   test_persistent_touch_failure();

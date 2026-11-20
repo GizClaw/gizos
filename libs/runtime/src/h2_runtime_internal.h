@@ -455,7 +455,7 @@ struct h2_runtime_private {
   h2_atomic_uint_t touch_session;
   h2_pal_touch_info_t touch_info;
   uint32_t touch_interval_ms;
-  bool touch_open, touch_pressed, touch_wait_release;
+  bool touch_open, touch_wait_release;
   h2_pal_queue_t* input_push_edge_queue;
   h2_pal_queue_t* input_nfc_result_queue;
   h2_pal_mutex_t* input_writer_mutex;

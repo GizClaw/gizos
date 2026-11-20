@@ -1752,7 +1752,8 @@ static h2_pal_result_t touch_close(h2_runtime_t* runtime) {
 
 static h2_pal_result_t send_pointer(h2_runtime_t* runtime,
                                     h2_runtime_pointer_phase_t phase, int32_t x,
-                                    int32_t y, h2_pal_result_t result) {
+                                    int32_t y, uint32_t pointer_id,
+                                    h2_pal_result_t result) {
   h2_runtime_private_t* state = runtime->private_state;
   const h2_runtime_touch_pointer_event_t pointer = {
       .phase = phase,
@@ -1762,6 +1763,7 @@ static h2_pal_result_t send_pointer(h2_runtime_t* runtime,
       .height = state->touch_info.height,
       .result = result,
       .session = h2_atomic_load(&state->touch_session),
+      .pointer_id = pointer_id,
   };
   h2_runtime_queued_event_t event = {
       .kind = H2_RUNTIME_EVENT_TOUCH_POINTER,
@@ -1783,13 +1785,14 @@ static void input_touch_task_entry(void* ctx) {
   h2_pal_result_t cancel = H2_PAL_OK;
   uint32_t failures = 0u, episode_errors = 0u;
   bool reopen = false;
+  uint32_t contact = H2_PAL_TOUCH_ALL_POINTERS;
   bool same_session = !state->touch_wait_release;
   while (!h2_atomic_load(&state->input_stop_requested)) {
     uint32_t delay = state->touch_interval_ms;
     /* A refused CANCEL stays owed, including while the device is idle. */
     if (cancel != H2_PAL_OK) {
-      h2_pal_result_t rc =
-          send_pointer(runtime, H2_RUNTIME_POINTER_CANCEL, 0, 0, cancel);
+      h2_pal_result_t rc = send_pointer(runtime, H2_RUNTIME_POINTER_CANCEL, 0,
+                                        0, H2_RUNTIME_POINTER_ALL, cancel);
       if (rc == H2_PAL_ERR_FULL) goto sleep;
       if (rc != H2_PAL_OK) {
         input_worker_fault(runtime, rc, H2_RUNTIME_INPUT_STAGE_EVENT_PUBLISH);
@@ -1800,6 +1803,7 @@ static void input_touch_task_entry(void* ctx) {
     h2_pal_result_t rc = H2_PAL_OK;
     if (reopen) {
       same_session = false;
+      contact = H2_PAL_TOUCH_ALL_POINTERS;
       rc = touch_close(runtime);
       if (rc == H2_PAL_OK && !h2_atomic_load(&state->input_stop_requested))
         rc = touch_open(runtime);
@@ -1819,12 +1823,27 @@ static void input_touch_task_entry(void* ctx) {
         break;
       }
       const h2_pal_touch_event_t point = sample.event;
+      const bool all = point.pointer_id == H2_PAL_TOUCH_ALL_POINTERS;
+      if (all && point.kind != H2_PAL_TOUCH_EVENT_CANCEL) {
+        rc = H2_PAL_ERR_FORMAT;
+        break;
+      }
       if (state->touch_wait_release) {
         const bool fresh = same_session && sample.fresh_down &&
                            point.kind == H2_PAL_TOUCH_EVENT_DOWN;
-        if (!fresh && point.kind != H2_PAL_TOUCH_EVENT_UP &&
-            point.kind != H2_PAL_TOUCH_EVENT_CANCEL)
-          continue;
+        if (!fresh) {
+          /* Keep an interrupted ID across same-session failures. After a
+           * reopen, bind the first ambiguous contact until its own lift. */
+          if (contact == H2_PAL_TOUCH_ALL_POINTERS &&
+              point.kind == H2_PAL_TOUCH_EVENT_DOWN)
+            contact = point.pointer_id;
+          if ((!all && contact != H2_PAL_TOUCH_ALL_POINTERS &&
+               point.pointer_id != contact) ||
+              (point.kind != H2_PAL_TOUCH_EVENT_UP &&
+               point.kind != H2_PAL_TOUCH_EVENT_CANCEL))
+            continue;
+        }
+        contact = H2_PAL_TOUCH_ALL_POINTERS;
         state->touch_wait_release = false;
         same_session = true;
         if (episode_errors) {
@@ -1835,25 +1854,27 @@ static void input_touch_task_entry(void* ctx) {
         }
         if (!fresh) continue;
       }
+      const bool held = contact != H2_PAL_TOUCH_ALL_POINTERS;
+      if (held && !all && point.pointer_id != contact) continue;
       h2_runtime_pointer_phase_t phase;
       switch (point.kind) {
         case H2_PAL_TOUCH_EVENT_DOWN:
-          if (state->touch_pressed) {
+          if (held) {
             /* An unpaired DOWN means an edge was lost upstream. */
             rc = H2_PAL_ERR_FORMAT;
             continue;
           }
           phase = H2_RUNTIME_POINTER_DOWN;
-          state->touch_pressed = true;
+          contact = point.pointer_id;
           break;
         case H2_PAL_TOUCH_EVENT_MOVE:
-          if (!state->touch_pressed) continue;
+          if (!held) continue;
           phase = H2_RUNTIME_POINTER_MOVE;
           break;
         case H2_PAL_TOUCH_EVENT_UP:
         case H2_PAL_TOUCH_EVENT_CANCEL:
-          if (!state->touch_pressed) continue;
-          state->touch_pressed = false;
+          if (!held) continue;
+          contact = H2_PAL_TOUCH_ALL_POINTERS;
           phase = point.kind == H2_PAL_TOUCH_EVENT_UP
                       ? H2_RUNTIME_POINTER_UP
                       : H2_RUNTIME_POINTER_CANCEL;
@@ -1862,12 +1883,12 @@ static void input_touch_task_entry(void* ctx) {
           rc = H2_PAL_ERR_FORMAT;
           continue;
       }
-      rc = send_pointer(runtime, phase, point.x, point.y, H2_PAL_OK);
+      rc = send_pointer(runtime, phase, point.x, point.y, point.pointer_id,
+                        H2_PAL_OK);
       if (rc == H2_PAL_ERR_FULL) {
         h2_runtime_record_dropped_event(runtime, H2_RUNTIME_EVENT_TOUCH_POINTER,
                                         H2_RUNTIME_COMPONENT_TOUCH, 0);
-        state->touch_wait_release = state->touch_pressed;
-        state->touch_pressed = false;
+        state->touch_wait_release = contact != H2_PAL_TOUCH_ALL_POINTERS;
         cancel = rc;
         rc = H2_PAL_OK;
         break;
@@ -1886,7 +1907,6 @@ static void input_touch_task_entry(void* ctx) {
       ++failures;
       if (episode_errors++ == 0u) cancel = rc;
       state->touch_wait_release = true;
-      state->touch_pressed = false;
       if (episode_errors == 1u ||
           episode_errors % H2_RUNTIME_INPUT_ERROR_LOG_EVERY == 0u)
         input_logf(runtime, H2_PAL_LOG_WARN,
@@ -2125,7 +2145,6 @@ h2_pal_result_t h2_runtime_input_stop(h2_runtime_t* runtime) {
     /* A pointer session may see a held sample as DOWN on reopen. Establish
      * a physical release even if the last DOWN raced our stop request. */
     state->touch_wait_release = true;
-    state->touch_pressed = false;
     state->touch_interval_ms = 0u;
     (void)h2_atomic_fetch_add(&state->touch_session, 1u);
   }

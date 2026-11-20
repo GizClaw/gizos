@@ -32,6 +32,7 @@ typedef struct session {
   const h2_pal_mem_api_t* allocator;
   h2_display_info_t display;
   bool pointer_active;
+  uint32_t pointer_id;
   uint16_t* frame;
   uint16_t* background;
   /* Background plus static overlays; the scene is composed on top of it. */
@@ -357,9 +358,14 @@ static void dispatch_pointer(session_t* s, const h2_runtime_event_t* event) {
     return;
   h2_runtime_touch_pointer_event_t p;
   memcpy(&p, event->payload, sizeof(p));
+  if (s->pointer_active && p.pointer_id != s->pointer_id &&
+      !(p.phase == H2_RUNTIME_POINTER_CANCEL &&
+        p.pointer_id == H2_RUNTIME_POINTER_ALL))
+    return;
   h2_fruit_slice_pointer_t kind;
   switch (p.phase) {
     case H2_RUNTIME_POINTER_DOWN:
+      s->pointer_id = p.pointer_id;
       s->pointer_active = true;
       s->audio_unlocked = true;
       kind = H2_FRUIT_SLICE_POINTER_DOWN;

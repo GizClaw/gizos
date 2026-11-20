@@ -71,9 +71,12 @@ h2_pal_result_t h2_runtime_input_start(
  * Touch-only targets use $runtime/input. Targets with mapped inputs also
  * declare
  * //libs/runtime:touch_tasks for the independent $runtime/touch reader.
- * H2_RUNTIME_EVENT_TOUCH_POINTER carries ordered edges and source geometry.
+ * H2_RUNTIME_EVENT_TOUCH_POINTER projects one stroke at a time, from its
+ * first DOWN through the same contact's UP or CANCEL. Other contacts cannot
+ * move or release it. Each edge carries the source ID and viewport geometry.
  * Device errors and refused edges cancel the stroke. Acquisition resumes at
- * a release or a verified new DOWN in the same session. Opening the required
+ * its release, an all-contact cancellation or a verified fresh DOWN in the
+ * same session. Opening the required
  * provider and obtaining its geometry are startup checks. Stop and errors
  * otherwise follow h2_runtime_input_start(). */
 h2_pal_result_t h2_runtime_input_start_with_touch(

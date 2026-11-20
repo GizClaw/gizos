@@ -983,6 +983,43 @@ static int test_main_call(void) {
   return 0;
 }
 
+/* Exercise the actual installed Canvas listeners in both compatibility modes
+ * and in the exclusive reader used by the Runtime. */
+static int check_touch_contacts(const h2_pal_touch_api_t* touch, bool ids,
+                                bool exclusive) {
+  /* clang-format off */
+  MAIN_THREAD_EM_ASM({
+    const point = (id, x, primary) => ({pointerId: id, button: 0, buttons: 1,
+      clientX: x, clientY: 1, isPrimary: primary, preventDefault() {}});
+    const a = point(17, 0, true);
+    const b = point(29, 1, false);
+    h2FakeCanvasListeners.get('pointerdown')(a);
+    h2FakeCanvasListeners.get('pointerdown')(b);
+    h2FakeCanvasListeners.get('pointercancel')(b);
+    h2FakeCanvasListeners.get('lostpointercapture')(a);
+  });
+  /* clang-format on */
+  const h2_pal_touch_event_kind_t phases[] = {
+      H2_PAL_TOUCH_EVENT_DOWN, H2_PAL_TOUCH_EVENT_DOWN,
+      H2_PAL_TOUCH_EVENT_CANCEL, H2_PAL_TOUCH_EVENT_CANCEL};
+  const uint32_t contacts[] = {17, 29, 29, 17};
+  for (size_t i = 0; i < 4; ++i) {
+    if (!ids && (i == 1 || i == 2)) continue;
+    h2_pal_touch_sample_t sample;
+    const int rc = exclusive ? h2_pal_touch_poll_pointer(touch, &sample)
+                             : h2_pal_touch_poll_event(touch, &sample.event);
+    const h2_pal_touch_event_kind_t phase =
+        !ids && i == 3 ? H2_PAL_TOUCH_EVENT_UP : phases[i];
+    if (rc != H2_PAL_OK || sample.event.kind != phase ||
+        sample.event.pointer_id != (ids ? contacts[i] : 0))
+      return 0;
+  }
+  h2_pal_touch_sample_t last;
+  const int rc = exclusive ? h2_pal_touch_poll_pointer(touch, &last)
+                           : h2_pal_touch_poll_event(touch, &last.event);
+  return rc == H2_PAL_ERR_WOULD_BLOCK;
+}
+
 static int run_tests(void) {
   if (test_main_call() != 0) return 90;
   const h2_web_platform_config_t pixel_count_overflow = {
@@ -1336,14 +1373,20 @@ MAIN_THREAD_EM_ASM_INT({
   bool owned = true;
   if (h2_pal_touch_open(touch) != H2_PAL_OK ||
       h2_pal_touch_open_pointer(other, &owned) != H2_PAL_ERR_BUSY || owned ||
+      !check_touch_contacts(touch, false, false) ||
       h2_pal_touch_close(touch) != H2_PAL_OK ||
       h2_pal_touch_open_pointer(touch, &owned) != H2_PAL_OK || !owned ||
+      !check_touch_contacts(touch, true, true) ||
       h2_pal_touch_open(other) != H2_PAL_ERR_BUSY ||
       h2_pal_touch_open_pointer(other, &owned) != H2_PAL_ERR_BUSY || owned ||
       h2_pal_touch_close(touch) != H2_PAL_ERR_BUSY ||
       h2_pal_touch_close_pointer(touch) != H2_PAL_OK ||
       h2_pal_touch_open_pointer(other, &owned) != H2_PAL_OK || !owned ||
       h2_pal_touch_close_pointer(other) != H2_PAL_OK ||
+      h2_web_platform_enable_multi_touch(alias) != H2_PAL_OK ||
+      h2_pal_touch_open(other) != H2_PAL_OK ||
+      !check_touch_contacts(other, true, false) ||
+      h2_pal_touch_close(other) != H2_PAL_OK ||
       h2_web_platform_destroy(alias) != H2_PAL_OK)
     return 8;
   if (h2_web_platform_serial_request_port(platform) != H2_PAL_OK) {

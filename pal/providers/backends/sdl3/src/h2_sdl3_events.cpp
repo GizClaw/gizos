@@ -70,6 +70,12 @@ h2_pal_result_t open_touch(void* user, bool exclusive) {
   if (provider->pointer_owned || (exclusive && provider->touch_open_count))
     return H2_PAL_ERR_BUSY;
   provider->pointer_owned = exclusive;
+  if (exclusive) {
+    /* The window pump can run between readers. Its older buffered edges
+     * belong to the preceding session. A held mouse still has to lift. */
+    provider->touch_head = provider->touch_count = 0u;
+    provider->touch_overflow = false;
+  }
   ++provider->touch_open_count;
   return H2_PAL_OK;
 }
@@ -173,9 +179,8 @@ void h2_sdl3_enqueue_event(h2_sdl3_t* provider, const h2_sdl3_event_t& event) {
   ++provider->event_count;
 }
 
-void h2_sdl3_enqueue_touch(h2_sdl3_t* provider,
-                           const h2_pal_touch_event_t& event) {
-  std::lock_guard<std::mutex> lock(provider->event_mutex);
+static void enqueue_touch_locked(h2_sdl3_t* provider,
+                                 const h2_pal_touch_event_t& event) {
   if (provider->touch_count == H2_SDL3_TOUCH_QUEUE_CAPACITY) {
     provider->touch_overflow = true;
     provider->touch_head =
@@ -239,24 +244,15 @@ void h2_sdl3_pump(h2_sdl3_t* provider) {
       h2_sdl3_enqueue_event(provider, projected);
     } else if (event.type == SDL_EVENT_MOUSE_MOTION) {
       std::lock_guard<std::mutex> lock(provider->event_mutex);
+      if (provider->pointer_owned && provider->pointer.pressed &&
+          event.motion.which != provider->pointer_device)
+        continue;
       provider->pointer.x = static_cast<int32_t>(event.motion.x);
       provider->pointer.y = static_cast<int32_t>(event.motion.y);
       if (provider->pointer.pressed) {
-        const h2_pal_touch_event_t touch = {
-            H2_PAL_TOUCH_EVENT_MOVE,
-            provider->pointer.x,
-            provider->pointer.y,
-        };
-        if (provider->touch_count == H2_SDL3_TOUCH_QUEUE_CAPACITY) {
-          provider->touch_overflow = true;
-          provider->touch_head =
-              (provider->touch_head + 1u) % H2_SDL3_TOUCH_QUEUE_CAPACITY;
-          --provider->touch_count;
-        }
-        const size_t tail = (provider->touch_head + provider->touch_count) %
-                            H2_SDL3_TOUCH_QUEUE_CAPACITY;
-        provider->touches[tail] = touch;
-        ++provider->touch_count;
+        enqueue_touch_locked(provider,
+                             {H2_PAL_TOUCH_EVENT_MOVE, provider->pointer.x,
+                              provider->pointer.y});
       }
     } else if ((event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
                 event.type == SDL_EVENT_MOUSE_BUTTON_UP) &&
@@ -264,28 +260,27 @@ void h2_sdl3_pump(h2_sdl3_t* provider) {
       const h2_pal_touch_event_kind_t kind =
           event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ? H2_PAL_TOUCH_EVENT_DOWN
                                                     : H2_PAL_TOUCH_EVENT_UP;
-      {
-        std::lock_guard<std::mutex> lock(provider->event_mutex);
-        provider->pointer.x = static_cast<int32_t>(event.button.x);
-        provider->pointer.y = static_cast<int32_t>(event.button.y);
-        provider->pointer.pressed = kind == H2_PAL_TOUCH_EVENT_DOWN ? 1 : 0;
-      }
-      h2_sdl3_enqueue_touch(provider,
-                            {kind, static_cast<int32_t>(event.button.x),
-                             static_cast<int32_t>(event.button.y)});
+      std::lock_guard<std::mutex> lock(provider->event_mutex);
+      /* SDL's synthesized touch mouse and a physical mouse can both hold
+       * left. Only the capturing device can update the exclusive stroke. */
+      if (provider->pointer_owned && provider->pointer.pressed &&
+          event.button.which != provider->pointer_device)
+        continue;
+      provider->pointer_device = event.button.which;
+      provider->pointer.x = static_cast<int32_t>(event.button.x);
+      provider->pointer.y = static_cast<int32_t>(event.button.y);
+      provider->pointer.pressed = kind == H2_PAL_TOUCH_EVENT_DOWN ? 1 : 0;
+      enqueue_touch_locked(provider,
+                           {kind, provider->pointer.x, provider->pointer.y});
     } else if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST) {
-      bool was_pressed = false;
-      int32_t x = 0;
-      int32_t y = 0;
       {
         std::lock_guard<std::mutex> lock(provider->event_mutex);
-        was_pressed = provider->pointer.pressed != 0;
-        x = provider->pointer.x;
-        y = provider->pointer.y;
-        provider->pointer.pressed = 0;
-      }
-      if (was_pressed) {
-        h2_sdl3_enqueue_touch(provider, {H2_PAL_TOUCH_EVENT_CANCEL, x, y});
+        if (provider->pointer.pressed) {
+          enqueue_touch_locked(provider,
+                               {H2_PAL_TOUCH_EVENT_CANCEL, provider->pointer.x,
+                                provider->pointer.y});
+          provider->pointer.pressed = 0;
+        }
       }
       h2_sdl3_enqueue_event(provider, make_event(H2_SDL3_EVENT_FOCUS_LOST));
     } else if (event.type == SDL_EVENT_WINDOW_FOCUS_GAINED) {

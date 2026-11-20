@@ -32,6 +32,7 @@ class InputLifecycleTest(unittest.TestCase):
             for case in ['invalid_input', 'flush_failure', 'display_close_error', 'touch_close_error', 'pointer_ownership', 'rs_order', 'flush_lost_irq', 'flush_stale', 'open_pending', 'open_flush_error',
                          'draw_rs_pending', 'draw_rs_immediate', 'draw_rs_stale', 'draw_rs_flush_error', 'draw_rs_lost_irq',
                          'partial_pixels_pending', 'partial_pixels_immediate',
+                         'touch_single', 'touch_report', 'touch_dual', 'touch_pointer_contacts',
                          'iic_read_start', 'iic_read_stop', 'iic_write_start', 'iic_write_stop',
                          'adc_full', 'adc_gpio', 'draw_close', 'touch_close', 'adc_first_use']:
                 with self.subTest(case=case):

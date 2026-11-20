@@ -20,6 +20,9 @@ typedef struct h2_web_platform_config {
   int32_t display_height;
 } h2_web_platform_config_t;
 
+/** Enable contact IDs and cancellation before opening Touch. */
+h2_pal_result_t h2_web_platform_enable_multi_touch(h2_web_platform_t* platform);
+
 /**
  * Create one Browser provider backed by pthread Workers.
  *

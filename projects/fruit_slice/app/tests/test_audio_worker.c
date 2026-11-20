@@ -624,7 +624,7 @@ static int touch_poll(void* u, h2_pal_touch_event_t* e) {
     *e = (h2_pal_touch_event_t){
         touch_phase++ % 2u ? H2_PAL_TOUCH_EVENT_UP : H2_PAL_TOUCH_EVENT_DOWN,
         (uint16_t)((rect.x0 + rect.x1) / 2),
-        (uint16_t)((rect.y0 + rect.y1) / 2)};
+        (uint16_t)((rect.y0 + rect.y1) / 2), 0};
     return H2_PAL_OK;
   }
   if (toggle_trial) {
@@ -644,7 +644,7 @@ static int touch_poll(void* u, h2_pal_touch_event_t* e) {
     *e = (h2_pal_touch_event_t){
         up ? H2_PAL_TOUCH_EVENT_UP : H2_PAL_TOUCH_EVENT_DOWN,
         (uint16_t)((rect.x0 + rect.x1) / 2),
-        (uint16_t)((rect.y0 + rect.y1) / 2)};
+        (uint16_t)((rect.y0 + rect.y1) / 2), 0};
     return H2_PAL_OK;
   }
   if (mute_failure_mode != 0u || mute_first_gesture) {
@@ -669,7 +669,7 @@ static int touch_poll(void* u, h2_pal_touch_event_t* e) {
      * actual suspension. Ordinary mute must never close this command queue. */
     *e = (h2_pal_touch_event_t){
         (touch_phase++ % 2u) ? H2_PAL_TOUCH_EVENT_UP : H2_PAL_TOUCH_EVENT_DOWN,
-        (uint16_t)((r.x0 + r.x1) / 2), (uint16_t)((r.y0 + r.y1) / 2)};
+        (uint16_t)((r.x0 + r.x1) / 2), (uint16_t)((r.y0 + r.y1) / 2), 0};
     return H2_PAL_OK;
   }
   if (event >= sizeof(event_frames) / sizeof(event_frames[0]) ||
@@ -683,7 +683,7 @@ static int touch_poll(void* u, h2_pal_touch_event_t* e) {
   assert(h2_fruit_slice_game_button_rect(&g, event_buttons[event], &r));
   *e = (h2_pal_touch_event_t){
       (touch_phase++ % 2u) ? H2_PAL_TOUCH_EVENT_UP : H2_PAL_TOUCH_EVENT_DOWN,
-      (uint16_t)((r.x0 + r.x1) / 2), (uint16_t)((r.y0 + r.y1) / 2)};
+      (uint16_t)((r.x0 + r.x1) / 2), (uint16_t)((r.y0 + r.y1) / 2), 0};
   return 0;
 }
 static bool touch_owned;

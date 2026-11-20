@@ -3525,7 +3525,7 @@ static void test_touch_lifecycle_and_mapped_input(void) {
   assert(h2_runtime_test_control_open(rt, &control) ==
              H2_PAL_ERR_INVALID_STATE &&
          !control);
-  const h2_pal_touch_event_t held = {H2_PAL_TOUCH_EVENT_DOWN, 33, 44};
+  const h2_pal_touch_event_t held = {H2_PAL_TOUCH_EVENT_DOWN, 33, 44, 7};
   t.script = &held;
   t.count = 1;
   /* Drive only the Touch task. Its undelivered DOWN must die with this run. */
@@ -3547,26 +3547,45 @@ static void test_touch_lifecycle_and_mapped_input(void) {
   assert(h2_runtime_poll_event(rt, &event) == H2_PAL_OK &&
          event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION);
   assert(h2_runtime_poll_event(rt, &event) == H2_PAL_ERR_WOULD_BLOCK);
-  const h2_pal_touch_event_t points[] = {{H2_PAL_TOUCH_EVENT_DOWN, 33, 44},
-                                         {H2_PAL_TOUCH_EVENT_UP, 33, 44},
-                                         {H2_PAL_TOUCH_EVENT_DOWN, 50, 60},
-                                         {H2_PAL_TOUCH_EVENT_MOVE, 70, 80},
-                                         {H2_PAL_TOUCH_EVENT_UP, 90, 100}};
+  const h2_pal_touch_event_t points[] = {
+      {H2_PAL_TOUCH_EVENT_MOVE, 1, 2, 22},  /* Mouse hover after restart. */
+      {H2_PAL_TOUCH_EVENT_DOWN, 33, 44, 7}, /* Held over restart. */
+      {H2_PAL_TOUCH_EVENT_UP, 1, 2, 9},
+      {H2_PAL_TOUCH_EVENT_DOWN, 5, 6, 7},
+      {H2_PAL_TOUCH_EVENT_UP, 33, 44, 7},
+      {H2_PAL_TOUCH_EVENT_DOWN, 50, 60, 7},
+      {H2_PAL_TOUCH_EVENT_DOWN, 1, 2, 9},
+      {H2_PAL_TOUCH_EVENT_MOVE, 70, 80, 7},
+      {H2_PAL_TOUCH_EVENT_UP, 1, 2, 9},
+      {H2_PAL_TOUCH_EVENT_UP, 90, 100, 7},
+      {H2_PAL_TOUCH_EVENT_DOWN, 11, 12, 7}, /* Reused ID. */
+      {H2_PAL_TOUCH_EVENT_CANCEL, 0, 0, 9},
+      {H2_PAL_TOUCH_EVENT_CANCEL, 0, 0, H2_PAL_TOUCH_ALL_POINTERS},
+      {H2_PAL_TOUCH_EVENT_UP, 11, 12, 7}};
   t.script = points;
   t.count = sizeof(points) / sizeof(points[0]);
   env.time_state.stop_after_sleep_runtime = rt;
   env.task_state.handles[1]->entry(rt);
   env.time_state.stop_after_sleep_runtime = NULL;
   const h2_runtime_pointer_phase_t phases[] = {
-      H2_RUNTIME_POINTER_DOWN, H2_RUNTIME_POINTER_MOVE, H2_RUNTIME_POINTER_UP};
-  for (size_t i = 0; i < 3; ++i) {
+      H2_RUNTIME_POINTER_DOWN, H2_RUNTIME_POINTER_MOVE, H2_RUNTIME_POINTER_UP,
+      H2_RUNTIME_POINTER_DOWN, H2_RUNTIME_POINTER_CANCEL};
+  const size_t selected[] = {5, 7, 9, 10, 12};
+  h2_runtime_sequence_t previous = 0;
+  for (size_t i = 0; i < sizeof(selected) / sizeof(selected[0]); ++i) {
     assert(h2_runtime_poll_event(rt, &event) == H2_PAL_OK &&
            event.kind == H2_RUNTIME_EVENT_TOUCH_POINTER);
     h2_runtime_touch_pointer_event_t p;
     assert(event.payload_size == sizeof(p));
     memcpy(&p, payload, sizeof(p));
-    assert(p.phase == phases[i] && p.x == points[i + 2].x &&
-           p.y == points[i + 2].y && p.width == 800 && p.height == 480);
+    const h2_pal_touch_event_t expected = points[selected[i]];
+    assert(p.phase == phases[i] && p.x == expected.x && p.y == expected.y &&
+           p.pointer_id == expected.pointer_id && p.width == 800 &&
+           p.height == 480 && p.result == H2_PAL_OK && (p.session & 1u));
+    assert(event.component == H2_RUNTIME_COMPONENT_TOUCH &&
+           event.component_id == H2_RUNTIME_COMPONENT_ID_NONE &&
+           event.sequence > previous);
+    previous = event.sequence;
   }
   assert(h2_runtime_poll_event(rt, &event) == H2_PAL_ERR_WOULD_BLOCK);
   assert(h2_runtime_destroy(&rt) == H2_PAL_OK && rt == NULL);

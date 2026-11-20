@@ -80,6 +80,8 @@ typedef enum h2_runtime_pointer_phase {
   H2_RUNTIME_POINTER_CANCEL,
 } h2_runtime_pointer_phase_t;
 
+#define H2_RUNTIME_POINTER_ALL UINT32_MAX
+
 typedef struct h2_runtime_touch_pointer_event {
   h2_runtime_pointer_phase_t phase;
   int32_t x, y;
@@ -89,6 +91,9 @@ typedef struct h2_runtime_touch_pointer_event {
   h2_pal_result_t result;
   /** Identifies a single start/stop session of the Runtime input poller. */
   uint32_t session;
+  /** Source contact for this stroke. Legacy single-pointer devices use zero.
+   * An all-contact cancellation has H2_RUNTIME_POINTER_ALL as its ID. */
+  uint32_t pointer_id;
 } h2_runtime_touch_pointer_event_t;
 
 typedef struct h2_runtime_event {

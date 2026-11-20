@@ -125,7 +125,7 @@ static CGRect h2_ios_platform_content_rect(h2_ios_platform_t *host, CGRect bound
       host->overflow = true;
       host->head = host->count = 0u;
     }
-    host->events[(host->head + host->count++) % capacity] = (h2_pal_touch_event_t){kind, x, y};
+    host->events[(host->head + host->count++) % capacity] = (h2_pal_touch_event_t){kind, x, y, 0};
   }
   pthread_mutex_unlock(&host->mutex);
 }

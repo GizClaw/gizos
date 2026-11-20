@@ -170,10 +170,51 @@ static void test_lifecycle_and_events(void) {
   assert(h2_pal_touch_poll_pointer(touch, &sample) == H2_PAL_ERR_FULL);
 
   assert(h2_pal_touch_close(touch) == H2_PAL_OK);
+  input = (SDL_Event){0};
+  input.type = SDL_EVENT_MOUSE_BUTTON_DOWN;
+  input.button.button = SDL_BUTTON_LEFT;
+  assert(SDL_PushEvent(&input));
+  input.type = SDL_EVENT_MOUSE_BUTTON_UP;
+  assert(SDL_PushEvent(&input));
+  drain_host_events(provider);
   assert(h2_pal_touch_open_pointer(touch, &owned) == H2_PAL_OK && owned);
+  assert(h2_pal_touch_poll_pointer(touch, &sample) == H2_PAL_ERR_WOULD_BLOCK);
   assert(h2_pal_touch_open_pointer(touch, &owned) == H2_PAL_ERR_BUSY && !owned);
   assert(h2_pal_touch_open(touch) == H2_PAL_ERR_BUSY);
   assert(h2_pal_touch_close(touch) == H2_PAL_ERR_BUSY);
+  /* Interleave touch-emulated and physical mice. Only the capturing mouse
+   * may move or release the stroke, in either order. */
+  for (unsigned i = 0; i < 2; ++i) {
+    const SDL_MouseID owner = i ? 42u : SDL_TOUCH_MOUSEID;
+    const SDL_MouseID other = i ? SDL_TOUCH_MOUSEID : 42u;
+    input = (SDL_Event){0};
+    input.type = SDL_EVENT_MOUSE_BUTTON_DOWN;
+    input.button.button = SDL_BUTTON_LEFT;
+    input.button.which = owner;
+    input.button.x = 5;
+    assert(SDL_PushEvent(&input));
+    input.button.which = other;
+    input.button.x = 31;
+    assert(SDL_PushEvent(&input));
+    input.type = SDL_EVENT_MOUSE_MOTION;
+    input.motion.which = other;
+    input.motion.x = 27;
+    assert(SDL_PushEvent(&input));
+    input = (SDL_Event){0};
+    input.type = SDL_EVENT_MOUSE_BUTTON_UP;
+    input.button.button = SDL_BUTTON_LEFT;
+    input.button.which = other;
+    assert(SDL_PushEvent(&input));
+    input.button.which = owner;
+    input.button.x = 7;
+    assert(SDL_PushEvent(&input));
+    drain_host_events(provider);
+    assert(h2_pal_touch_poll_pointer(touch, &sample) == H2_PAL_OK &&
+           sample.event.kind == H2_PAL_TOUCH_EVENT_DOWN && sample.event.x == 5);
+    assert(h2_pal_touch_poll_pointer(touch, &sample) == H2_PAL_OK &&
+           sample.event.kind == H2_PAL_TOUCH_EVENT_UP && sample.event.x == 7);
+    assert(h2_pal_touch_poll_pointer(touch, &sample) == H2_PAL_ERR_WOULD_BLOCK);
+  }
   assert(h2_pal_touch_close_pointer(touch) == H2_PAL_OK);
   assert(h2_pal_display_close(display) == H2_DISPLAY_OK);
   assert(h2_pal_display_get_info(display, &info) ==
