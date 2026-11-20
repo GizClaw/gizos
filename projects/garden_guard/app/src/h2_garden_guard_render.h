@@ -78,8 +78,11 @@ typedef struct h2_garden_guard_canvas {
 
 /** Independently cached parts of the static layer. */
 typedef enum h2_garden_guard_part {
-  /** Sun counter, cards and wave progress. */
-  H2_GARDEN_GUARD_PART_TOOLBAR = 0,
+  /** In paint order: sun counter, each card, then the wave and menu. */
+  H2_GARDEN_GUARD_PART_SUN = 0,
+  H2_GARDEN_GUARD_PART_CARD_FIRST,
+  H2_GARDEN_GUARD_PART_STATUS =
+      H2_GARDEN_GUARD_PART_CARD_FIRST + H2_GARDEN_GUARD_CARD_COUNT,
   /** Parked carts and the title or result panel. */
   H2_GARDEN_GUARD_PART_FIELD,
   H2_GARDEN_GUARD_PART_COUNT,

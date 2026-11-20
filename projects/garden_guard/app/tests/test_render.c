@@ -106,13 +106,20 @@ static void test_static_parts(void) {
   memcpy(pixels, background, sizeof(pixels));
   const h2_garden_guard_layout_t* l = &game.layout;
   h2_garden_guard_static_key_t toolbar, field, key;
-  h2_garden_guard_static_key(&game, H2_GARDEN_GUARD_PART_TOOLBAR, &toolbar);
+  h2_garden_guard_static_key(&game, H2_GARDEN_GUARD_PART_SUN, &toolbar);
   h2_garden_guard_static_key(&game, H2_GARDEN_GUARD_PART_FIELD, &field);
+  h2_garden_guard_static_key_t card;
+  h2_garden_guard_static_key(&game, H2_GARDEN_GUARD_PART_CARD_FIRST, &card);
 
-  /* Sun changes the toolbar only. */
+  /* A sun credit above all costs changes only the counter. */
   game.sun += 25u;
-  h2_garden_guard_static_key(&game, H2_GARDEN_GUARD_PART_TOOLBAR, &key);
+  h2_garden_guard_static_key(&game, H2_GARDEN_GUARD_PART_SUN, &key);
   CHECK(memcmp(&key, &toolbar, sizeof(key)) != 0);
+  h2_garden_guard_static_key(&game, H2_GARDEN_GUARD_PART_CARD_FIRST, &key);
+  CHECK(memcmp(&key, &card, sizeof(key)) == 0);
+  game.sun = 25u;
+  h2_garden_guard_static_key(&game, H2_GARDEN_GUARD_PART_CARD_FIRST, &key);
+  CHECK(memcmp(&key, &card, sizeof(key)) != 0);
   h2_garden_guard_static_key(&game, H2_GARDEN_GUARD_PART_FIELD, &key);
   CHECK(memcmp(&key, &field, sizeof(key)) == 0);
 
@@ -124,7 +131,7 @@ static void test_static_parts(void) {
   h2_garden_guard_static_key(&game, H2_GARDEN_GUARD_PART_FIELD, &key);
   CHECK(memcmp(&key, &field, sizeof(key)) == 0);
   check_coverage(H2_GARDEN_GUARD_PART_FIELD, true);
-  check_coverage(H2_GARDEN_GUARD_PART_TOOLBAR, false);
+  check_coverage(H2_GARDEN_GUARD_PART_SUN, false);
   float x, y;
   h2_garden_guard_field_point(l, 1u, 2.5f, &x, &y);
   const float py = y - 0.26f * h2_garden_guard_lane_size(l, 1u);
@@ -136,7 +143,9 @@ static void test_static_parts(void) {
    * into the toolbar. */
   memcpy(pixels, background, sizeof(pixels));
   h2_garden_guard_canvas_t canvas = canvas_for(pixels, false);
-  h2_garden_guard_render_static(&canvas, &game, H2_GARDEN_GUARD_PART_TOOLBAR);
+  for (unsigned part = H2_GARDEN_GUARD_PART_SUN;
+       part < H2_GARDEN_GUARD_PART_FIELD; ++part)
+    h2_garden_guard_render_static(&canvas, &game, (h2_garden_guard_part_t)part);
   const size_t bar_rows = (size_t)l->bar_h;
   CHECK(memcmp(&pixels[bar_rows * 480u], &background[bar_rows * 480u],
                (320u - bar_rows) * 480u * sizeof(uint16_t)) == 0);
@@ -325,13 +334,13 @@ static void test_portrait_clip(void) {
   CHECK((canvas.bands & (((uint64_t)1 << toolbar_bands) - 1u)) == 0u);
   /* The title and toolbar fit the portrait canvas. */
   check_coverage(H2_GARDEN_GUARD_PART_FIELD, false);
-  check_coverage(H2_GARDEN_GUARD_PART_TOOLBAR, false);
+  check_coverage(H2_GARDEN_GUARD_PART_SUN, false);
 }
 
 static void test_small_extent(void) {
   init(160, 160);
   check_coverage(H2_GARDEN_GUARD_PART_FIELD, false);
-  check_coverage(H2_GARDEN_GUARD_PART_TOOLBAR, false);
+  check_coverage(H2_GARDEN_GUARD_PART_SUN, false);
   start_playing();
   game.plants[0][0] = (h2_garden_guard_plant_t){
       .kind = H2_GARDEN_GUARD_PLANT_SUNFLOWER, .hp = 300.0f};

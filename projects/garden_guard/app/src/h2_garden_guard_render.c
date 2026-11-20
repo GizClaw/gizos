@@ -265,14 +265,23 @@ static void ellipse(h2_garden_guard_canvas_t* canvas, float cx, float cy,
     return;
   const float edge = fminf(rx, ry);
   const float irx = 1.0f / rx, iry = 1.0f / ry;
+  const float half = 0.5f / edge;
+  const float inside = fmaxf(0.0f, 1.0f - half - 0.0001f);
+  const float outside = 1.0f + half + 0.0001f;
+  const float inner2 = inside * inside, outer2 = outside * outside;
   for (int32_t py = g.y0; py < g.y1; ++py) {
     uint16_t* row = row_at(canvas, py);
     uint8_t* depth = depth_row(canvas, py);
     const float ny = ((float)py + 0.5f - cy) * iry;
     for (int32_t px = g.x0; px < g.x1; ++px) {
       const float nx = ((float)px + 0.5f - cx) * irx;
-      const float d = sqrtf(nx * nx + ny * ny);
-      const float cover = clampf((1.0f - d) * edge + 0.5f, 0.0f, 1.0f);
+      const float d2 = nx * nx + ny * ny;
+      /* Only the one-pixel transition needs a square root. Keep a margin
+       * at the endpoints so the same float coverage rounds to the same ink. */
+      if (d2 >= outer2) continue;
+      const float cover =
+          d2 < inner2 ? 1.0f
+                      : clampf((1.0f - sqrtf(d2)) * edge + 0.5f, 0.0f, 1.0f);
       if (cover > 0.0f)
         plot(canvas, row, depth, px, color, (uint32_t)(cover * (float)alpha));
     }
@@ -316,14 +325,26 @@ static void rounded_rect(h2_garden_guard_canvas_t* canvas, float x0, float y0,
   if (alpha == 0u) return;
   region_t g;
   if (!region_begin(canvas, x0, y0, x1, y1, &g)) return;
+  const float left = x0 + radius, right = x1 - radius;
+  /* Leave the endpoints to the regular coverage calculation. */
+  const int32_t middle0 =
+      (int32_t)ceilf(clampf(left + 0.5f, (float)g.x0, (float)g.x1));
+  const int32_t middle1 =
+      (int32_t)floorf(clampf(right - 0.5f, (float)middle0, (float)g.x1));
   for (int32_t py = g.y0; py < g.y1; ++py) {
     uint16_t* row = row_at(canvas, py);
     uint8_t* depth = depth_row(canvas, py);
     const float fy = (float)py + 0.5f;
     const float dy = fmaxf(fmaxf(y0 + radius - fy, fy - (y1 - radius)), 0.0f);
     for (int32_t px = g.x0; px < g.x1; ++px) {
+      if (px == middle0 && middle0 < middle1) {
+        if (dy <= radius)
+          for (; px < middle1; ++px) plot(canvas, row, depth, px, color, alpha);
+        px = middle1 - 1;
+        continue;
+      }
       const float fx = (float)px + 0.5f;
-      const float dx = fmaxf(fmaxf(x0 + radius - fx, fx - (x1 - radius)), 0.0f);
+      const float dx = fmaxf(fmaxf(left - fx, fx - right), 0.0f);
       float cover = 1.0f;
       if (dx > 0.0f && dy > 0.0f)
         cover = clampf(radius + 0.5f - sqrtf(dx * dx + dy * dy), 0.0f, 1.0f);
@@ -1626,21 +1647,26 @@ void h2_garden_guard_static_key(const h2_garden_guard_game_t* game,
   out->phase = (uint32_t)game->phase;
   out->values[14] = game->language;
   out->values[15] = game->language_unsaved;
-  if (part == H2_GARDEN_GUARD_PART_TOOLBAR) {
-    out->values[0] = game->sun;
-    out->values[1] = (uint32_t)(game->selected + 1);
-    for (unsigned i = 0; i < H2_GARDEN_GUARD_CARD_COUNT; ++i) {
-      const uint32_t cost =
-          h2_garden_guard_card_cost((h2_garden_guard_card_t)i);
-      out->values[2u + i] = (game->sun >= cost ? 1u : 0u) |
-                            cooldown_step(game, i) << 1 |
-                            (game->card_denied_ms[i] != 0u ? 1u : 0u) << 8;
-    }
-    out->values[8] = game->wave;
-    out->values[9] = progress_step(game);
-    out->values[10] = game->profile.owned;
-    out->values[11] = game->sighting_ms != 0u ? 1u + game->sighting_kind : 0u;
+  if (part < H2_GARDEN_GUARD_PART_FIELD) {
     out->values[12] = game->menu;
+    if (part == H2_GARDEN_GUARD_PART_SUN) {
+      out->values[0] = game->sun;
+    } else if (part == H2_GARDEN_GUARD_PART_STATUS) {
+      out->values[1] = (uint32_t)(game->selected + 1);
+      out->values[8] = game->wave;
+      out->values[9] = progress_step(game);
+      out->values[11] = game->sighting_ms != 0u ? 1u + game->sighting_kind : 0u;
+    } else {
+      const unsigned card = (unsigned)part - H2_GARDEN_GUARD_PART_CARD_FIRST;
+      const uint32_t cost =
+          h2_garden_guard_card_cost((h2_garden_guard_card_t)card);
+      out->values[0] = game->sun >= cost;
+      out->values[1] = game->selected == (int32_t)card;
+      out->values[2] = cooldown_step(game, card);
+      out->values[3] = game->card_denied_ms[card] != 0u;
+      out->values[4] =
+          game->profile.owned & h2_garden_guard_card_unlock((int32_t)card);
+    }
     return;
   }
   uint32_t carts = 0;
@@ -1764,10 +1790,9 @@ static void menu_button(h2_garden_guard_canvas_t* canvas,
                         h2_garden_guard_rect_t r, const char* label,
                         uint16_t fill, uint16_t ink);
 
-static void draw_toolbar(h2_garden_guard_canvas_t* canvas,
-                         const h2_garden_guard_game_t* game) {
+static void draw_sun_counter(h2_garden_guard_canvas_t* canvas,
+                             const h2_garden_guard_game_t* game) {
   const h2_garden_guard_layout_t* l = &game->layout;
-  const float u = l->unit;
   rounded_rect(canvas, l->sun_x, l->card_y, l->sun_x + l->sun_w,
                l->card_y + l->card_h, l->card_w * 0.14f, RGB(20, 41, 44), 170u);
   float sx, sy;
@@ -1780,9 +1805,13 @@ static void draw_toolbar(h2_garden_guard_canvas_t* canvas,
   scale = fit_scale(value, l->sun_w * 0.9f, scale);
   text_centered(canvas, value, l->sun_x + l->sun_w * 0.5f,
                 l->card_y + l->card_h * 0.64f, scale, RGB(255, 240, 200), 256u);
-  for (unsigned i = 0; i < H2_GARDEN_GUARD_CARD_COUNT; ++i)
-    draw_card(canvas, game, i);
+}
 
+static void draw_toolbar_status(h2_garden_guard_canvas_t* canvas,
+                                const h2_garden_guard_game_t* game) {
+  const h2_garden_guard_layout_t* l = &game->layout;
+  const float u = l->unit;
+  char value[32];
   /* Wave label and progress toward the end of the last wave. */
   const float pad = l->card_y;
   const float x0 =
@@ -2627,14 +2656,20 @@ void h2_garden_guard_render_static(h2_garden_guard_canvas_t* canvas,
                                    h2_garden_guard_part_t part) {
   full_clip(canvas);
   depth_mode(canvas, DEPTH_OFF, 0u);
-  if (part == H2_GARDEN_GUARD_PART_TOOLBAR) {
-    if (game->phase != H2_GARDEN_GUARD_PHASE_TITLE &&
-        (game->menu == H2_GARDEN_GUARD_MENU_NONE ||
-         h2_garden_guard_paused(game)))
-      draw_toolbar(canvas, game);
-  } else {
+  if (part == H2_GARDEN_GUARD_PART_FIELD) {
     draw_field(canvas, game);
+    return;
   }
+  if (game->phase == H2_GARDEN_GUARD_PHASE_TITLE ||
+      (game->menu != H2_GARDEN_GUARD_MENU_NONE &&
+       !h2_garden_guard_paused(game)))
+    return;
+  if (part == H2_GARDEN_GUARD_PART_SUN)
+    draw_sun_counter(canvas, game);
+  else if (part == H2_GARDEN_GUARD_PART_STATUS)
+    draw_toolbar_status(canvas, game);
+  else
+    draw_card(canvas, game, (unsigned)part - H2_GARDEN_GUARD_PART_CARD_FIRST);
 }
 
 /* ---- Moving scene -------------------------------------------------------- */

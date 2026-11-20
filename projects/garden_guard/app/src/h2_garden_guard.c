@@ -297,6 +297,16 @@ static void dirty_merge(dirty_t* into, const dirty_t* other) {
   }
 }
 
+/* Parts in the same band need repainting only when their pixel spans meet
+ * the area being restored. Adjacent HUD controls usually do not intersect. */
+static bool dirty_intersects(const dirty_t* a, const dirty_t* b) {
+  uint64_t common = a->bands & b->bands;
+  for (unsigned band = 0; common != 0u; ++band, common >>= 1u)
+    if ((common & 1u) && a->x0[band] < b->x1[band] && b->x0[band] < a->x1[band])
+      return true;
+  return false;
+}
+
 static void dirty_all(dirty_t* out, const session_t* s) {
   out->bands = h2_garden_guard_all_bands(s->display.height);
   for (int32_t band = 0; band < H2_GARDEN_GUARD_MAX_BANDS; ++band) {
@@ -357,7 +367,7 @@ static h2_garden_guard_canvas_t layer_canvas(const session_t* s,
 }
 
 /* Rebuild the static parts whose key changed, adding what changed. A part
- * that shares a band with the restored area is repainted whole after its own
+ * intersecting the restored area is repainted whole after its own
  * cover is restored too, so no pixel is blended twice. */
 static void update_static_layer(session_t* s, dirty_t* changed) {
   h2_garden_guard_static_key_t keys[PART_COUNT];
@@ -383,7 +393,7 @@ static void update_static_layer(session_t* s, dirty_t* changed) {
   for (bool grew = true; grew;) {
     grew = false;
     for (unsigned p = 0; p < PART_COUNT; ++p) {
-      if (repaint[p] || !(covers[p].bands & changed->bands)) continue;
+      if (repaint[p] || !dirty_intersects(&covers[p], changed)) continue;
       repaint[p] = true;
       dirty_merge(changed, &covers[p]);
       grew = true;
