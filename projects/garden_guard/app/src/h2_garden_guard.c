@@ -48,6 +48,7 @@ typedef struct session {
   bool web_menu_visible;
 #endif
   unsigned touch_failures;
+  bool touch_activity;
   uint32_t frames, frames_since_stats;
   uint64_t stats_started_ms;
   /* Per stats window: compose and push time, and pushed pixels. */
@@ -232,6 +233,7 @@ static h2_pal_result_t poll_touch(session_t* s) {
     const h2_pal_result_t rc =
         h2_pal_touch_poll_event(s->runtime->touch, &event);
     if (rc == H2_PAL_ERR_WOULD_BLOCK) return H2_PAL_OK;
+    s->touch_activity = true;
     if (rc == H2_PAL_ERR_IO || rc == H2_PAL_ERR_TIMEOUT) {
       if (s->touch_failures++ == 0u) {
         char message[64];
@@ -359,6 +361,7 @@ static h2_garden_guard_canvas_t layer_canvas(const session_t* s,
       .height = s->display.height,
       .stride_pixels = (size_t)s->display.width,
       .measure = measure,
+      .config = &s->config,
       .external_cover_labels = s->config.cover_changed != NULL,
 #ifdef __EMSCRIPTEN__
       .external_menu_labels = s->game.menu == H2_GARDEN_GUARD_MENU_JOURNAL ||
@@ -683,6 +686,7 @@ static h2_pal_result_t play(session_t* s) {
     if (s->config.reduce_motion != NULL)
       s->game.reduce_motion = s->config.reduce_motion(s->config.user);
     const bool was_paused = h2_garden_guard_paused(&s->game);
+    s->touch_activity = false;
     rc = poll_touch(s);
     if (rc != H2_PAL_OK) return rc;
     cover_input(s);
@@ -718,6 +722,17 @@ static h2_pal_result_t play(session_t* s) {
     const uint32_t wait_ms =
         h2_garden_guard_journal_animating(&s->game) && period > 24u ? 24u
                                                                     : period;
+    if (s->config.plant_spans_prepare_step != NULL && !s->touch_activity &&
+        (s->game.phase == H2_GARDEN_GUARD_PHASE_TITLE ||
+         (s->game.phase == H2_GARDEN_GUARD_PHASE_PLAYING &&
+          s->game.wave <= 2u))) {
+      /* Keep each bounded decode slice out of input handling and of frames
+       * that are already near their display deadline. */
+      const uint64_t deadline = frame_start + wait_ms;
+      for (unsigned slice = 0; slice < 3u && clock_ms(s) + 10u < deadline;
+           ++slice)
+        s->config.plant_spans_prepare_step(s->config.user);
+    }
     rc = wait_frame(s, frame_start + wait_ms);
     if (rc != H2_PAL_OK) return rc;
   }

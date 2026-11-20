@@ -15,6 +15,8 @@
 #include "h2_jieli_ac791n_devkit.h"
 #include "h2_jieli_ac791n_devkit_partitions.h"
 
+#include "plant_spans.h"
+
 #include <stdio.h>
 
 #define CONFIRM_TIMEOUT_MS 120000u
@@ -57,9 +59,16 @@ static h2_pal_result_t confirm(void* user) {
 
 static void game(void* user) {
   (void)user;
+  h2_garden_guard_jieli_plant_spans_t plant_spans = {.runtime = runtime};
   const h2_garden_guard_config_t config = {
-      .brightness_percent = 100u, .cache_plants = true, .ready = confirm};
+      .brightness_percent = 100u,
+      .cache_plants = true,
+      .ready = confirm,
+      .plant_spans_find = h2_garden_guard_jieli_find_plant_spans,
+      .plant_spans_prepare_step = h2_garden_guard_jieli_prepare_plant_spans,
+      .user = &plant_spans};
   const int rc = h2_garden_guard_run(runtime, &config);
+  h2_garden_guard_jieli_release_plant_spans(&plant_spans);
   /* The run only ends on failure; keep App commands up for recovery. An
    * unconfirmed run still returns to Loader through the boot timeout. */
   printf("H2_GARDEN_GUARD_SETUP_FAIL stage=game rc=%d\r\n", rc);

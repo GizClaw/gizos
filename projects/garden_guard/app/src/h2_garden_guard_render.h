@@ -14,6 +14,7 @@
  * The moving scene paints plants, zombies and projectiles by lane, far to
  * near. A per-pixel map keeps nearer parked carts over the moving scene. */
 
+#include "h2_garden_guard.h"
 #include "h2_garden_guard_game.h"
 
 #include <stdbool.h>
@@ -81,6 +82,7 @@ typedef struct h2_garden_guard_canvas {
   bool measure;
   bool external_cover_labels;
   h2_garden_guard_plant_cache_t* plant_cache;
+  const h2_garden_guard_config_t* config;
 #ifdef __EMSCRIPTEN__
   bool external_menu_labels;
   h2_garden_guard_menu_labels_t* menu_labels;

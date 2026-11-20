@@ -1,0 +1,7 @@
+load("@rules_python//python:defs.bzl", "py_binary")
+
+py_binary(
+    name = "embed_plant_spans",
+    srcs = ["embed_plant_spans.py"],
+    visibility = ["//projects/garden_guard:__subpackages__"],
+)

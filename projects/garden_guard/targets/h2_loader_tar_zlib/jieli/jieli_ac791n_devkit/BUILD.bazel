@@ -21,10 +21,20 @@ AC791N_COMPATIBILITY = select({
     "//conditions:default": ["@platforms//:incompatible"],
 })
 
+genrule(
+    name = "plant_span_data",
+    srcs = ["assets/plant_spans.xzbank"],
+    outs = ["plant_span_data.c"],
+    cmd = "$(location //projects/garden_guard/tools:embed_plant_spans) $< $@",
+    tools = ["//projects/garden_guard/tools:embed_plant_spans"],
+)
+
 firmware_lib_component(
     name = "firmware_lib",
     native_deps = ["//projects/h2loader/libs/device_service:firmware_api"],
     native_srcs = [
+        ":plant_span_data",
+        "//third_party/xz_embedded:firmware_sources",
         "//projects/h2loader/libs/device_service:firmware_sources",
         "//libs/archive/bundle:src/h2_bundle_archive.c",
         "//libs/archive/bundle:src/h2_bundle_installer.c",
@@ -41,6 +51,7 @@ firmware_lib_component(
         "//libs/runtime",
         "//libs/sync/atomic",
         "//projects/garden_guard/app:garden_guard",
+        "//third_party/xz_embedded:headers",
     ],
 )
 
@@ -51,7 +62,15 @@ h2_tasks(
 
 firmware_native_component(
     name = "garden_guard_entry",
-    srcs = ["src/garden_guard_main.c"],
+    srcs = [
+        "src/garden_guard_main.c",
+        "src/plant_spans.c",
+    ],
+    hdrs = [
+        "src/plant_spans.h",
+        "src/plant_spans_groups.inc",
+        "src/plant_spans_index.inc",
+    ],
     component_name = "jieli_ac791n_devkit_garden_guard",
     tags = ["manual"],
     target_compatible_with = AC791N_COMPATIBILITY,

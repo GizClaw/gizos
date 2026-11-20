@@ -2550,6 +2550,120 @@ static void include_plant_bands(h2_garden_guard_canvas_t* canvas,
   }
 }
 
+/* Compact plant spans store final opaque colors and ordered edge blends.
+ * All operations on one pixel pass or fail the same depth test. */
+static uint16_t span_color(const uint8_t* src) {
+  return (uint16_t)((uint16_t)src[0] | (uint16_t)((uint16_t)src[1] << 8));
+}
+
+static void paint_plant_spans(h2_garden_guard_canvas_t* canvas,
+                              const uint8_t* data, int32_t ox, int32_t oy) {
+  unsigned band_count = *data++;
+  for (unsigned i = 0; i < band_count; ++i) {
+    const unsigned band = *data++;
+    const int16_t x0 = (int16_t)(ox + (int32_t)*data++ - 128);
+    const int16_t x1 = (int16_t)(ox + (int32_t)*data++ - 128);
+    const uint64_t bit = UINT64_C(1) << band;
+    if (!(canvas->bands & bit) || canvas->band_x0[band] > x0)
+      canvas->band_x0[band] = x0;
+    if (!(canvas->bands & bit) || canvas->band_x1[band] < x1)
+      canvas->band_x1[band] = x1;
+    canvas->bands |= bit;
+  }
+  if (canvas->measure || canvas->pixels == NULL) return;
+  const unsigned palette_size = *data++;
+  const uint8_t* palette = data;
+  data += 2u * palette_size;
+  const unsigned edge_palette_size = *data++;
+  const uint8_t* edge_palette = data;
+  data += 2u * edge_palette_size;
+  const uint8_t layer = canvas->depth_layer;
+  while (*data) {
+    const int32_t y = oy + (int32_t)*data++ - 128;
+    uint16_t* row = row_at(canvas, y);
+    const uint8_t* depth = depth_row(canvas, y);
+    while (*data) {
+      const int32_t first = ox + (int32_t)*data++ - 128;
+      const unsigned type = *data++;
+      const int32_t end = first + (int32_t)(type & 127u);
+      if (type & 128u) {
+        const bool rle = *data++ != 0u;
+        if (rle) {
+          int32_t cursor = first;
+          while (cursor < end) {
+            const unsigned len = *data++;
+            const uint16_t color = palette_size
+                                       ? span_color(palette + 2u * (*data++))
+                                       : span_color(data);
+            if (!palette_size) data += 2u;
+            const int32_t stop = cursor + (int32_t)len;
+            for (; cursor < stop; ++cursor)
+              if (depth == NULL || depth[cursor] <= layer) row[cursor] = color;
+          }
+        } else if (palette_size != 0u) {
+          for (int32_t x = first; x < end; ++x) {
+            const unsigned idx = *data++;
+            if (depth == NULL || depth[x] <= layer)
+              row[x] = span_color(palette + 2u * idx);
+          }
+        } else {
+          for (int32_t x = first; x < end; ++x, data += 2u) {
+            if (depth == NULL || depth[x] <= layer) row[x] = span_color(data);
+          }
+        }
+      } else {
+        for (int32_t x = first; x < end; ++x) {
+          const bool visible = depth == NULL || depth[x] <= layer;
+          uint16_t current = visible ? row[x] : 0u;
+          unsigned key;
+          do {
+            const unsigned alpha = *data++;
+            key = *data++;
+            if (visible)
+              current = blend(
+                  current, span_color(edge_palette + 2u * (key & 127u)), alpha);
+          } while ((key & 128u) == 0u);
+          if (visible) row[x] = current;
+        }
+      }
+    }
+    ++data;
+  }
+}
+
+static bool draw_preencoded_plant(h2_garden_guard_canvas_t* canvas,
+                                  const h2_garden_guard_game_t* game,
+                                  uint32_t lane, uint32_t col, float x, float y,
+                                  float scale) {
+  const h2_garden_guard_config_t* config = canvas->config;
+  if (config == NULL || config->plant_spans_find == NULL ||
+      canvas->width != 480 || canvas->height != 320 || canvas->clip_y0 != 52 ||
+      canvas->clip_y1 != 320 || canvas->depth_mode != DEPTH_TEST)
+    return false;
+  const h2_garden_guard_plant_t* plant = &game->plants[lane][col];
+  if ((plant->kind != H2_GARDEN_GUARD_PLANT_SUNFLOWER &&
+       plant->kind != H2_GARDEN_GUARD_PLANT_SHOOTER) ||
+      plant->grow_ms != 0u || plant->stage != 0u || plant->action_ms != 0u ||
+      plant->impact_ms != 0u)
+    return false;
+  const h2_garden_guard_plant_pose_t pose =
+      h2_garden_guard_plant_pose(game, lane, col);
+  const h2_garden_guard_plant_span_key_t key = {
+      .lane = lane,
+      .column = col,
+      .kind = plant->kind,
+      .blink = pose.blink,
+      .idle_tick = game->time_ms / H2_GARDEN_GUARD_PLANT_IDLE_MS,
+      .x = x,
+      .y = y,
+      .scale = scale,
+      .sway = pose.sway};
+  const uint8_t* spans = config->plant_spans_find(config->user, &key);
+  if (spans == NULL) return false;
+  paint_plant_spans(canvas, spans, (int32_t)x, (int32_t)y);
+  return true;
+}
+
 static void measure_cached_plant(h2_garden_guard_canvas_t* canvas,
                                  h2_garden_guard_cached_plant_t* entry,
                                  const h2_garden_guard_game_t* game,
@@ -2636,6 +2750,8 @@ static void draw_lane_plants(h2_garden_guard_canvas_t* canvas,
     if (plant->kind == H2_GARDEN_GUARD_PLANT_NONE) continue;
     float x, y;
     h2_garden_guard_field_point(&game->layout, lane, (float)col + 0.5f, &x, &y);
+    if (animate && draw_preencoded_plant(canvas, game, lane, col, x, y, scale))
+      continue;
     if (animate && canvas->plant_cache != NULL) {
       h2_garden_guard_cached_plant_t* entry =
           &canvas->plant_cache->cells[lane][col];

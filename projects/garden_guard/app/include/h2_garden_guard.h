@@ -33,6 +33,16 @@ typedef struct h2_garden_guard_cover_rect {
   float x, y, width, height; /**< Fractions of the display rectangle. */
 } h2_garden_guard_cover_rect_t;
 
+/* Geometry and exact pose for an optional baked plant cel. The provider can
+ * return NULL to let the game draw the original vector art. */
+typedef struct h2_garden_guard_plant_span_key {
+  uint32_t lane, column;
+  uint8_t kind;
+  bool blink;
+  uint64_t idle_tick;
+  float x, y, scale, sway;
+} h2_garden_guard_plant_span_key_t;
+
 typedef struct h2_garden_guard_config {
   /** Nonzero fixes the random seed; zero derives one from the clock. */
   uint32_t seed;
@@ -69,6 +79,15 @@ typedef struct h2_garden_guard_config {
   /** Use up to 560 KiB of optional scratch space to reuse exact plant pixels.
    * Allocation failure leaves the normal renderer active. */
   bool cache_plants;
+  /** Optional trusted, immutable compact plant spans for the native 480x320
+   * lawn. See the project README for the byte format. Return NULL for any
+   * unavailable key. The data must stay live until h2_garden_guard_run ends. */
+  const uint8_t* (*plant_spans_find)(
+      void* user, const h2_garden_guard_plant_span_key_t* key);
+  /** Optional bounded asset preparation on the run thread after present. The
+   * game calls it in idle time on the title or through wave two. One call
+   * must process at most one small block and perform no external I/O. */
+  void (*plant_spans_prepare_step)(void* user);
   /** Borrowed user value passed to the configured callbacks. */
   void* user;
 } h2_garden_guard_config_t;

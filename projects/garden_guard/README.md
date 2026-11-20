@@ -77,3 +77,11 @@ python3 projects/garden_guard/tools/generate_droid.py \
 The cover retains its original RGB565 palette and per-row runs. The decode table reduces its flash footprint while the renderer still uses one row of scratch storage. To reproduce the conversion, pass the original row-RLE table from commit `8c48db3a899fe6ee367dd58f253c2188d4540ea0` to `tools/compress_cover.py ORIGINAL_INCLUDE app/src/h2_garden_guard_title.inc`. The tool round-trips every row against the input.
 
 The zombie sprites and journal portraits are generated from the original drawing paths. See the [sprite sources](tools/zombie_art/) for the format and regeneration command.
+
+## AC791N plant spans
+
+The AC791N entry can replay mature sunflower and peashooter cels for its 480×320 lawn. The original renderer remains the fallback for unprepared assets, other dimensions, growth, damage and action poses. The game advances the onboard XZ decoder in bounded steps during idle time after presenting a title frame or an early-wave frame. Each completed cell/species block can be used immediately. All 90 blocks share a 4,833,840-byte allocation backed by the board Memory PAL. Allocation and decoding errors disable the optional bank for the run.
+
+The archive contains independent XZ/LZMA2 streams with CRC32, grouped by cell and species. Each cel starts with dirty bands and two RGB565 palettes. Rows encode their relative ordinate followed by runs and a zero terminator. Run headers give a relative x and pixel count. Opaque runs use little-endian RGB565 or a palette index and may repeat a color. Each partial pixel stores ordered `(alpha, color index with last-bit)` pairs. A zero row ordinate byte terminates the cel. The runtime tests current depth before replaying any pixel and blends partial pixels against the current RGB565 buffer.
+
+Regenerate on macOS with Apple Clang, Python 3 and the same liblzma as the checked-in bank. Run `python3 projects/garden_guard/tools/generate_plant_spans.py <scratch-directory>` from the repository root. Copy `plant_spans.xzbank` to the AC791N entry's `assets/` and both `plant_spans_*.inc` files to its `src/`. The generator uses the ordinary plant drawing functions at fixed cell projections and verifies each compressed group round trip.
