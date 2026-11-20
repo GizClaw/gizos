@@ -10,8 +10,7 @@
 #include <string.h>
 
 #define LOG_TAG "fruit-slice"
-#define TOUCH_EVENTS_PER_FRAME 16u
-#define TOUCH_FAILURE_LIMIT 30u
+#define TOUCH_POLL_INTERVAL_MS 8u
 #define EVENTS_PER_DRAIN 64u
 #define DT_MAX_MS 50u
 #define STATS_PERIOD_MS 10000u
@@ -32,7 +31,8 @@ typedef struct session {
   h2_fruit_slice_config_t config;
   const h2_pal_mem_api_t* allocator;
   h2_display_info_t display;
-  float touch_scale_x, touch_scale_y;
+  bool pointer_active;
+  uint32_t pointer_id;
   uint16_t* frame;
   uint16_t* background;
   /* Background plus static overlays; the scene is composed on top of it. */
@@ -41,7 +41,6 @@ typedef struct session {
   h2_fruit_slice_static_key_t static_key;
   dirty_t static_cover, previous;
   bool first_frame, failure_reported;
-  unsigned touch_failures;
   uint32_t frames, frames_since_stats;
   uint64_t stats_started_ms;
   /* Per stats window: compose and push time, and pushed pixels. */
@@ -75,15 +74,14 @@ static int failure_at(session_t* s, const char* operation, int rc) {
   if (rc != H2_PAL_OK && !s->failure_reported) {
     s->failure_reported = true;
     char message[224];
-    (void)snprintf(
-        message, sizeof(message),
-        "H2_FRUIT_SLICE_FAILURE op=%s rc=%d phase=%u frames=%u "
-        "reveal=%u game_ms=%llu size=%dx%d touch_failures=%u save_pending=%u",
-        operation, rc, (unsigned)s->game.phase, (unsigned)s->frames,
-        (unsigned)s->game.cards.reveal_active,
-        (unsigned long long)s->game.time_ms, (int)s->display.width,
-        (int)s->display.height, s->touch_failures,
-        (unsigned)(s->save_worker.task != NULL));
+    (void)snprintf(message, sizeof(message),
+                   "H2_FRUIT_SLICE_FAILURE op=%s rc=%d phase=%u frames=%u "
+                   "reveal=%u game_ms=%llu size=%dx%d save_pending=%u",
+                   operation, rc, (unsigned)s->game.phase, (unsigned)s->frames,
+                   (unsigned)s->game.cards.reveal_active,
+                   (unsigned long long)s->game.time_ms, (int)s->display.width,
+                   (int)s->display.height,
+                   (unsigned)(s->save_worker.task != NULL));
     log_line(s, H2_PAL_LOG_ERROR, message);
   }
   return rc;
@@ -354,6 +352,45 @@ static void service_saves(session_t* s, uint64_t now) {
     s->cards_save_after_ms = now + PROGRESS_RETRY_MS;
 }
 
+static void dispatch_pointer(session_t* s, const h2_runtime_event_t* event) {
+  if (event->kind != H2_RUNTIME_EVENT_TOUCH_POINTER ||
+      event->payload_size != sizeof(h2_runtime_touch_pointer_event_t))
+    return;
+  h2_runtime_touch_pointer_event_t p;
+  memcpy(&p, event->payload, sizeof(p));
+  if (s->pointer_active && p.pointer_id != s->pointer_id &&
+      !(p.phase == H2_RUNTIME_POINTER_CANCEL &&
+        p.pointer_id == H2_RUNTIME_POINTER_ALL))
+    return;
+  h2_fruit_slice_pointer_t kind;
+  switch (p.phase) {
+    case H2_RUNTIME_POINTER_DOWN:
+      s->pointer_id = p.pointer_id;
+      s->pointer_active = true;
+      s->audio_unlocked = true;
+      kind = H2_FRUIT_SLICE_POINTER_DOWN;
+      break;
+    case H2_RUNTIME_POINTER_MOVE:
+      if (!s->pointer_active) return;
+      kind = H2_FRUIT_SLICE_POINTER_MOVE;
+      break;
+    case H2_RUNTIME_POINTER_UP:
+      if (!s->pointer_active) return;
+      s->pointer_active = false;
+      kind = H2_FRUIT_SLICE_POINTER_UP;
+      break;
+    case H2_RUNTIME_POINTER_CANCEL:
+      s->pointer_active = false;
+      kind = H2_FRUIT_SLICE_POINTER_CANCEL;
+      break;
+    default:
+      return;
+  }
+  const float sx = p.width ? (float)s->display.width / (float)p.width : 1.0f;
+  const float sy = p.height ? (float)s->display.height / (float)p.height : 1.0f;
+  h2_fruit_slice_game_pointer(&s->game, kind, p.x * sx, p.y * sy);
+}
+
 static h2_pal_result_t drain_events(session_t* s) {
   for (unsigned i = 0; i < EVENTS_PER_DRAIN; ++i) {
     h2_runtime_event_t event = {.payload = s->event_payload,
@@ -362,55 +399,9 @@ static h2_pal_result_t drain_events(session_t* s) {
     if (rc == H2_PAL_ERR_WOULD_BLOCK || rc == H2_PAL_ERR_TIMEOUT)
       return H2_PAL_OK;
     if (rc != H2_PAL_OK) return failure_at(s, "poll_event", rc);
+    if (!s->audio_paused) dispatch_pointer(s, &event);
   }
-  /* Bounded: the remainder is drained after the next frame's wait. */
-  return H2_PAL_OK;
-}
-
-static h2_pal_result_t poll_touch(session_t* s) {
-  for (unsigned i = 0; i < TOUCH_EVENTS_PER_FRAME; ++i) {
-    h2_pal_touch_event_t event = {0};
-    const h2_pal_result_t rc =
-        h2_pal_touch_poll_event(s->runtime->touch, &event);
-    if (rc == H2_PAL_ERR_WOULD_BLOCK) return H2_PAL_OK;
-    if (rc == H2_PAL_ERR_IO || rc == H2_PAL_ERR_TIMEOUT) {
-      if (s->touch_failures++ == 0u) {
-        char message[64];
-        (void)snprintf(message, sizeof(message),
-                       "H2_FRUIT_SLICE_TOUCH_RETRY rc=%d", rc);
-        log_line(s, H2_PAL_LOG_WARN, message);
-      }
-      /* Abandon the stroke rather than slicing along a stale segment. */
-      h2_fruit_slice_game_pointer(&s->game, H2_FRUIT_SLICE_POINTER_CANCEL, 0.0f,
-                                  0.0f);
-      return s->touch_failures >= TOUCH_FAILURE_LIMIT
-                 ? failure_at(s, "touch_poll", rc)
-                 : H2_PAL_OK;
-    }
-    if (rc != H2_PAL_OK) return failure_at(s, "touch_poll", rc);
-    if (s->touch_failures != 0u) {
-      s->touch_failures = 0u;
-      log_line(s, H2_PAL_LOG_INFO, "H2_FRUIT_SLICE_TOUCH_RECOVERED");
-    }
-    h2_fruit_slice_pointer_t kind;
-    switch (event.kind) {
-      case H2_PAL_TOUCH_EVENT_DOWN:
-        s->audio_unlocked = true;
-        kind = H2_FRUIT_SLICE_POINTER_DOWN;
-        break;
-      case H2_PAL_TOUCH_EVENT_MOVE:
-        kind = H2_FRUIT_SLICE_POINTER_MOVE;
-        break;
-      case H2_PAL_TOUCH_EVENT_UP:
-        kind = H2_FRUIT_SLICE_POINTER_UP;
-        break;
-      default:
-        continue;
-    }
-    h2_fruit_slice_game_pointer(&s->game, kind,
-                                (float)event.x * s->touch_scale_x,
-                                (float)event.y * s->touch_scale_y);
-  }
+  h2_runtime_notify(s->runtime);
   return H2_PAL_OK;
 }
 
@@ -742,6 +733,7 @@ static h2_pal_result_t play(session_t* s) {
         if (rc != H2_PAL_OK) return failure_at(s, "audio_pause", rc);
         h2_fruit_slice_game_pointer(&s->game, H2_FRUIT_SLICE_POINTER_CANCEL, 0,
                                     0);
+        s->pointer_active = false;
         s->game.sound_count = 0;
         s->audio_paused = true;
       }
@@ -758,7 +750,7 @@ static h2_pal_result_t play(session_t* s) {
     if (dt > DT_MAX_MS) dt = DT_MAX_MS;
     last = now;
 
-    rc = poll_touch(s);
+    rc = drain_events(s);
     if (rc != H2_PAL_OK) return rc;
     h2_fruit_slice_game_step(&s->game, (uint32_t)dt);
     s->phase_mask |= 1u << (unsigned)s->game.phase;
@@ -835,14 +827,6 @@ static h2_pal_result_t prepare(session_t* s) {
       s->display.height < H2_FRUIT_SLICE_MIN_EXTENT ||
       s->display.height > H2_FRUIT_SLICE_MAX_EXTENT)
     return H2_PAL_ERR_UNSUPPORTED;
-  h2_pal_touch_info_t touch = {0};
-  rc = h2_pal_touch_get_info(s->runtime->touch, &touch);
-  if (rc != H2_PAL_OK) return failure_at(s, "touch_info", rc);
-  s->touch_scale_x =
-      touch.width != 0u ? (float)s->display.width / (float)touch.width : 1.0f;
-  s->touch_scale_y = touch.height != 0u
-                         ? (float)s->display.height / (float)touch.height
-                         : 1.0f;
 
   const size_t bytes =
       (size_t)s->display.width * (size_t)s->display.height * sizeof(uint16_t);
@@ -949,18 +933,32 @@ h2_pal_result_t h2_fruit_slice_run(h2_runtime_t* runtime,
   s->allocator = allocator;
   if (config != NULL) s->config = *config;
 
-  bool display_open = false, touch_open = false;
+  bool display_open = false, owns_input = false;
   h2_pal_result_t rc =
       failure_at(s, "display_open", h2_pal_display_open(runtime->display));
   if (rc == H2_PAL_OK) {
     display_open = true;
-    rc = failure_at(s, "touch_open", h2_pal_touch_open(runtime->touch));
+    h2_runtime_input_status_t status;
+    rc = h2_runtime_input_status(runtime, &status);
+    if (rc == H2_PAL_OK && status.phase != H2_RUNTIME_INPUT_PHASE_STOPPED)
+      rc = H2_PAL_ERR_BUSY;
+    if (rc == H2_PAL_OK) {
+      owns_input = true;
+      rc = h2_runtime_input_start_with_touch(runtime, NULL,
+                                             TOUCH_POLL_INTERVAL_MS);
+    }
+    if (rc != H2_PAL_OK) (void)failure_at(s, "input_start", rc);
   }
-  if (rc == H2_PAL_OK) {
-    touch_open = true;
-    rc = failure_at(s, "prepare", prepare(s));
-  }
+  if (rc == H2_PAL_OK) rc = failure_at(s, "prepare", prepare(s));
   if (rc == H2_PAL_OK) rc = failure_at(s, "play", play(s));
+  if (owns_input) {
+    int stopped;
+    while ((stopped = h2_runtime_input_stop(runtime)) != H2_PAL_OK) {
+      if (rc == H2_PAL_OK) rc = failure_at(s, "input_stop", stopped);
+      /* A failed join/close still borrows this session's display geometry. */
+      (void)h2_pal_time_sleep_ms(runtime->time, 50u);
+    }
+  }
   /* The final write cannot race an older in-flight checkpoint. Retain the
    * Runtime and copied arguments through failed joins before flushing newer
    * state once, using the same optional-storage failure behavior as before. */
@@ -991,10 +989,6 @@ h2_pal_result_t h2_fruit_slice_run(h2_runtime_t* runtime,
                  (unsigned)s->frames);
   log_line(s, rc == H2_PAL_OK ? H2_PAL_LOG_INFO : H2_PAL_LOG_ERROR, message);
 
-  if (touch_open) {
-    const h2_pal_result_t closed = h2_pal_touch_close(runtime->touch);
-    if (rc == H2_PAL_OK) rc = failure_at(s, "touch_close", closed);
-  }
   if (display_open) {
     const int closed = h2_pal_display_close(runtime->display);
     if (rc == H2_PAL_OK) rc = failure_at(s, "display_close", closed);

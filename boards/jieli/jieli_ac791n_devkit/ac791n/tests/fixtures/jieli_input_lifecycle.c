@@ -435,6 +435,57 @@ int main(int argc, char** argv) {
     assert(display->vtable->close(display->user) == H2_PAL_ERR_IO);
     assert(!display_state.open && display_state.device == NULL);
     assert(display->vtable->close(display->user) == H2_PAL_OK && closes == 1);
+  } else if (strcmp(argv[1], "pointer_ownership") == 0) {
+    bool owned = true;
+    assert(h2_pal_touch_open_pointer(touch, &owned) == H2_PAL_ERR_BUSY &&
+           !owned);
+    assert(h2_pal_touch_close(touch) == H2_PAL_OK);
+    assert(h2_pal_touch_open_pointer(touch, &owned) == H2_PAL_OK && owned);
+    assert(h2_pal_touch_open(touch) == H2_PAL_ERR_BUSY);
+    assert(h2_pal_touch_close(touch) == H2_PAL_ERR_BUSY);
+    close_error = 1;
+    assert(h2_pal_touch_close_pointer(touch) == H2_PAL_ERR_IO);
+    assert(h2_pal_touch_open_pointer(touch, &owned) == H2_PAL_ERR_BUSY &&
+           !owned);
+    assert(h2_pal_touch_open(touch) == H2_PAL_ERR_BUSY);
+    assert(h2_pal_touch_close_pointer(touch) == H2_PAL_OK && closes == 2);
+  } else if (strcmp(argv[1], "touch_pointer_contacts") == 0) {
+    assert(h2_pal_touch_close(touch) == H2_PAL_OK);
+    bool owned = false;
+    assert(h2_pal_touch_open_pointer(touch, &owned) == H2_PAL_OK && owned);
+    assert(h2_jieli_ac791n_devkit_enable_multi_touch() ==
+           H2_PAL_ERR_INVALID_STATE);
+    report_size = sizeof(touch_report);
+    report_begin(2);
+    report_point(0, 3, PRESS, 81, 96);
+    report_point(1, 9, PRESS, 81, 384);
+    h2_pal_touch_sample_t sample;
+    assert(h2_pal_touch_poll_pointer(touch, &sample) == H2_PAL_OK &&
+           sample.event.kind == H2_PAL_TOUCH_EVENT_DOWN &&
+           sample.event.pointer_id == 3);
+    assert(h2_pal_touch_poll_pointer(touch, &sample) == H2_PAL_OK &&
+           sample.event.kind == H2_PAL_TOUCH_EVENT_DOWN &&
+           sample.event.pointer_id == 9 && touch_reads == 11);
+    report_begin(1);
+    report_point(0, 9, CONTACT, 81, 384);
+    iic_error = IIC_IOCTL_RX;
+    assert(h2_pal_touch_poll_pointer(touch, &sample) == H2_PAL_ERR_IO);
+    iic_error = 0;
+    expect_empty(touch);
+    report_begin(0);
+    expect_event(touch, H2_PAL_TOUCH_EVENT_CANCEL, H2_PAL_TOUCH_ALL_POINTERS, 0,
+                 0);
+    report_begin(1);
+    report_point(0, 3, PRESS, 81, 60);
+    expect_event(touch, H2_PAL_TOUCH_EVENT_DOWN, 3, 60, 238);
+    assert(h2_pal_touch_close_pointer(touch) == H2_PAL_OK);
+    trace_touch = 0;
+    assert(h2_pal_touch_open(touch) == H2_PAL_OK);
+    report_size = 5;
+    report_begin(1);
+    report_point(0, 9, PRESS, 81, 100);
+    expect_event(touch, H2_PAL_TOUCH_EVENT_DOWN, 0, 100, 238);
+    assert(h2_pal_touch_close(touch) == H2_PAL_OK);
   } else if (strcmp(argv[1], "touch_single") == 0) {
     touch_single_sequence(touch);
   } else if (strcmp(argv[1], "touch_report") == 0) {

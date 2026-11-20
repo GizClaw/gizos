@@ -28,6 +28,7 @@ public final class H2AndroidPlatform implements AutoCloseable {
   private static native long nativeCreate(Object view, int width, int height);
   private static native int nativeCopy(long handle, Bitmap frame);
   private static native void nativePointer(long handle, int x, int y, boolean down);
+  private static native void nativeCancel(long handle);
   private static native void nativeDestroy(long handle);
 
   public H2AndroidPlatform(Context context, int width, int height) {
@@ -128,7 +129,7 @@ public final class H2AndroidPlatform implements AutoCloseable {
     }
     void releasePointer() {
       if (handle != 0)
-        nativePointer(handle, 0, 0, false);
+        nativeCancel(handle);
       pointerId = -1;
     }
     @Override
@@ -164,8 +165,10 @@ public final class H2AndroidPlatform implements AutoCloseable {
           pointer(event, event.getActionIndex(), false);
           pointerId = -1;
           return true;
-        case MotionEvent.ACTION_UP:
         case MotionEvent.ACTION_CANCEL:
+          releasePointer();
+          return true;
+        case MotionEvent.ACTION_UP:
           pointer(event, 0, false);
           pointerId = -1;
           return true;

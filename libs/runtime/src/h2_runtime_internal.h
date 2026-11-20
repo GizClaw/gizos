@@ -451,6 +451,11 @@ struct h2_runtime_private {
   uint32_t input_temperature_poll_interval_ms;
   h2_pal_task_t* input_task;
   h2_pal_task_t* input_nfc_task;
+  h2_pal_task_t* input_touch_task;
+  h2_atomic_uint_t touch_session;
+  h2_pal_touch_info_t touch_info;
+  uint32_t touch_interval_ms;
+  bool touch_open, touch_wait_release;
   h2_pal_queue_t* input_push_edge_queue;
   h2_pal_queue_t* input_nfc_result_queue;
   h2_pal_mutex_t* input_writer_mutex;
@@ -477,7 +482,11 @@ struct h2_runtime_private {
    * mutex guards it, so a worker that cannot take the writer mutex can
    * still record that, and status never reads it unlocked.
    */
+  /* Published once, before the first acquisition worker starts. */
+  h2_atomic_int_t input_health_ready;
   h2_pal_mutex_t* input_health_mutex;
+  uint32_t touch_error_count;
+  h2_pal_result_t last_touch_error;
   h2_pal_result_t input_last_error;
   h2_runtime_input_stage_t input_last_error_stage;
   h2_runtime_timestamp_ms_t input_last_error_at_ms;

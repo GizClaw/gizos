@@ -101,6 +101,8 @@ struct h2_web_platform {
   bool pointer_installed;
   bool crypto_ready;
   bool touch_opened;
+  bool touch_transition, pointer_owned;
+  bool touch_overflow;
   uint64_t mic_generation;
   unsigned mic_calls;
   bool mic_starting;

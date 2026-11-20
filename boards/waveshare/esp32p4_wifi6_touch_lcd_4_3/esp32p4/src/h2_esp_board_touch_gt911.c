@@ -9,6 +9,7 @@
 #include "freertos/task.h"
 
 #include <stdbool.h>
+#include <stdatomic.h>
 
 static struct {
   esp_lcd_panel_io_handle_t io;
@@ -16,6 +17,8 @@ static struct {
   int32_t x, y;
   bool pressed;
 } s_touch;
+static atomic_flag lifecycle = ATOMIC_FLAG_INIT;
+static bool pointer_owned;
 
 static h2_pal_result_t touch_result(esp_err_t err) {
   if (err == ESP_OK) return H2_PAL_OK;
@@ -26,8 +29,7 @@ static h2_pal_result_t touch_result(esp_err_t err) {
   return H2_PAL_ERR_IO;
 }
 
-static h2_pal_result_t touch_open(void* user) {
-  (void)user;
+static h2_pal_result_t open_hardware(void) {
   if (s_touch.handle != NULL) return H2_PAL_OK;
   if (s_touch.io != NULL) {
     esp_err_t err = esp_lcd_panel_io_del(s_touch.io);
@@ -76,6 +78,29 @@ static h2_pal_result_t touch_open(void* user) {
   return H2_PAL_OK;
 }
 
+static h2_pal_result_t open_touch(bool* needs_close) {
+  const bool exclusive = needs_close != NULL;
+  if (exclusive) *needs_close = false;
+  if (atomic_flag_test_and_set(&lifecycle)) return H2_PAL_ERR_BUSY;
+  h2_pal_result_t rc = H2_PAL_ERR_BUSY;
+  if (!pointer_owned && !(exclusive && (s_touch.handle || s_touch.io))) {
+    rc = open_hardware();
+    /* Failed GT911 creation can leave the new panel I/O handle for retry. */
+    if (exclusive)
+      *needs_close = pointer_owned = (rc == H2_PAL_OK || s_touch.io != NULL);
+  }
+  atomic_flag_clear(&lifecycle);
+  return rc;
+}
+static h2_pal_result_t touch_open(void* user) {
+  (void)user;
+  return open_touch(NULL);
+}
+static h2_pal_result_t touch_open_pointer(void* user, bool* needs_close) {
+  (void)user;
+  return open_touch(needs_close);
+}
+
 static h2_pal_result_t touch_get_info(void* user, h2_pal_touch_info_t* out) {
   (void)user;
   if (out == NULL) return H2_PAL_ERR_INVALID_ARG;
@@ -117,8 +142,7 @@ static h2_pal_result_t touch_poll_event(void* user, h2_pal_touch_event_t* out) {
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t touch_close(void* user) {
-  (void)user;
+static h2_pal_result_t close_hardware(void) {
   if (s_touch.handle != NULL) {
     esp_err_t err = esp_lcd_touch_del(s_touch.handle);
     if (err != ESP_OK) return touch_result(err);
@@ -133,11 +157,33 @@ static h2_pal_result_t touch_close(void* user) {
   return H2_PAL_OK;
 }
 
+static h2_pal_result_t close_touch(bool exclusive) {
+  if (atomic_flag_test_and_set(&lifecycle)) return H2_PAL_ERR_BUSY;
+  h2_pal_result_t rc = H2_PAL_ERR_BUSY;
+  if (exclusive == pointer_owned) {
+    rc = close_hardware();
+    if (rc == H2_PAL_OK) pointer_owned = false;
+  }
+  atomic_flag_clear(&lifecycle);
+  return rc;
+}
+static h2_pal_result_t touch_close(void* user) {
+  (void)user;
+  return close_touch(false);
+}
+static h2_pal_result_t touch_close_pointer(void* user) {
+  (void)user;
+  return close_touch(true);
+}
+
 const h2_pal_touch_api_t* h2_esp_board_touch_api(void) {
-  static const h2_pal_touch_vtable_t ops = {.open = touch_open,
-                                            .get_info = touch_get_info,
-                                            .poll_event = touch_poll_event,
-                                            .close = touch_close};
+  static const h2_pal_touch_vtable_t ops = {
+      .open = touch_open,
+      .get_info = touch_get_info,
+      .poll_event = touch_poll_event,
+      .close = touch_close,
+      .open_pointer = touch_open_pointer,
+      .close_pointer = touch_close_pointer};
   static const h2_pal_touch_api_t api = {.vtable = &ops};
   return &api;
 }

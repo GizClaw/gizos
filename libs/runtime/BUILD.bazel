@@ -75,6 +75,12 @@ h2_tasks(
     ],
 )
 
+# Only needed by targets opting into Touch alongside mapped input devices.
+h2_tasks(
+    name = "touch_tasks",
+    tasks = ["$runtime/touch"],
+)
+
 cc_library(
     name = "runtime",
     srcs = RUNTIME_SRCS,

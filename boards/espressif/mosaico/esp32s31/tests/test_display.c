@@ -4,12 +4,18 @@
 #include "h2_mosaico_display.h"
 #include "h2_mosaico_display_test_sdk.h"
 #include <assert.h>
+#include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
 
 static uint16_t glass[480 * 480];
 static unsigned transfers, pixels_sent;
 static int held, draw_error;
+static atomic_uint lock_attempts;
+static unsigned touch_opens;
+static bool lock_times_out;
+static esp_err_t touch_open_error;
+static void (*while_touch_locked)(void);
 static bool fail_next_completion;
 static uint16_t touch_x, touch_y;
 static bool touch_down;
@@ -20,7 +26,9 @@ SemaphoreHandle_t xSemaphoreCreateMutexStatic(StaticSemaphore_t* storage) {
   return storage;
 }
 int xSemaphoreTake(SemaphoreHandle_t mutex, unsigned timeout) {
-  (void)timeout;
+  assert(timeout == pdMS_TO_TICKS(1000));
+  ++lock_attempts;
+  if (lock_times_out) return 0;
   assert(mutex && !held);
   held = 1;
   return pdTRUE;
@@ -85,11 +93,15 @@ esp_err_t esp_lcd_panel_draw_bitmap(esp_lcd_panel_handle_t panel, int x0,
 }
 esp_err_t bsp_touch_new(int rotation, esp_lcd_touch_handle_t* touch) {
   assert(rotation == 0);
+  ++touch_opens;
+  if (while_touch_locked) while_touch_locked();
+  if (touch_open_error != ESP_OK) return touch_open_error;
   *touch = &touch_x;
   return ESP_OK;
 }
 esp_err_t esp_lcd_touch_read_data(esp_lcd_touch_handle_t touch) {
   assert(touch == &touch_x);
+  if (while_touch_locked) while_touch_locked();
   return touch_error;
 }
 bool esp_lcd_touch_get_coordinates(esp_lcd_touch_handle_t touch, uint16_t* x,
@@ -151,6 +163,11 @@ static void test_partial_updates(void) {
 static void test_touch_reports(void) {
   const h2_pal_touch_api_t* touch = h2_mosaico_touch();
   assert(h2_pal_touch_open(touch) == 0);
+  const h2_pal_touch_api_t alias = *touch;
+  bool acquired = true;
+  assert(h2_pal_touch_open_pointer(&alias, &acquired) == H2_PAL_ERR_BUSY &&
+         !acquired);
+  assert(h2_pal_touch_close_pointer(&alias) == H2_PAL_ERR_BUSY);
   h2_pal_touch_event_t event;
   touch_down = true;
   touch_x = 100;
@@ -186,9 +203,82 @@ static void test_touch_reports(void) {
   touch_x = 480;
   assert(h2_pal_touch_poll_event(touch, &event) == H2_PAL_ERR_IO);
   assert(h2_pal_touch_close(touch) == 0);
+  assert(h2_pal_touch_open_pointer(touch, &acquired) == H2_PAL_OK && acquired);
+  assert(h2_pal_touch_open_pointer(&alias, &acquired) == H2_PAL_ERR_BUSY &&
+         !acquired);
+  assert(h2_pal_touch_open(&alias) == H2_PAL_ERR_BUSY);
+  assert(h2_pal_touch_close(&alias) == H2_PAL_ERR_BUSY);
+  touch_x = 12;
+  touch_y = 34;
+  h2_pal_touch_sample_t sample;
+  assert(h2_pal_touch_poll_pointer(touch, &sample) == 0 &&
+         sample.event.kind == H2_PAL_TOUCH_EVENT_DOWN);
+  touch_down = false;
+  assert(h2_pal_touch_poll_pointer(touch, &sample) == 0 &&
+         sample.event.kind == H2_PAL_TOUCH_EVENT_UP);
+  assert(h2_pal_touch_close_pointer(touch) == 0);
 }
+/* Called inside BSP open/read or after a failed close. Even with the I/O
+ * mutex unavailable, a contender must get BUSY without attempting it. */
+static void expect_touch_busy(void) {
+  const h2_pal_touch_api_t alias = *h2_mosaico_touch();
+  const unsigned before = lock_attempts;
+  bool needs_close = true;
+  assert(h2_pal_touch_open_pointer(&alias, &needs_close) == H2_PAL_ERR_BUSY);
+  assert(!needs_close);
+  assert(h2_pal_touch_open(&alias) == H2_PAL_ERR_BUSY);
+  assert(h2_pal_touch_close(&alias) == H2_PAL_ERR_BUSY);
+  assert(lock_attempts == before);
+}
+
+static void test_touch_admission(void) {
+  const h2_pal_touch_api_t* touch = h2_mosaico_touch();
+  const unsigned opens_before = touch_opens;
+  bool needs_close = true;
+  lock_times_out = true;
+  assert(h2_pal_touch_open_pointer(touch, &needs_close) == H2_PAL_ERR_TIMEOUT);
+  assert(!needs_close && touch_opens == opens_before);
+  lock_times_out = false;
+
+  while_touch_locked = expect_touch_busy;
+  touch_open_error = ESP_ERR_TIMEOUT;
+  assert(h2_pal_touch_open_pointer(touch, &needs_close) == H2_PAL_ERR_TIMEOUT);
+  assert(!needs_close);
+  touch_open_error = ESP_OK;
+  assert(h2_pal_touch_open(touch) == H2_PAL_OK);
+  assert(h2_pal_touch_open(touch) == H2_PAL_OK);
+  assert(touch_opens == opens_before + 2u);
+  assert(h2_pal_touch_close(touch) == H2_PAL_OK);
+
+  assert(h2_pal_touch_open_pointer(touch, &needs_close) == H2_PAL_OK &&
+         needs_close);
+  h2_pal_touch_sample_t sample;
+  touch_error = ESP_OK;
+  touch_down = true;
+  touch_x = 27;
+  touch_y = 38;
+  assert(h2_pal_touch_poll_pointer(touch, &sample) == H2_PAL_OK);
+  assert(sample.event.kind == H2_PAL_TOUCH_EVENT_DOWN && sample.event.x == 27 &&
+         sample.event.y == 38);
+  touch_down = false;
+  assert(h2_pal_touch_poll_pointer(touch, &sample) == H2_PAL_OK);
+  assert(sample.event.kind == H2_PAL_TOUCH_EVENT_UP);
+  while_touch_locked = NULL;
+
+  lock_times_out = true;
+  assert(h2_pal_touch_close_pointer(touch) == H2_PAL_ERR_TIMEOUT);
+  expect_touch_busy();
+  lock_times_out = false;
+  assert(h2_pal_touch_close_pointer(touch) == H2_PAL_OK);
+  assert(h2_pal_touch_open_pointer(touch, &needs_close) == H2_PAL_OK &&
+         needs_close);
+  assert(touch_opens == opens_before + 4u);
+  assert(h2_pal_touch_close_pointer(touch) == H2_PAL_OK);
+}
+
 int main(void) {
   assert(h2_mosaico_display_init() == 0);
+  test_touch_admission();
   test_partial_updates();
   test_touch_reports();
   assert(h2_mosaico_display_deinit() == 0);

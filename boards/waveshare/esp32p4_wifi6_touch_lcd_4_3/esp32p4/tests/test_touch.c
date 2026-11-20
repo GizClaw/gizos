@@ -109,14 +109,20 @@ int main(void) {
   create_io_result = ESP_OK;
   create_touch_result = ESP_ERR_TIMEOUT;
   delete_io_result = ESP_FAIL;
-  assert(h2_pal_touch_open(api) == H2_PAL_ERR_TIMEOUT);
-  assert(h2_pal_touch_close(api) == H2_PAL_ERR_IO);
+  bool needs_close = false;
+  assert(h2_pal_touch_open_pointer(api, &needs_close) == H2_PAL_ERR_TIMEOUT &&
+         needs_close);
+  bool other = true;
+  assert(h2_pal_touch_open_pointer(api, &other) == H2_PAL_ERR_BUSY && !other);
+  assert(h2_pal_touch_close(api) == H2_PAL_ERR_BUSY);
+  assert(h2_pal_touch_close_pointer(api) == H2_PAL_ERR_IO);
   delete_io_result = ESP_OK;
-  assert(h2_pal_touch_close(api) == 0);
+  assert(h2_pal_touch_close_pointer(api) == 0);
   assert(io_creates == io_deletes);
   create_touch_result = ESP_OK;
   assert(h2_pal_touch_open(api) == 0);
   assert(h2_pal_touch_open(api) == 0 && touch_creates == 1);
+  assert(h2_pal_touch_open_pointer(api, &other) == H2_PAL_ERR_BUSY && !other);
   assert(h2_pal_touch_get_info(api, &info) == 0);
   assert(info.width == 480 && info.height == 800);
   assert(h2_pal_touch_poll_event(api, &event) == H2_PAL_ERR_WOULD_BLOCK);

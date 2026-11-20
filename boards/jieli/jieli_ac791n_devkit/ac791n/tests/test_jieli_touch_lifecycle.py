@@ -20,6 +20,7 @@ class TouchLifecycleTest(unittest.TestCase):
 #include "hal/h2_pal_touch.h"
 typedef struct { void *iic; int open, down; uint16_t x,y; } h2_touch_state_t;
 enum { H2_TOUCH_INT_PIN=4, H2_FT6236_CHIP_ID=0xa3 };
+static bool pointer_owned;
 static int fail_write, writes, opens, closes;
 static void gpio_set_direction(int p,int v) {(void)p;(void)v;}
 static void gpio_set_pull_up(int p,int v) {(void)p;(void)v;}

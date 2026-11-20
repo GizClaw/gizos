@@ -71,6 +71,7 @@ static h2_display_state_t display_state;
 static h2_touch_state_t touch_state;
 static uint32_t adkey_initialized;
 static uint32_t display_operation;
+static bool pointer_owned;
 static uint32_t touch_operation;
 static bool touch_multi_enabled;
 
@@ -421,6 +422,7 @@ static int touch_read_register(uint8_t reg, uint8_t* value) {
 static h2_pal_result_t touch_open_impl(void* user) {
   h2_touch_state_t* state = user;
   uint8_t chip_id = 0u;
+  if (pointer_owned) return H2_PAL_ERR_BUSY;
   if (state->open) return H2_PAL_OK;
   gpio_set_direction(H2_TOUCH_INT_PIN, 1);
   gpio_set_pull_up(H2_TOUCH_INT_PIN, 1);
@@ -553,12 +555,18 @@ static void touch_apply(h2_touch_state_t* state,
 static void touch_apply_report(h2_touch_state_t* state,
                                const uint8_t report[H2_FT6236_REPORT_SIZE]) {
   unsigned count = report[0] & 0x0fu;
-  if (!touch_multi_enabled) {
+  if (!touch_multi_enabled && !pointer_owned) {
     touch_apply_single(state, report, count);
     return;
   }
   if (state->require_clear) {
-    if (count == 0) state->require_clear = false;
+    if (count == 0) {
+      state->require_clear = false;
+      if (pointer_owned)
+        state->pending[state->pending_count++] =
+            (h2_pal_touch_event_t){.kind = H2_PAL_TOUCH_EVENT_CANCEL,
+                                   .pointer_id = H2_PAL_TOUCH_ALL_POINTERS};
+    }
     return;
   }
   h2_touch_contact_t contacts[H2_FT6236_POINTS];
@@ -585,11 +593,20 @@ static h2_pal_result_t touch_poll_event_impl(void* user,
   if (state->pending_at == state->pending_count) {
     state->pending_at = state->pending_count = 0;
     uint8_t report[H2_FT6236_REPORT_SIZE];
-    size_t size =
-        touch_multi_enabled ? sizeof(report) : H2_FT6236_FIRST_POINT_SIZE;
+    size_t size = (touch_multi_enabled || pointer_owned)
+                      ? sizeof(report)
+                      : H2_FT6236_FIRST_POINT_SIZE;
     /* Read status and all selected point records in one transaction. */
-    if (touch_read_registers(H2_FT6236_FINGERS, report, size) != 0)
+    if (touch_read_registers(H2_FT6236_FINGERS, report, size) != 0) {
+      /* After an incomplete snapshot, a reused hardware ID could belong to
+       * either finger. Re-arm the exclusive stream on a clean zero-contact
+       * report. That all-contact boundary also reaches the Runtime reader. */
+      if (pointer_owned) {
+        state->require_clear = true;
+        state->held_count = 0;
+      }
       return H2_PAL_ERR_IO;
+    }
     touch_apply_report(state, report);
     if (!state->pending_count) return H2_PAL_ERR_WOULD_BLOCK;
   }
@@ -599,6 +616,7 @@ static h2_pal_result_t touch_poll_event_impl(void* user,
 
 static h2_pal_result_t touch_close_impl(void* user) {
   h2_touch_state_t* state = user;
+  if (pointer_owned) return H2_PAL_ERR_BUSY;
   int result = state->iic == NULL ? 0 : dev_close(state->iic);
   *state = (h2_touch_state_t){0};
   return result == 0 ? H2_PAL_OK : H2_PAL_ERR_IO;
@@ -613,25 +631,45 @@ INPUT_OPERATION(touch_poll_event, h2_pal_result_t, touch_operation,
 INPUT_OPERATION(touch_close, h2_pal_result_t, touch_operation, (void* user),
                 (user))
 
+static h2_pal_result_t touch_open_pointer_impl(void* user, bool* needs_close) {
+  *needs_close = false;
+  if (((h2_touch_state_t*)user)->open) return H2_PAL_ERR_BUSY;
+  const h2_pal_result_t rc = touch_open_impl(user);
+  if (rc == H2_PAL_OK) pointer_owned = true;
+  return rc;
+}
+static h2_pal_result_t touch_close_pointer_impl(void* user) {
+  if (!pointer_owned) return H2_PAL_ERR_BUSY;
+  pointer_owned = false;
+  const h2_pal_result_t rc = touch_close_impl(user);
+  if (rc != H2_PAL_OK) pointer_owned = true;
+  return rc;
+}
+INPUT_OPERATION(touch_open_pointer, h2_pal_result_t, touch_operation,
+                (void* user, bool* needs_close), (user, needs_close))
+INPUT_OPERATION(touch_close_pointer, h2_pal_result_t, touch_operation,
+                (void* user), (user))
+
 h2_pal_result_t h2_jieli_ac791n_devkit_enable_multi_touch(void) {
   uint32_t expected = 0u;
   if (!h2_jieli_atomic_cas_u32(&touch_operation, &expected, 1u))
     return H2_PAL_ERR_BUSY;
   h2_pal_result_t result = H2_PAL_ERR_INVALID_STATE;
-  if (!touch_state.open) {
+  if (!touch_state.open && !pointer_owned) {
     touch_multi_enabled = true;
     result = H2_PAL_OK;
   }
   h2_jieli_atomic_store_u32(&touch_operation, 0u);
   return result;
 }
-
 const h2_pal_touch_api_t* h2_jieli_ac791n_devkit_touch_api(void) {
   static const h2_pal_touch_vtable_t vtable = {
       .open = touch_open,
       .get_info = touch_get_info,
       .poll_event = touch_poll_event,
       .close = touch_close,
+      .open_pointer = touch_open_pointer,
+      .close_pointer = touch_close_pointer,
   };
   static const h2_pal_touch_api_t api = {.user = &touch_state,
                                          .vtable = &vtable};

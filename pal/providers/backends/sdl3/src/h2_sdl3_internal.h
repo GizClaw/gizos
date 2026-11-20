@@ -40,17 +40,21 @@ struct h2_sdl3 {
   std::array<h2_sdl3_event_t, H2_SDL3_EVENT_QUEUE_CAPACITY> events = {};
   size_t event_head = 0u;
   size_t event_count = 0u;
-  std::array<h2_pal_touch_event_t, H2_SDL3_TOUCH_QUEUE_CAPACITY> touches = {};
+  std::array<h2_pal_touch_sample_t, H2_SDL3_TOUCH_QUEUE_CAPACITY> touches = {};
   size_t touch_head = 0u;
   size_t touch_count = 0u;
+  bool touch_overflow = false;
+  SDL_MouseID pointer_device = 0;
+  Uint64 pointer_open_ns = 0;
+  SDL_WindowID pointer_fenced_window = 0;
+  bool pointer_opening = false;
+  bool pointer_owned = false;
   size_t touch_open_count = 0u;
   h2_pal_display_t display = {};
   h2_pal_touch_api_t touch = {};
 };
 
 void h2_sdl3_enqueue_event(h2_sdl3_t* provider, const h2_sdl3_event_t& event);
-void h2_sdl3_enqueue_touch(h2_sdl3_t* provider,
-                           const h2_pal_touch_event_t& event);
 void h2_sdl3_init_touch(h2_sdl3_t* provider);
 void h2_sdl3_pump(h2_sdl3_t* provider);
 void h2_sdl3_cleanup_display(h2_sdl3_t* provider);

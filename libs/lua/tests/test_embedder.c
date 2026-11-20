@@ -347,8 +347,10 @@ static h2_pal_result_t touch_poll(void* user, h2_pal_touch_event_t* out) {
   (void)out;
   return H2_PAL_ERR_WOULD_BLOCK;
 }
-static const h2_pal_touch_vtable_t touch_vtable = {touch_open, touch_info,
-                                                   touch_poll, touch_open};
+static const h2_pal_touch_vtable_t touch_vtable = {.open = touch_open,
+                                                   .get_info = touch_info,
+                                                   .poll_event = touch_poll,
+                                                   .close = touch_open};
 static const h2_pal_touch_api_t touch_api = {.vtable = &touch_vtable};
 static const h2_pal_periph_single_button_payload_t button_payload = {
     .delivery = H2_PAL_BUTTON_DELIVERY_PUSH_EDGE};

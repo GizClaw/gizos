@@ -3,6 +3,7 @@
 
 #define H2_RUNTIME_INPUT_TASK_NAME_VALUE "$runtime/input"
 #define H2_RUNTIME_NFC_TASK_NAME_VALUE "$runtime/nfc"
+#define H2_RUNTIME_TOUCH_TASK_NAME_VALUE "$runtime/touch"
 
 #ifdef __cplusplus
 extern "C" {

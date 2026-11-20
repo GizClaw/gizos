@@ -114,10 +114,8 @@ static bool fruit_slice_is_paused(void *user) {
   h2_ios_audio_t *audio = NULL;
   h2_pal_result_t audio_rc = h2_ios_audio_create(&audio);
   if (audio_rc != H2_PAL_OK) NSLog(@"Fruit Slice: optional audio unavailable (%d)", audio_rc);
-  h2_fruit_slice_pointer_t pointer;
-  rc = h2_fruit_slice_pointer_init(&pointer, 480, 800, h2_ios_platform_read_pointer, platform);
   h2_runtime_t *runtime = NULL;
-  if (rc == H2_PAL_OK) {
+  {
     h2_runtime_config_t cfg = h2_fruit_slice_native_defaults();
     cfg.board = "ios";
     cfg.target = "fruit_slice";
@@ -132,7 +130,7 @@ static bool fruit_slice_is_paused(void *user) {
     cfg.log = h2_ios_platform_log_api();
     cfg.system_event = h2_ios_system_event_api();
     cfg.display = h2_ios_platform_display_api(platform);
-    cfg.touch = h2_fruit_slice_pointer_touch(&pointer);
+    cfg.touch = h2_ios_platform_touch_api(platform);
     if (audio) cfg.audio = h2_ios_audio_api(audio);
     cfg.fs = h2_ios_storage_fs_api(storage);
     cfg.pref = h2_ios_storage_pref_api(storage);
@@ -148,8 +146,7 @@ static bool fruit_slice_is_paused(void *user) {
   }
   if (rc != H2_PAL_OK) NSLog(@"Fruit Slice: game failed (%d)", rc);
 
-  /* A failed join retains Runtime borrows. Keep the pointer adapter, flags,
-   * storage and platform alive and retry on this worker, never on UIKit. */
+  /* Keep lifecycle flags, storage and platform alive through a failed join. */
   while (runtime) {
     h2_pal_result_t cleanup = h2_runtime_destroy(&runtime);
     if (cleanup != H2_PAL_OK) NSLog(@"Fruit Slice: Runtime cleanup (%d)", cleanup);

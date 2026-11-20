@@ -8,6 +8,10 @@
 #include <time.h>
 
 static pthread_mutex_t critical = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t start_gate = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t gate_changed = PTHREAD_COND_INITIALIZER;
+static bool pause_open, open_paused;
+static unsigned geometry_calls;
 static gpio_isr_t interrupt_callback;
 static bool irq_enabled, bus_live, task_live, no_sensor, read_complete_pending;
 static bool interrupt_input, input_settled;
@@ -248,6 +252,15 @@ const h2_pal_task_api_t* h2_bk7258_board_task_api(void) {
 }
 static int display_info(void* user, h2_display_info_t* info) {
   (void)user;
+  assert(pthread_mutex_lock(&start_gate) == 0);
+  ++geometry_calls;
+  if (pause_open && !open_paused) {
+    open_paused = true;
+    assert(pthread_cond_broadcast(&gate_changed) == 0);
+    while (pause_open)
+      assert(pthread_cond_wait(&gate_changed, &start_gate) == 0);
+  }
+  assert(pthread_mutex_unlock(&start_gate) == 0);
   *info = (h2_display_info_t){.width = display_width, .height = display_height};
   return H2_PAL_OK;
 }
@@ -290,6 +303,41 @@ static void clean(void) {
   assert(h2_pal_touch_close(touch) == H2_PAL_OK);
   assert(!bus_live && !task_live && interrupt_callback == NULL);
 }
+static void* open_first(void* unused) {
+  (void)unused;
+  bool owed = false;
+  assert(h2_pal_touch_open_pointer(touch, &owed) == H2_PAL_OK && owed);
+  return NULL;
+}
+static void test_open_reservation(void) {
+  const h2_pal_touch_api_t alias = *touch;
+  const unsigned before = geometry_calls;
+  pause_open = true;
+  pthread_t first;
+  assert(pthread_create(&first, NULL, open_first, NULL) == 0);
+  assert(pthread_mutex_lock(&start_gate) == 0);
+  while (!open_paused)
+    assert(pthread_cond_wait(&gate_changed, &start_gate) == 0);
+  assert(pthread_mutex_unlock(&start_gate) == 0);
+  bool owed = true;
+  assert(h2_pal_touch_open_pointer(&alias, &owed) == H2_PAL_ERR_BUSY && !owed);
+  assert(h2_pal_touch_open(&alias) == H2_PAL_ERR_BUSY);
+  assert(h2_pal_touch_close(&alias) == H2_PAL_ERR_BUSY);
+  assert(geometry_calls == before + 1u && !bus_live && !task_live);
+  assert(pthread_mutex_lock(&start_gate) == 0);
+  pause_open = false;
+  assert(pthread_cond_broadcast(&gate_changed) == 0);
+  assert(pthread_mutex_unlock(&start_gate) == 0);
+  assert(pthread_join(first, NULL) == 0);
+  assert(h2_pal_touch_close(&alias) == H2_PAL_ERR_BUSY);
+  emit(TP_EVENT_TYPE_DOWN, 0, 7, 9);
+  emit(TP_EVENT_TYPE_UP, 0, 7, 9);
+  expect(H2_PAL_TOUCH_EVENT_DOWN, 7, 9);
+  expect(H2_PAL_TOUCH_EVENT_UP, 7, 9);
+  assert(h2_pal_touch_close_pointer(touch) == H2_PAL_OK && !task_live &&
+         !bus_live);
+}
+
 static void coordinate_range_tests(void) {
   const struct {
     uint16_t width, height, source_width, source_height;
@@ -388,6 +436,7 @@ static void coordinate_range_tests(void) {
 
 int main(void) {
   touch = h2_bk7258_board_touch_api();
+  test_open_reservation();
   h2_pal_touch_info_t info;
   h2_pal_touch_event_t event;
   assert(h2_pal_touch_poll_event(touch, &event) == H2_PAL_ERR_INVALID_STATE);
@@ -447,6 +496,19 @@ int main(void) {
   assert(!bus_live && !task_live && interrupt_callback == NULL);
   fail_enable = 0;
 
+  /* Failed rollback transfers only the caller's own partial session. */
+  fail_enable = fail_join = 1;
+  bool owes_close = false;
+  assert(h2_pal_touch_open_pointer(touch, &owes_close) == H2_PAL_ERR_IO);
+  assert(owes_close && task_live && bus_live);
+  bool foreign = true;
+  assert(h2_pal_touch_open_pointer(touch, &foreign) == H2_PAL_ERR_BUSY &&
+         !foreign);
+  fail_enable = fail_join = 0;
+  assert(h2_pal_touch_close(touch) == H2_PAL_ERR_BUSY);
+  assert(h2_pal_touch_close_pointer(touch) == H2_PAL_OK);
+  assert(!bus_live && !task_live && !interrupt_callback);
+
   assert(h2_pal_touch_open(touch) == H2_PAL_OK);
   fail_join = 1;
   int closes_before = bus_closes;
@@ -475,13 +537,26 @@ int main(void) {
   assert(h2_pal_touch_poll_event(touch, &event) == H2_PAL_ERR_IO);
   clean();
 
-  assert(h2_pal_touch_open(touch) == H2_PAL_OK);
+  assert(h2_pal_touch_open_pointer(touch, &owes_close) == H2_PAL_OK &&
+         owes_close);
+  h2_pal_touch_sample_t sample;
+  /* The initial level can be a MOVE from a contact held over the reopen. */
+  emit(TP_EVENT_TYPE_MOVE, 0, 4, 5);
+  emit(TP_EVENT_TYPE_UP, 0, 4, 5);
+  assert(h2_pal_touch_poll_pointer(touch, &sample) == H2_PAL_OK);
+  assert(sample.event.kind == H2_PAL_TOUCH_EVENT_DOWN && sample.fresh_down &&
+         !sample.down_after_open);
+  assert(!sample.needs_reopen && sample.event.x == 4 && sample.event.y == 5);
+  assert(h2_pal_touch_poll_pointer(touch, &sample) == H2_PAL_OK);
+  assert(sample.event.kind == H2_PAL_TOUCH_EVENT_UP && !sample.fresh_down);
   for (unsigned i = 0; i < 17; ++i) {
     emit(TP_EVENT_TYPE_DOWN, 0, 10, 10);
     emit(TP_EVENT_TYPE_UP, 0, 10, 10);
   }
   assert(h2_pal_touch_poll_event(touch, &event) == H2_PAL_ERR_FULL);
-  clean();
+  assert(h2_pal_touch_poll_pointer(touch, &sample) == H2_PAL_ERR_FULL &&
+         sample.needs_reopen);
+  assert(h2_pal_touch_close_pointer(touch) == H2_PAL_OK);
   assert(starts == joins);
   return 0;
 }

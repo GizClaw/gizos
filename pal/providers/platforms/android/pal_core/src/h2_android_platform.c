@@ -676,18 +676,29 @@ static int android_display_close(void* user) {
   return H2_DISPLAY_OK;
 }
 
-static int android_touch_open(void* user) {
+static int open_touch(void* user, bool exclusive) {
   h2_android_platform_t* host = user;
   if (!host) return H2_PAL_ERR_INVALID_ARG;
   pthread_mutex_lock(&host->mutex);
+  if (host->touch_state.opened &&
+      (exclusive || host->touch_state.pointer_owned)) {
+    pthread_mutex_unlock(&host->mutex);
+    return H2_PAL_ERR_BUSY;
+  }
   if (!host->touch_state.opened) {
-    host->touch_state = (h2_android_touch_state_t){.opened = true};
+    host->touch_state =
+        (h2_android_touch_state_t){.opened = true, .pointer_owned = exclusive};
     (void)h2_android_touch_capture(&host->touch_state, host->width,
                                    host->height, host->pointer_x,
                                    host->pointer_y, host->pointer_pressed != 0);
   }
   pthread_mutex_unlock(&host->mutex);
   return H2_PAL_OK;
+}
+static int android_touch_open(void* user) { return open_touch(user, false); }
+static int android_touch_open_pointer(void* user, bool* needs_close) {
+  *needs_close = false;
+  return open_touch(user, true);
 }
 static int android_touch_info(void* user, h2_pal_touch_info_t* out) {
   h2_android_platform_t* host = user;
@@ -698,27 +709,50 @@ static int android_touch_info(void* user, h2_pal_touch_info_t* out) {
   pthread_mutex_unlock(&host->mutex);
   return rc;
 }
-static int android_touch_poll(void* user, h2_pal_touch_event_t* out) {
+static int read_touch(void* user, h2_pal_touch_event_t* out, bool loss_aware) {
   h2_android_platform_t* host = user;
   if (!host || !out) return H2_PAL_ERR_INVALID_ARG;
   pthread_mutex_lock(&host->mutex);
-  int rc = h2_android_touch_poll(&host->touch_state, out);
+  const bool lost = host->touch_state.lost_move;
+  host->touch_state.lost_move = false;
+  int rc = loss_aware && lost ? H2_PAL_ERR_FULL
+                              : h2_android_touch_poll(&host->touch_state, out);
   pthread_mutex_unlock(&host->mutex);
+  if (!loss_aware && rc == H2_PAL_OK && out->kind == H2_PAL_TOUCH_EVENT_CANCEL)
+    out->kind = H2_PAL_TOUCH_EVENT_UP;
   return rc;
 }
-static int android_touch_close(void* user) {
+static int android_touch_poll(void* user, h2_pal_touch_event_t* out) {
+  return read_touch(user, out, false);
+}
+static int android_touch_pointer(void* user, h2_pal_touch_sample_t* sample) {
+  /* A recovered Android snapshot can begin with a still-held contact. */
+  return read_touch(user, &sample->event, true);
+}
+static int close_touch(void* user, bool exclusive) {
   h2_android_platform_t* host = user;
   if (!host) return H2_PAL_ERR_INVALID_ARG;
   pthread_mutex_lock(&host->mutex);
-  host->touch_state = (h2_android_touch_state_t){0};
+  const int rc =
+      host->touch_state.opened && host->touch_state.pointer_owned != exclusive
+          ? H2_PAL_ERR_BUSY
+          : H2_PAL_OK;
+  if (rc == H2_PAL_OK) host->touch_state = (h2_android_touch_state_t){0};
   pthread_mutex_unlock(&host->mutex);
-  return H2_PAL_OK;
+  return rc;
+}
+static int android_touch_close(void* user) { return close_touch(user, false); }
+static int android_touch_close_pointer(void* user) {
+  return close_touch(user, true);
 }
 static const h2_pal_touch_vtable_t s_android_touch_vtable = {
     .open = android_touch_open,
     .get_info = android_touch_info,
     .poll_event = android_touch_poll,
-    .close = android_touch_close};
+    .close = android_touch_close,
+    .poll_pointer = android_touch_pointer,
+    .open_pointer = android_touch_open_pointer,
+    .close_pointer = android_touch_close_pointer};
 
 static const h2_pal_display_vtable_t s_android_display_vtable = {
     .open = android_display_open,
@@ -797,6 +831,14 @@ void h2_android_platform_destroy(h2_android_platform_t* host) {
   }
   (void)pthread_mutex_destroy(&host->mutex);
   free(host);
+}
+
+void h2_android_platform_cancel_pointer(h2_android_platform_t* host) {
+  if (!host) return;
+  pthread_mutex_lock(&host->mutex);
+  host->pointer_pressed = 0;
+  h2_android_touch_cancel(&host->touch_state);
+  pthread_mutex_unlock(&host->mutex);
 }
 
 void h2_android_platform_update_pointer(h2_android_platform_t* host, int32_t x,

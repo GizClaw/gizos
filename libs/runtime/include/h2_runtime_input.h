@@ -34,8 +34,9 @@ typedef struct h2_runtime_input_poll_config {
 /**
  * Start Runtime-owned input acquisition.
  *
- * `h2_runtime_init()` does not start the poller. The caller that owns the
- * Runtime lifecycle starts it explicitly once component validation has
+ * Serialize switch operations and Test Control lifecycle with the Runtime's
+ * owner. `h2_runtime_init()` does not start the poller. The caller that owns
+ * the Runtime lifecycle starts it explicitly once component validation has
  * passed, and uses the same entry point to resume after
  * `h2_runtime_input_stop()`. A Runtime whose poller is never started delivers
  * no Button, NFC, IMU or sensor event.
@@ -57,20 +58,44 @@ typedef struct h2_runtime_input_poll_config {
  *         a test-control session is open, or when a previous worker fault has
  *         closed the Runtime event queue; a faulted Runtime is terminal and
  *         only `h2_runtime_deinit()` plus a fresh `h2_runtime_init()` recovers
- *         it. Any other PAL result comes from the failing PAL operation, and
- *         leaves acquisition stopped.
+ *         it. Start returns the original failing operation's result. A rollback
+ *         failure retains resources. Retry stop or destroy before release.
  */
 h2_pal_result_t h2_runtime_input_start(
     h2_runtime_t* runtime, const h2_runtime_input_poll_config_t* config);
 
+/** Start the same poller with exclusive acquisition of singleton Touch.
+ * interval_ms must be nonzero. Open any display supplying its geometry first.
+ * The injected provider must implement exclusive pointer open and close.
+ * An unsupported provider causes startup to return H2_PAL_ERR_UNSUPPORTED.
+ * Touch-only targets use $runtime/input. Targets with mapped inputs also
+ * declare
+ * //libs/runtime:touch_tasks for the independent $runtime/touch reader.
+ * H2_RUNTIME_EVENT_TOUCH_POINTER projects one stroke at a time, from its
+ * first DOWN through the same contact's UP or CANCEL. Other contacts cannot
+ * move or release it. Each edge carries the source ID and viewport geometry.
+ * Device errors and refused edges cancel the stroke. Acquisition resumes at
+ * its release, an all-contact cancellation or a verified fresh DOWN. After a
+ * reopen the provider must verify that the press began after acquisition.
+ * Opening the provider and obtaining its geometry are startup checks. Stop
+ * and errors otherwise follow h2_runtime_input_start(). */
+h2_pal_result_t h2_runtime_input_start_with_touch(
+    h2_runtime_t* runtime, const h2_runtime_input_poll_config_t* config,
+    uint32_t interval_ms);
+
 /**
  * Stop Runtime-owned input acquisition.
  *
- * Requests the input and NFC tasks to stop and joins them. That is all it
- * does: component state is untouched, so `h2_runtime_component_state_*()`
- * keeps returning the last published snapshot with its own `updated_at_ms`,
- * which is still the most recent observation the Runtime actually made.
- * Queued push edges are kept and delivered by a later start.
+ * Requests acquisition tasks to stop and joins them, then closes opted-in
+ * Touch. Consumers cancel any held pointer on stop. A subsequent start
+ * discards undelivered pointer events from the old session and isolates a
+ * contact still held across stop. A verified post-open press starts its own
+ * stroke immediately. A snapshot source may need an ambiguous first tap to
+ * supply a release boundary. Other component state is untouched, so
+ * `h2_runtime_component_state_*()` keeps returning the last published snapshot
+ * with its own `updated_at_ms`, which is still the most recent observation the
+ * Runtime actually made. Queued push edges are kept and delivered by a later
+ * start.
  *
  * Because state is not reset, a button released while the poller was off is
  * observed only by the next start's first frame, which then reports a
@@ -161,6 +186,13 @@ typedef struct h2_runtime_input_status {
   /** State publications deferred because readers pinned every slot. */
   uint32_t snapshot_deferred_count;
 } h2_runtime_input_status_t;
+
+/** Read the count of Touch read/recovery failures over this Runtime's
+ * lifetime and the last observed error (initially OK). Outputs are mandatory
+ * and copied together. Safe before first start and after stop. */
+h2_pal_result_t h2_runtime_input_touch_errors(h2_runtime_t* runtime,
+                                              uint32_t* out_count,
+                                              h2_pal_result_t* out_last_error);
 
 /**
  * Read the health of Runtime-owned input acquisition.

@@ -1254,21 +1254,30 @@ static void input_writer_mutex_destroy(h2_runtime_t* runtime) {
   }
 }
 
-/* Health is only written by the input workers, which exist only after the
- * mutexes were created; without a mutex nothing writes it. */
+/* Mapped producers get their mutex at init. A Touch-only Runtime acquires
+ * it once at first start. Status may run concurrently with that start. */
+static h2_pal_result_t prepare_health_mutex(h2_runtime_t* runtime) {
+  h2_runtime_private_t* state = runtime->private_state;
+  if (h2_atomic_load(&state->input_health_ready)) return H2_PAL_OK;
+  const h2_pal_mutex_config_t config = {.name = "h2-runtime-input-health",
+                                        .allocator = runtime->mem};
+  h2_pal_result_t rc =
+      h2_pal_mutex_create(runtime->sync, &config, &state->input_health_mutex);
+  if (rc == H2_PAL_OK)
+    h2_atomic_store(&state->input_health_ready, 1);
+  else
+    state->input_health_mutex = NULL;
+  return rc;
+}
+
 static h2_pal_result_t input_health_lock(h2_runtime_t* runtime) {
-  if (runtime->private_state->input_health_mutex == NULL) {
-    return H2_PAL_OK;
-  }
   return h2_pal_mutex_lock(runtime->sync,
                            runtime->private_state->input_health_mutex);
 }
 
 static void input_health_unlock(h2_runtime_t* runtime) {
-  if (runtime->private_state->input_health_mutex != NULL) {
-    (void)h2_pal_mutex_unlock(runtime->sync,
-                              runtime->private_state->input_health_mutex);
-  }
+  (void)h2_pal_mutex_unlock(runtime->sync,
+                            runtime->private_state->input_health_mutex);
 }
 
 static h2_pal_result_t input_poll_once_locked(h2_runtime_t* runtime,
@@ -1531,7 +1540,8 @@ static void input_worker_fault(h2_runtime_t* runtime, h2_pal_result_t rc,
   uint32_t released = 0u;
   const h2_pal_result_t lock_rc = input_writer_lock(runtime);
   if (lock_rc == H2_PAL_OK) {
-    released = release_held_buttons_locked(runtime);
+    if (runtime->private_state->input_source_count)
+      released = release_held_buttons_locked(runtime);
     (void)input_writer_unlock(runtime);
   }
   h2_runtime_timestamp_ms_t now_ms = 0u;
@@ -1557,6 +1567,7 @@ static void input_worker_fault(h2_runtime_t* runtime, h2_pal_result_t rc,
   h2_atomic_store(&runtime->private_state->input_phase,
                   H2_RUNTIME_INPUT_PHASE_FAULTED);
   (void)h2_pal_queue_close(runtime->queue, runtime->private_state->event_queue);
+  h2_runtime_notify_internal(runtime);
 }
 
 static uint32_t input_backoff_ms(const h2_runtime_t* runtime,
@@ -1605,6 +1616,14 @@ h2_pal_result_t h2_runtime_input_status(h2_runtime_t* runtime,
     return H2_PAL_ERR_INVALID_ARG;
   }
   h2_runtime_private_t* state = runtime->private_state;
+  if (!h2_atomic_load(&state->input_health_ready)) {
+    /* Acquisition has not published its health mutex. Read only atomics. */
+    *out_status = (h2_runtime_input_status_t){
+        .phase = (h2_runtime_input_phase_t)h2_atomic_load(&state->input_phase),
+        .worker_result = h2_atomic_load(&state->input_worker_result),
+    };
+    return H2_PAL_OK;
+  }
   const h2_pal_result_t rc = input_health_lock(runtime);
   if (rc != H2_PAL_OK) {
     return rc;
@@ -1621,6 +1640,25 @@ h2_pal_result_t h2_runtime_input_status(h2_runtime_t* runtime,
       .last_poll_ok_at_ms = state->input_last_poll_ok_at_ms,
       .snapshot_deferred_count = state->input_snapshot_deferred_count,
   };
+  input_health_unlock(runtime);
+  return H2_PAL_OK;
+}
+
+h2_pal_result_t h2_runtime_input_touch_errors(h2_runtime_t* runtime,
+                                              uint32_t* out_count,
+                                              h2_pal_result_t* out_last_error) {
+  if (!h2_runtime_ready(runtime) || !out_count || !out_last_error)
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_runtime_private_t* state = runtime->private_state;
+  if (!h2_atomic_load(&state->input_health_ready)) {
+    *out_count = 0;
+    *out_last_error = H2_PAL_OK;
+    return H2_PAL_OK;
+  }
+  const int rc = input_health_lock(runtime);
+  if (rc != H2_PAL_OK) return rc;
+  *out_count = state->touch_error_count;
+  *out_last_error = state->last_touch_error;
   input_health_unlock(runtime);
   return H2_PAL_OK;
 }
@@ -1695,25 +1733,211 @@ static void input_nfc_task_entry(void* ctx) {
   }
 }
 
+static h2_pal_result_t touch_open(h2_runtime_t* runtime) {
+  h2_runtime_private_t* state = runtime->private_state;
+  h2_pal_result_t rc =
+      h2_pal_touch_open_pointer(runtime->touch, &state->touch_open);
+  if (rc == H2_PAL_OK)
+    rc = h2_pal_touch_get_info(runtime->touch, &state->touch_info);
+  return rc;
+}
+
+static h2_pal_result_t touch_close(h2_runtime_t* runtime) {
+  h2_runtime_private_t* state = runtime->private_state;
+  if (!state->touch_open) return H2_PAL_OK;
+  const h2_pal_result_t rc = h2_pal_touch_close_pointer(runtime->touch);
+  if (rc == H2_PAL_OK) state->touch_open = false;
+  return rc;
+}
+
+static h2_pal_result_t send_pointer(h2_runtime_t* runtime,
+                                    h2_runtime_pointer_phase_t phase, int32_t x,
+                                    int32_t y, uint32_t pointer_id,
+                                    h2_pal_result_t result) {
+  h2_runtime_private_t* state = runtime->private_state;
+  const h2_runtime_touch_pointer_event_t pointer = {
+      .phase = phase,
+      .x = x,
+      .y = y,
+      .width = state->touch_info.width,
+      .height = state->touch_info.height,
+      .result = result,
+      .session = h2_atomic_load(&state->touch_session),
+      .pointer_id = pointer_id,
+  };
+  h2_runtime_queued_event_t event = {
+      .kind = H2_RUNTIME_EVENT_TOUCH_POINTER,
+      .component = H2_RUNTIME_COMPONENT_TOUCH,
+      .timestamp_ms = h2_runtime_now_ms(runtime->time),
+      .sequence = h2_runtime_next_sequence(runtime),
+      .payload_size = sizeof(pointer),
+  };
+  memcpy(event.payload.bytes, &pointer, sizeof(pointer));
+  return h2_runtime_enqueue_event_strict(runtime, &event, H2_PAL_QUEUE_NO_WAIT);
+}
+
+/* Only this worker polls Touch. It holds no input writer mutex. A target
+ * with mapped inputs gets a separate reader so device recovery cannot
+ * delay button acquisition, snapshot publication or the application. */
+static void input_touch_task_entry(void* ctx) {
+  h2_runtime_t* runtime = ctx;
+  h2_runtime_private_t* state = runtime->private_state;
+  h2_pal_result_t cancel = H2_PAL_OK;
+  uint32_t failures = 0u, episode_errors = 0u;
+  bool reopen = false;
+  uint32_t contact = H2_PAL_TOUCH_ALL_POINTERS;
+  bool same_session = !state->touch_wait_release;
+  while (!h2_atomic_load(&state->input_stop_requested)) {
+    uint32_t delay = state->touch_interval_ms;
+    /* A refused CANCEL stays owed, including while the device is idle. */
+    if (cancel != H2_PAL_OK) {
+      h2_pal_result_t rc = send_pointer(runtime, H2_RUNTIME_POINTER_CANCEL, 0,
+                                        0, H2_RUNTIME_POINTER_ALL, cancel);
+      if (rc == H2_PAL_ERR_FULL) goto sleep;
+      if (rc != H2_PAL_OK) {
+        input_worker_fault(runtime, rc, H2_RUNTIME_INPUT_STAGE_EVENT_PUBLISH);
+        return;
+      }
+      cancel = H2_PAL_OK;
+    }
+    h2_pal_result_t rc = H2_PAL_OK;
+    if (reopen) {
+      same_session = false;
+      contact = H2_PAL_TOUCH_ALL_POINTERS;
+      rc = touch_close(runtime);
+      if (rc == H2_PAL_OK && !h2_atomic_load(&state->input_stop_requested))
+        rc = touch_open(runtime);
+      reopen = rc != H2_PAL_OK;
+    }
+    for (unsigned i = 0; rc == H2_PAL_OK && i < 32u &&
+                         !h2_atomic_load(&state->input_stop_requested);
+         ++i) {
+      h2_pal_touch_sample_t sample = {0};
+      rc = h2_pal_touch_poll_pointer(runtime->touch, &sample);
+      if (rc == H2_PAL_ERR_WOULD_BLOCK) {
+        rc = H2_PAL_OK;
+        break;
+      }
+      if (rc != H2_PAL_OK) {
+        reopen = sample.needs_reopen;
+        break;
+      }
+      const h2_pal_touch_event_t point = sample.event;
+      const bool all = point.pointer_id == H2_PAL_TOUCH_ALL_POINTERS;
+      if (all && point.kind != H2_PAL_TOUCH_EVENT_CANCEL) {
+        rc = H2_PAL_ERR_FORMAT;
+        break;
+      }
+      if (state->touch_wait_release) {
+        const bool fresh = point.kind == H2_PAL_TOUCH_EVENT_DOWN &&
+                           sample.fresh_down &&
+                           (same_session || sample.down_after_open);
+        if (!fresh) {
+          /* Keep an interrupted ID across same-session failures. After a
+           * reopen, bind the first ambiguous contact until its own lift. */
+          if (contact == H2_PAL_TOUCH_ALL_POINTERS &&
+              point.kind == H2_PAL_TOUCH_EVENT_DOWN)
+            contact = point.pointer_id;
+          if ((!all && contact != H2_PAL_TOUCH_ALL_POINTERS &&
+               point.pointer_id != contact) ||
+              (point.kind != H2_PAL_TOUCH_EVENT_UP &&
+               point.kind != H2_PAL_TOUCH_EVENT_CANCEL))
+            continue;
+        }
+        contact = H2_PAL_TOUCH_ALL_POINTERS;
+        state->touch_wait_release = false;
+        same_session = true;
+        if (episode_errors) {
+          input_logf(runtime, H2_PAL_LOG_INFO,
+                     "H2_RUNTIME_TOUCH_RESYNC errors=%u",
+                     (unsigned)episode_errors);
+          episode_errors = 0u;
+        }
+        if (!fresh) continue;
+      }
+      const bool held = contact != H2_PAL_TOUCH_ALL_POINTERS;
+      if (held && !all && point.pointer_id != contact) continue;
+      h2_runtime_pointer_phase_t phase;
+      switch (point.kind) {
+        case H2_PAL_TOUCH_EVENT_DOWN:
+          if (held) {
+            /* An unpaired DOWN means an edge was lost upstream. */
+            rc = H2_PAL_ERR_FORMAT;
+            continue;
+          }
+          phase = H2_RUNTIME_POINTER_DOWN;
+          contact = point.pointer_id;
+          break;
+        case H2_PAL_TOUCH_EVENT_MOVE:
+          if (!held) continue;
+          phase = H2_RUNTIME_POINTER_MOVE;
+          break;
+        case H2_PAL_TOUCH_EVENT_UP:
+        case H2_PAL_TOUCH_EVENT_CANCEL:
+          if (!held) continue;
+          contact = H2_PAL_TOUCH_ALL_POINTERS;
+          phase = point.kind == H2_PAL_TOUCH_EVENT_UP
+                      ? H2_RUNTIME_POINTER_UP
+                      : H2_RUNTIME_POINTER_CANCEL;
+          break;
+        default:
+          rc = H2_PAL_ERR_FORMAT;
+          continue;
+      }
+      rc = send_pointer(runtime, phase, point.x, point.y, point.pointer_id,
+                        H2_PAL_OK);
+      if (rc == H2_PAL_ERR_FULL) {
+        h2_runtime_record_dropped_event(runtime, H2_RUNTIME_EVENT_TOUCH_POINTER,
+                                        H2_RUNTIME_COMPONENT_TOUCH, 0);
+        state->touch_wait_release = contact != H2_PAL_TOUCH_ALL_POINTERS;
+        cancel = rc;
+        rc = H2_PAL_OK;
+        break;
+      }
+      if (rc != H2_PAL_OK) {
+        input_worker_fault(runtime, rc, H2_RUNTIME_INPUT_STAGE_EVENT_PUBLISH);
+        return;
+      }
+    }
+    if (rc != H2_PAL_OK) {
+      if (input_health_lock(runtime) == H2_PAL_OK) {
+        ++state->touch_error_count;
+        state->last_touch_error = rc;
+        input_health_unlock(runtime);
+      }
+      ++failures;
+      if (episode_errors++ == 0u) cancel = rc;
+      state->touch_wait_release = true;
+      if (episode_errors == 1u ||
+          episode_errors % H2_RUNTIME_INPUT_ERROR_LOG_EVERY == 0u)
+        input_logf(runtime, H2_PAL_LOG_WARN,
+                   "H2_RUNTIME_TOUCH_ERROR rc=%d failures=%u", (int)rc,
+                   (unsigned)episode_errors);
+      /* Only the provider can distinguish a latched session fault from an
+       * in-progress device recovery. Repeated I/O errors alone cannot. */
+      if (reopen || failures >= 8u)
+        delay = H2_RUNTIME_INPUT_ERROR_BACKOFF_MAX_MS;
+    } else {
+      failures = 0u;
+    }
+  sleep:
+    if (!h2_atomic_load(&state->input_stop_requested)) {
+      const h2_pal_result_t slept = h2_pal_time_sleep_ms(
+          runtime->time,
+          cancel == H2_PAL_OK ? delay : state->touch_interval_ms);
+      if (slept != H2_PAL_OK) {
+        input_worker_fault(runtime, slept, H2_RUNTIME_INPUT_STAGE_SLEEP);
+        return;
+      }
+    }
+  }
+}
+
 h2_pal_result_t h2_runtime_input_prepare(h2_runtime_t* runtime) {
-  if (!h2_runtime_ready(runtime)) {
-    return H2_PAL_ERR_INVALID_ARG;
-  }
-  /*
-   * Everything here is derived from data that is fixed for the life of the
-   * Runtime: the component mapping and the board periph inventory. It is
-   * built once, during h2_runtime_init(), and survives every input
-   * start/stop cycle. Discovery failures are configuration errors and are
-   * reported by init, not by a later start.
-   *
-   * A Runtime whose mapping has no input component can never acquire input,
-   * so nothing is built and Sync, Periph and Time stay unused. That keeps
-   * headless and capability-only images initializable on boards that bind
-   * the unsupported providers for those capabilities.
-   */
-  if (has_mapped_input_component(runtime) == 0) {
-    return H2_PAL_OK;
-  }
+  if (!h2_runtime_ready(runtime)) return H2_PAL_ERR_INVALID_ARG;
+  /* Mapped source discovery is fixed at init. The singleton Touch source is
+   * independent of the component table and needs no publication slots. */
+  if (!has_mapped_input_component(runtime)) return H2_PAL_OK;
   const h2_pal_mutex_config_t writer_mutex_config = {
       .name = "h2-runtime-input-writer",
       .allocator = runtime->mem,
@@ -1726,15 +1950,8 @@ h2_pal_result_t h2_runtime_input_prepare(h2_runtime_t* runtime) {
     runtime->private_state->input_writer_mutex = NULL;
     return rc;
   }
-  const h2_pal_mutex_config_t health_mutex_config = {
-      .name = "h2-runtime-input-health",
-      .allocator = runtime->mem,
-      .flags = H2_PAL_MUTEX_FLAG_NONE,
-  };
-  rc = h2_pal_mutex_create(runtime->sync, &health_mutex_config,
-                           &runtime->private_state->input_health_mutex);
+  rc = prepare_health_mutex(runtime);
   if (rc != H2_PAL_OK) {
-    runtime->private_state->input_health_mutex = NULL;
     input_writer_mutex_destroy(runtime);
     return rc;
   }
@@ -1770,8 +1987,9 @@ void h2_runtime_input_release(h2_runtime_t* runtime) {
   input_writer_mutex_destroy(runtime);
 }
 
-h2_pal_result_t h2_runtime_input_start(
-    h2_runtime_t* runtime, const h2_runtime_input_poll_config_t* config) {
+static h2_pal_result_t start_input(h2_runtime_t* runtime,
+                                   const h2_runtime_input_poll_config_t* config,
+                                   uint32_t touch_interval_ms) {
   if (!h2_runtime_ready(runtime)) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -1794,12 +2012,11 @@ h2_pal_result_t h2_runtime_input_start(
       H2_PAL_OK) {
     return H2_PAL_ERR_INVALID_STATE;
   }
-  if (h2_atomic_load(&runtime->private_state->input_phase) !=
-      H2_RUNTIME_INPUT_PHASE_STOPPED) {
+  int expected = H2_RUNTIME_INPUT_PHASE_STOPPED;
+  if (!h2_atomic_compare_exchange_strong(&runtime->private_state->input_phase,
+                                         &expected,
+                                         H2_RUNTIME_INPUT_PHASE_STARTING))
     return H2_PAL_ERR_INVALID_STATE;
-  }
-  h2_atomic_store(&runtime->private_state->input_phase,
-                  H2_RUNTIME_INPUT_PHASE_STARTING);
 
   h2_runtime_input_poll_config_t selected = {0};
   if (config != NULL) {
@@ -1832,46 +2049,70 @@ h2_pal_result_t h2_runtime_input_start(
    * lazy rediscovery. On the normal path the table was built during init
    * and this is a no-op.
    */
-  h2_pal_result_t rc = input_poll_once_locked(runtime, 1, 0);
-  if (rc != H2_PAL_OK) {
-    h2_atomic_store(&runtime->private_state->input_phase,
-                    H2_RUNTIME_INPUT_PHASE_STOPPED);
-    return rc;
+  h2_runtime_private_t* state = runtime->private_state;
+  const bool touch = touch_interval_ms != 0u;
+  h2_pal_result_t rc = H2_PAL_OK;
+  if (!touch || has_mapped_input_component(runtime))
+    rc = input_poll_once_locked(runtime, 1, 0);
+  if (rc == H2_PAL_OK && touch) {
+    rc = prepare_health_mutex(runtime);
+    if (rc == H2_PAL_OK) rc = touch_open(runtime);
   }
-  if (runtime->private_state->input_source_count == 0u) {
-    h2_atomic_store(&runtime->private_state->input_phase,
-                    H2_RUNTIME_INPUT_PHASE_STOPPED);
+  if (rc != H2_PAL_OK) goto rollback;
+  if (!state->input_source_count && !touch) {
+    h2_atomic_store(&state->input_phase, H2_RUNTIME_INPUT_PHASE_STOPPED);
     return H2_PAL_OK;
   }
 
-  h2_atomic_store(&runtime->private_state->input_phase,
-                  H2_RUNTIME_INPUT_PHASE_TASK_RUNNING);
-  rc =
-      h2_pal_task_start(runtime->task, &selected.task_options, input_task_entry,
-                        runtime, &runtime->private_state->input_task);
-  if (rc != H2_PAL_OK || runtime->private_state->input_task == NULL) {
-    runtime->private_state->input_task = NULL;
-    h2_atomic_store(&runtime->private_state->input_phase,
-                    H2_RUNTIME_INPUT_PHASE_STOPPED);
-    return rc != H2_PAL_OK ? rc : H2_PAL_ERR_TASK;
+  if (state->input_source_count) {
+    rc = h2_pal_task_start(runtime->task, &selected.task_options,
+                           input_task_entry, runtime, &state->input_task);
+    if (rc != H2_PAL_OK || !state->input_task) goto rollback;
   }
   if (has_nfc_source(runtime)) {
     h2_pal_task_options_t nfc_options = selected.task_options;
     nfc_options.name = h2_runtime_nfc_task_name;
     rc = h2_pal_task_start(runtime->task, &nfc_options, input_nfc_task_entry,
-                           runtime, &runtime->private_state->input_nfc_task);
-    if (rc != H2_PAL_OK || runtime->private_state->input_nfc_task == NULL) {
-      runtime->private_state->input_nfc_task = NULL;
-      h2_atomic_store(&runtime->private_state->input_stop_requested, 1);
-      (void)h2_pal_task_join(runtime->task, runtime->private_state->input_task);
-      runtime->private_state->input_task = NULL;
-      h2_atomic_store(&runtime->private_state->input_stop_requested, 0);
-      h2_atomic_store(&runtime->private_state->input_phase,
-                      H2_RUNTIME_INPUT_PHASE_STOPPED);
-      return rc != H2_PAL_OK ? rc : H2_PAL_ERR_TASK;
-    }
+                           runtime, &state->input_nfc_task);
+    if (rc != H2_PAL_OK || !state->input_nfc_task) goto rollback;
   }
+  if (touch) {
+    state->touch_interval_ms = touch_interval_ms;
+    (void)h2_atomic_fetch_add(&state->touch_session, 1u);
+    h2_pal_task_options_t options = selected.task_options;
+    if (state->input_task) options.name = H2_RUNTIME_TOUCH_TASK_NAME_VALUE;
+    rc = h2_pal_task_start(runtime->task, &options, input_touch_task_entry,
+                           runtime, &state->input_touch_task);
+    if (rc != H2_PAL_OK || !state->input_touch_task) goto rollback;
+  }
+  expected = H2_RUNTIME_INPUT_PHASE_STARTING;
+  (void)h2_atomic_compare_exchange_strong(&state->input_phase, &expected,
+                                          H2_RUNTIME_INPUT_PHASE_TASK_RUNNING);
   return H2_PAL_OK;
+
+rollback:
+  if (rc == H2_PAL_OK) rc = H2_PAL_ERR_TASK;
+  expected = H2_RUNTIME_INPUT_PHASE_STARTING;
+  (void)h2_atomic_compare_exchange_strong(&state->input_phase, &expected,
+                                          H2_RUNTIME_INPUT_PHASE_TASK_RUNNING);
+  const h2_pal_result_t stopped = h2_runtime_input_stop(runtime);
+  if (stopped != H2_PAL_OK)
+    input_logf(runtime, H2_PAL_LOG_ERROR,
+               "H2_RUNTIME_INPUT_ROLLBACK start_rc=%d stop_rc=%d", (int)rc,
+               (int)stopped);
+  return rc;
+}
+
+h2_pal_result_t h2_runtime_input_start(
+    h2_runtime_t* runtime, const h2_runtime_input_poll_config_t* config) {
+  return start_input(runtime, config, 0u);
+}
+
+h2_pal_result_t h2_runtime_input_start_with_touch(
+    h2_runtime_t* runtime, const h2_runtime_input_poll_config_t* config,
+    uint32_t interval_ms) {
+  return interval_ms ? start_input(runtime, config, interval_ms)
+                     : H2_PAL_ERR_INVALID_ARG;
 }
 
 h2_pal_result_t h2_runtime_input_stop(h2_runtime_t* runtime) {
@@ -1886,9 +2127,33 @@ h2_pal_result_t h2_runtime_input_stop(h2_runtime_t* runtime) {
       phase != H2_RUNTIME_INPUT_PHASE_FAULTED) {
     return H2_PAL_ERR_INVALID_STATE;
   }
-  h2_atomic_store(&runtime->private_state->input_phase,
-                  H2_RUNTIME_INPUT_PHASE_STOPPING);
+  if (!h2_atomic_compare_exchange_strong(&runtime->private_state->input_phase,
+                                         &phase,
+                                         H2_RUNTIME_INPUT_PHASE_STOPPING))
+    return H2_PAL_ERR_INVALID_STATE;
   h2_atomic_store(&runtime->private_state->input_stop_requested, 1);
+  h2_runtime_private_t* state = runtime->private_state;
+  if (state->input_touch_task != NULL) {
+    h2_pal_result_t rc =
+        h2_pal_task_join(runtime->task, state->input_touch_task);
+    if (rc != H2_PAL_OK) {
+      h2_atomic_store(&state->input_phase, phase);
+      return rc;
+    }
+    state->input_touch_task = NULL;
+  }
+  if (state->touch_interval_ms != 0u) {
+    /* A pointer session may see a held sample as DOWN on reopen. Establish
+     * a physical release even if the last DOWN raced our stop request. */
+    state->touch_wait_release = true;
+    state->touch_interval_ms = 0u;
+    (void)h2_atomic_fetch_add(&state->touch_session, 1u);
+  }
+  const h2_pal_result_t closed = touch_close(runtime);
+  if (closed != H2_PAL_OK) {
+    h2_atomic_store(&state->input_phase, phase);
+    return closed;
+  }
   if (runtime->private_state->input_nfc_task != NULL) {
     h2_pal_result_t rc =
         h2_pal_task_join(runtime->task, runtime->private_state->input_nfc_task);
@@ -2019,7 +2284,8 @@ h2_pal_result_t h2_runtime_input_test_session_open(
   if (rc != H2_PAL_OK) {
     return rc;
   }
-  if (runtime->private_state->test_control != NULL) {
+  if (runtime->private_state->test_control != NULL ||
+      (h2_atomic_load(&runtime->private_state->touch_session) & 1u) != 0u) {
     rc = H2_PAL_ERR_INVALID_STATE;
     goto done;
   }

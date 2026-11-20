@@ -7,6 +7,7 @@
 #include "h2_fruit_slice_game.h"
 #include "h2_desktop_platform.h"
 #include "h2_pal_unsupported.h"
+#include "input_clock.h"
 
 #ifdef NDEBUG
 #undef NDEBUG
@@ -570,6 +571,9 @@ static uint64_t hold_main_callback(uint32_t ms, bool verify_progress) {
   return now() - started;
 }
 static int present(void* u) {
+  if ((exit_intent_trial == 2u && frames == 21u) ||
+      (exit_intent_trial == 3u && frames == 20u))
+    return H2_PAL_ERR_BUSY;
   if (toggle_trial && tap_pending) {
     const uint64_t elapsed = now() - tap_started;
     if (elapsed > toggle_max_ms) toggle_max_ms = elapsed;
@@ -604,15 +608,11 @@ static int touch_info(void* u, h2_pal_touch_info_t* i) {
 }
 static int touch_poll(void* u, h2_pal_touch_event_t* e) {
   (void)u;
+  assert(input_thread);
   const unsigned event = touch_phase / 2u;
   if (all_muted_start) return H2_PAL_ERR_WOULD_BLOCK;
   if (exit_intent_trial != 0u) {
-    if (event >= 2u) {
-      if (exit_intent_trial == 3u || (exit_intent_trial == 2u && frames > 20u))
-        return H2_PAL_ERR_BUSY; /* Also cover abort before set_mute is called.
-                                 */
-      return H2_PAL_ERR_WOULD_BLOCK;
-    }
+    if (event >= 2u) return H2_PAL_ERR_WOULD_BLOCK;
     if (frames < (event == 0u ? 5u : 20u)) return H2_PAL_ERR_WOULD_BLOCK;
     h2_fruit_slice_game_t game;
     h2_fruit_slice_game_init(&game, 480, 320, 42, 0);
@@ -686,10 +686,26 @@ static int touch_poll(void* u, h2_pal_touch_event_t* e) {
       (uint16_t)((r.x0 + r.x1) / 2), (uint16_t)((r.y0 + r.y1) / 2), 0};
   return 0;
 }
+static bool touch_owned;
+static int touch_open_pointer(void* user, bool* needs_close) {
+  (void)user;
+  *needs_close = false;
+  if (touch_owned) return H2_PAL_ERR_BUSY;
+  touch_owned = true;
+  return H2_PAL_OK;
+}
+static int touch_close_pointer(void* user) {
+  (void)user;
+  assert(touch_owned);
+  touch_owned = false;
+  return H2_PAL_OK;
+}
 static const h2_pal_touch_vtable_t tvt = {.open = touch_open,
                                           .get_info = touch_info,
                                           .poll_event = touch_poll,
-                                          .close = touch_open};
+                                          .close = touch_open,
+                                          .open_pointer = touch_open_pointer,
+                                          .close_pointer = touch_close_pointer};
 static const h2_pal_touch_api_t touch_api = {.vtable = &tvt};
 typedef struct pref_namespace {
   h2_pal_pref_namespace_t pal;
@@ -779,7 +795,9 @@ static bool exit_app(void* u) {
   (void)u;
   if (exit_intent_trial != 0u) {
     exit_trial_frame = ++frames;
-    return frames > (exit_intent_trial == 1u ? 20u : 22u);
+    if (frames > (exit_intent_trial == 1u ? 20u : 22u)) return true;
+    input_tick();
+    return false;
   }
   if ((mute_failure_mode != 0u || mute_first_gesture) &&
       (frames == 60u || frames == 69u || frames == 95u)) {
@@ -801,7 +819,9 @@ static bool exit_app(void* u) {
     }
     pthread_mutex_unlock(&sink.lock);
   }
-  return ++frames > 120u;
+  if (++frames > 120u) return true;
+  input_tick();
+  return false;
 }
 
 static uint64_t run_app(bool worker, unsigned pressure) {
@@ -867,6 +887,7 @@ static uint64_t run_app(bool worker, unsigned pressure) {
   c.touch = &touch_api;
   c.audio = &audio_api;
   h2_runtime_t* rt = NULL;
+  input_clock_install(&c);
   assert(h2_runtime_init(&c, &rt) == 0);
   const h2_fruit_slice_config_t cfg = {.seed = 42,
                                        .frame_period_ms = 30,
