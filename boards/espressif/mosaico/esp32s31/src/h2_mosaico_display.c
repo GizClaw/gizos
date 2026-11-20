@@ -10,6 +10,7 @@
 #include "freertos/semphr.h"
 #endif
 
+#include <stdatomic.h>
 #include <string.h>
 
 /* The upstream BSP owns panel and touch handles for the boot lifetime.
@@ -23,7 +24,9 @@ enum { DMA_BANDS = H2_MOSAICO_HEIGHT / H2_MOSAICO_DMA_ROWS };
 static uint64_t dirty_bands;
 static uint16_t dirty_x0[DMA_BANDS], dirty_x1[DMA_BANDS];
 static bool opened;
-static bool touch_opened, pointer_owned;
+typedef enum { TOUCH_IDLE, TOUCH_DIRECT, TOUCH_POINTER } touch_owner_t;
+static touch_owner_t touch_owner;
+static atomic_flag touch_lifecycle = ATOMIC_FLAG_INIT;
 static bool pressed;
 static uint16_t last_x, last_y;
 static StaticSemaphore_t lock_storage;
@@ -212,20 +215,33 @@ static int display_close(void* user) {
   xSemaphoreGive(mutex);
   return rc;
 }
+/* Reserve the port before waiting for display I/O. Lifecycle changes hold
+ * both locks. Readers inspect the owner under the display mutex. */
+static int lock_touch_session(touch_owner_t allowed_owner) {
+  if (atomic_flag_test_and_set_explicit(&touch_lifecycle, memory_order_acquire))
+    return H2_PAL_ERR_BUSY;
+  int rc = touch_owner == TOUCH_IDLE || touch_owner == allowed_owner
+               ? lock()
+               : H2_PAL_ERR_BUSY;
+  if (rc != H2_PAL_OK)
+    atomic_flag_clear_explicit(&touch_lifecycle, memory_order_release);
+  return rc;
+}
+static void unlock_touch_session(void) {
+  xSemaphoreGive(mutex);
+  atomic_flag_clear_explicit(&touch_lifecycle, memory_order_release);
+}
 static int open_touch(bool exclusive) {
-  int rc = lock();
+  int rc = lock_touch_session(exclusive ? TOUCH_IDLE : TOUCH_DIRECT);
   if (rc != H2_PAL_OK) return rc;
-  if (touch_opened && (exclusive || pointer_owned)) {
-    rc = H2_PAL_ERR_BUSY;
-  } else if (!touch_opened) {
+  if (touch_owner == TOUCH_IDLE) {
     rc = result(bsp_touch_new(BSP_LCD_ROTATION_DEFAULT, &touch));
     if (rc == H2_PAL_OK) {
-      touch_opened = true;
-      pointer_owned = exclusive;
+      touch_owner = exclusive ? TOUCH_POINTER : TOUCH_DIRECT;
       pressed = false;
     }
   }
-  xSemaphoreGive(mutex);
+  unlock_touch_session();
   return rc;
 }
 static int touch_open(void* user) {
@@ -243,7 +259,7 @@ static int touch_info(void* user, h2_pal_touch_info_t* out) {
   memset(out, 0, sizeof(*out));
   int rc = lock();
   if (rc != H2_PAL_OK) return rc;
-  if (!touch_opened)
+  if (touch_owner == TOUCH_IDLE)
     rc = H2_PAL_ERR_INVALID_STATE;
   else
     *out = (h2_pal_touch_info_t){BSP_LCD_H_RES, BSP_LCD_V_RES};
@@ -256,7 +272,7 @@ static int touch_poll(void* user, h2_pal_touch_event_t* out) {
   memset(out, 0, sizeof(*out));
   int rc = lock();
   if (rc != H2_PAL_OK) return rc;
-  if (!touch_opened)
+  if (touch_owner == TOUCH_IDLE)
     rc = H2_PAL_ERR_INVALID_STATE;
   else {
     /* HYN212 may return only the ACK for the previous report. No new
@@ -288,15 +304,12 @@ static int touch_poll(void* user, h2_pal_touch_event_t* out) {
   return rc;
 }
 static int close_touch(bool exclusive) {
-  int rc = lock();
+  int rc = lock_touch_session(exclusive ? TOUCH_POINTER : TOUCH_DIRECT);
   if (rc != H2_PAL_OK) return rc;
-  if (touch_opened && pointer_owned != exclusive) {
-    rc = H2_PAL_ERR_BUSY;
-  } else {
-    touch_opened = pointer_owned = pressed = false;
-  }
-  xSemaphoreGive(mutex);
-  return rc;
+  touch_owner = TOUCH_IDLE;
+  pressed = false;
+  unlock_touch_session();
+  return H2_PAL_OK;
 }
 static int touch_close(void* user) {
   (void)user;
