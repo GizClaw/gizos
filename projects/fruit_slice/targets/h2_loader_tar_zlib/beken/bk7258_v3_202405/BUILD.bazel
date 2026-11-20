@@ -21,7 +21,7 @@ bk7258_target_task_policy(
     ap_policies = [
         "bk/fruit-slice 6 any 8192 default",
         "fruit-slice/game 7 0 32768 psram",
-        "fruit-slice/audio 7 0 8192 psram",
+        "fruit-slice/audio 7 1 8192 psram",
         "fruit-slice/audio-pref 8 0 8192 psram",
         "fruit-slice/save 8 0 8192 psram",
         "h2_touch 4 0 4096 default",
