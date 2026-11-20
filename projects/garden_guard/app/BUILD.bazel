@@ -8,6 +8,7 @@ package(default_visibility = ["//visibility:public"])
 _PRIVATE_HEADERS = [
     "src/h2_garden_guard_audio.h",
     "src/h2_garden_guard_score.h",
+    "src/h2_garden_guard_sfx.h",
     "src/h2_garden_guard_game.h",
     "src/h2_garden_guard_render.h",
 ]
@@ -30,6 +31,7 @@ cc_library(
         "src/h2_garden_guard_game.c",
         "src/h2_garden_guard_render.c",
         "src/h2_garden_guard_score.c",
+        "src/h2_garden_guard_sfx.c",
         "src/h2_garden_guard_title.inc",
         "src/h2_garden_guard_web_labels.c",
         "src/h2_garden_guard_zh.inc",
@@ -73,6 +75,16 @@ cc_test(
 cc_test(
     name = "score_test",
     srcs = _PRIVATE_HEADERS + ["tests/test_score.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [":garden_guard"],
+)
+
+cc_test(
+    name = "sfx_test",
+    srcs = _PRIVATE_HEADERS + ["tests/test_sfx.c"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     includes = ["src"],

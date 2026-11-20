@@ -90,7 +90,7 @@ static void audio_run(void* user) {
     if (message & GG_AUDIO_QUIET) gg_score_clear_effects(&score);
     if (!music) events &= (1u << GG_SOUND_WON) | (1u << GG_SOUND_LOST);
     if (!music && track && (message & GG_AUDIO_RESET) == 0u &&
-        (events || !score.fanfare)) {
+        (events || !gg_score_has_fanfare(&score))) {
       /* Pause and mute discard old transients and scheduled PCM. */
       gg_score_clear_effects(&score);
       rc = close_stream(runtime, &track);
@@ -158,15 +158,15 @@ static void audio_run(void* user) {
     const uint32_t elapsed = (uint32_t)((now - first) / 1000u);
     if (elapsed - totals_ms >= 10000u) {
       totals_ms = elapsed;
-      char message[148];
+      char stats[148];
       (void)snprintf(
-          message, sizeof(message),
+          stats, sizeof(stats),
           "H2_GARDEN_GUARD_AUDIO_STATS write=%u busy=%u late=%u max_mix_us=%u peak=%u rate=%u frame=%u",
           (unsigned)writes, (unsigned)blocked, (unsigned)late,
           (unsigned)max_mix, (unsigned)peak, (unsigned)format.sample_rate_hz,
           frames);
       (void)h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "garden-guard",
-                             message);
+                             stats);
     }
     (void)h2_pal_time_sleep_ms(runtime->time, 5u);
   }

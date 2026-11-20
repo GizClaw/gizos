@@ -63,7 +63,7 @@ static int sine(uint32_t phase) {
   return a + ((b - a) * (int)((phase >> 10u) & 255u) >> 8);
 }
 
-static int sample(gg_note_t* voice, int noise) {
+static int sample(gg_note_t* voice) {
   if (voice->envelope <= 0) return 0;
   const uint32_t p = voice->phase;
   int wave = sine(p);
@@ -74,9 +74,6 @@ static int sample(gg_note_t* voice, int noise) {
     case 2:
       wave = (wave * 3 + sine(p * 3u)) >> 2;
       break;
-    case 3:
-      wave = (wave + noise) >> 1;
-      break;
   }
   int gain = voice->envelope >> 16;
   if (voice->age < 64u) gain = (gain * voice->age++) >> 6;
@@ -86,47 +83,33 @@ static int sample(gg_note_t* voice, int noise) {
   return (wave * gain) >> 7;
 }
 
+_Static_assert(GG_SFX_TAP == GG_SOUND_TAP && GG_SFX_DENIED == GG_SOUND_DENIED &&
+                   GG_SFX_SUN == GG_SOUND_SUN &&
+                   GG_SFX_PLANT == GG_SOUND_PLANT &&
+                   GG_SFX_SHOT == GG_SOUND_SHOT && GG_SFX_HIT == GG_SOUND_HIT &&
+                   GG_SFX_CART == GG_SOUND_CART && GG_SFX_WON == GG_SOUND_WON &&
+                   GG_SFX_LOST == GG_SOUND_LOST &&
+                   GG_SFX_COUNT == GG_SOUND_COUNT,
+               "sound cue order");
+
 void gg_score_init(gg_score_t* score, uint32_t rate) {
-  *score = (gg_score_t){.rate = rate, .noise = 0x2948a3u};
+  *score = (gg_score_t){.rate = rate};
+  gg_sfx_init(&score->sfx, rate);
 }
 
-void gg_score_clear_effects(gg_score_t* score) {
-  score->garden.envelope = score->combat.envelope = 0;
-  score->fanfare = 0;
-}
+void gg_score_clear_effects(gg_score_t* score) { gg_sfx_clear(&score->sfx); }
 
 bool gg_score_has_effect(const gg_score_t* score) {
-  return score->fanfare || score->garden.envelope > 0 ||
-         score->combat.envelope > 0;
+  return gg_sfx_active(&score->sfx);
 }
 
-#define SOUND(x) (1u << GG_SOUND_##x)
+bool gg_score_has_fanfare(const gg_score_t* score) {
+  return gg_sfx_fanfare(&score->sfx);
+}
 
+/* Cues and their priorities live in h2_garden_guard_sfx.c. */
 void gg_score_events(gg_score_t* score, uint16_t events) {
-  const uint32_t rate = score->rate;
-  if (events & (SOUND(WON) | SOUND(LOST))) {
-    gg_score_clear_effects(score);
-    score->fanfare = events & SOUND(WON) ? 1u : 2u;
-    score->fanfare_note = 0;
-    score->effect_left = 0;
-    return;
-  }
-  if (events & SOUND(SUN))
-    begin(&score->garden, rate, 76, 145, 6500, 2, 91);
-  else if (events & SOUND(PLANT))
-    begin(&score->garden, rate, 48, 145, 7300, 3, 37);
-  else if (events & SOUND(DENIED))
-    begin(&score->garden, rate, 58, 95, 3750, 1, 49);
-  else if ((events & SOUND(TAP)) && score->garden.envelope <= 0)
-    begin(&score->garden, rate, 79, 58, 3400, 1, 68);
-  /* Let a short combat transient finish. Bursts never stack. */
-  if (score->combat.envelope > 0) return;
-  if (events & SOUND(CART))
-    begin(&score->combat, rate, 47, 385, 6900, 3, 39);
-  else if (events & SOUND(HIT))
-    begin(&score->combat, rate, 59, 76, 3700, 3, 42);
-  else if (events & SOUND(SHOT))
-    begin(&score->combat, rate, 68, 62, 2700, 1, 51);
+  gg_sfx_events(&score->sfx, events);
 }
 
 static void next_tick(gg_score_t* score) {
@@ -145,20 +128,6 @@ static void next_tick(gg_score_t* score) {
   score->tick_left = rate / 8u;
 }
 
-static void next_fanfare(gg_score_t* score) {
-  static const uint8_t notes[][4] = {{72, 76, 79, 84}, {69, 65, 62, 57}};
-  const unsigned index = score->fanfare_note++;
-  if (index == 4u) {
-    score->fanfare = 0;
-    return;
-  }
-  const unsigned ms = index == 3u ? 380u : 126u;
-  const unsigned note = notes[score->fanfare - 1u][index];
-  begin(&score->garden, score->rate, note, ms, 6900, 2, 0);
-  begin(&score->combat, score->rate, note - 12u, ms, 3000, 0, 0);
-  score->effect_left = score->rate * ms / 1000u;
-}
-
 unsigned gg_score_render(gg_score_t* score, bool music, int16_t* output,
                          unsigned frames, unsigned channels) {
   unsigned peak = 0;
@@ -167,19 +136,14 @@ unsigned gg_score_render(gg_score_t* score, bool music, int16_t* output,
     if (music) {
       if (score->tick_left == 0u) next_tick(score);
       --score->tick_left;
-      mixed = sample(&score->keys[0], 0) + sample(&score->keys[1], 0) +
-              sample(&score->keys[2], 0);
+      mixed = sample(&score->keys[0]) + sample(&score->keys[1]) +
+              sample(&score->keys[2]);
     }
-    if (score->fanfare) {
-      if (score->effect_left == 0u) next_fanfare(score);
-      if (score->effect_left) --score->effect_left;
-    }
-    if (score->garden.envelope > 0 || score->combat.envelope > 0) {
-      score->noise = 1664525u * score->noise + 1013904223u;
-      const int noise = (int)(score->noise >> 24u) - 128;
-      mixed += sample(&score->garden, noise) + sample(&score->combat, noise);
-    }
-    /* The authored per-voice maxima sum to less than 22,000. */
+    /* Music <= 6950 plus GG_SFX_PEAK_UI + GG_SFX_PEAK_COMBAT; fanfares
+     * (<= GG_SFX_PEAK_FANFARE) sound without music. Saturate regardless. */
+    mixed += gg_sfx_next(&score->sfx);
+    if (mixed > 32767) mixed = 32767;
+    if (mixed < -32767) mixed = -32767;
     const unsigned magnitude = (unsigned)(mixed < 0 ? -mixed : mixed);
     if (magnitude > peak) peak = magnitude;
     *output++ = (int16_t)mixed;
