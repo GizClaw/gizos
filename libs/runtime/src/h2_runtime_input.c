@@ -1639,9 +1639,26 @@ h2_pal_result_t h2_runtime_input_status(h2_runtime_t* runtime,
       .poll_count = state->input_poll_count,
       .last_poll_ok_at_ms = state->input_last_poll_ok_at_ms,
       .snapshot_deferred_count = state->input_snapshot_deferred_count,
-      .touch_error_count = state->touch_error_count,
-      .last_touch_error = state->last_touch_error,
   };
+  input_health_unlock(runtime);
+  return H2_PAL_OK;
+}
+
+h2_pal_result_t h2_runtime_input_touch_errors(h2_runtime_t* runtime,
+                                              uint32_t* out_count,
+                                              h2_pal_result_t* out_last_error) {
+  if (!h2_runtime_ready(runtime) || !out_count || !out_last_error)
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_runtime_private_t* state = runtime->private_state;
+  if (!h2_atomic_load(&state->input_health_ready)) {
+    *out_count = 0;
+    *out_last_error = H2_PAL_OK;
+    return H2_PAL_OK;
+  }
+  const int rc = input_health_lock(runtime);
+  if (rc != H2_PAL_OK) return rc;
+  *out_count = state->touch_error_count;
+  *out_last_error = state->last_touch_error;
   input_health_unlock(runtime);
   return H2_PAL_OK;
 }
@@ -1718,11 +1735,10 @@ static void input_nfc_task_entry(void* ctx) {
 
 static h2_pal_result_t touch_open(h2_runtime_t* runtime) {
   h2_runtime_private_t* state = runtime->private_state;
-  h2_pal_result_t rc = h2_pal_touch_open(runtime->touch);
-  if (rc == H2_PAL_OK) {
-    state->touch_open = true;
+  h2_pal_result_t rc =
+      h2_pal_touch_open_pointer(runtime->touch, &state->touch_open);
+  if (rc == H2_PAL_OK)
     rc = h2_pal_touch_get_info(runtime->touch, &state->touch_info);
-  }
   return rc;
 }
 
@@ -1950,8 +1966,9 @@ void h2_runtime_input_release(h2_runtime_t* runtime) {
   input_writer_mutex_destroy(runtime);
 }
 
-h2_pal_result_t h2_runtime_input_start(
-    h2_runtime_t* runtime, const h2_runtime_input_poll_config_t* config) {
+static h2_pal_result_t start_input(h2_runtime_t* runtime,
+                                   const h2_runtime_input_poll_config_t* config,
+                                   uint32_t touch_interval_ms) {
   if (!h2_runtime_ready(runtime)) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -2012,7 +2029,7 @@ h2_pal_result_t h2_runtime_input_start(
    * and this is a no-op.
    */
   h2_runtime_private_t* state = runtime->private_state;
-  const bool touch = selected.touch_poll_interval_ms != 0u;
+  const bool touch = touch_interval_ms != 0u;
   h2_pal_result_t rc = H2_PAL_OK;
   if (!touch || has_mapped_input_component(runtime))
     rc = input_poll_once_locked(runtime, 1, 0);
@@ -2039,7 +2056,7 @@ h2_pal_result_t h2_runtime_input_start(
     if (rc != H2_PAL_OK || !state->input_nfc_task) goto rollback;
   }
   if (touch) {
-    state->touch_interval_ms = selected.touch_poll_interval_ms;
+    state->touch_interval_ms = touch_interval_ms;
     (void)h2_atomic_fetch_add(&state->touch_session, 1u);
     h2_pal_task_options_t options = selected.task_options;
     if (state->input_task) options.name = H2_RUNTIME_TOUCH_TASK_NAME_VALUE;
@@ -2058,7 +2075,23 @@ rollback:
   (void)h2_atomic_compare_exchange_strong(&state->input_phase, &expected,
                                           H2_RUNTIME_INPUT_PHASE_TASK_RUNNING);
   const h2_pal_result_t stopped = h2_runtime_input_stop(runtime);
-  return stopped != H2_PAL_OK ? stopped : rc;
+  if (stopped != H2_PAL_OK)
+    input_logf(runtime, H2_PAL_LOG_ERROR,
+               "H2_RUNTIME_INPUT_ROLLBACK start_rc=%d stop_rc=%d", (int)rc,
+               (int)stopped);
+  return rc;
+}
+
+h2_pal_result_t h2_runtime_input_start(
+    h2_runtime_t* runtime, const h2_runtime_input_poll_config_t* config) {
+  return start_input(runtime, config, 0u);
+}
+
+h2_pal_result_t h2_runtime_input_start_with_touch(
+    h2_runtime_t* runtime, const h2_runtime_input_poll_config_t* config,
+    uint32_t interval_ms) {
+  return interval_ms ? start_input(runtime, config, interval_ms)
+                     : H2_PAL_ERR_INVALID_ARG;
 }
 
 h2_pal_result_t h2_runtime_input_stop(h2_runtime_t* runtime) {

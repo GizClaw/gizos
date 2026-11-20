@@ -699,9 +699,9 @@ static h2_pal_result_t run(void) {
                                         .user = &fx};
   const h2_pal_result_t rc = h2_fruit_slice_run(runtime, &game);
   CHECK(h2_runtime_dropped_event_count(runtime, &fx.drops) == H2_PAL_OK);
-  h2_runtime_input_status_t input_status;
-  CHECK(h2_runtime_input_status(runtime, &input_status) == H2_PAL_OK);
-  fx.touch_errors = input_status.touch_error_count;
+  h2_pal_result_t last_touch_error;
+  CHECK(h2_runtime_input_touch_errors(runtime, &fx.touch_errors,
+                                      &last_touch_error) == H2_PAL_OK);
   CHECK(h2_runtime_destroy(&runtime) == H2_PAL_OK);
   CHECK(fx.allocations == fx.frees);
   CHECK(fx.display.opened == 0 && fx.touch.opened == 0);

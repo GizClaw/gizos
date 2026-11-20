@@ -139,7 +139,8 @@ h2_pal_result_t touch_close(void* user) {
 }
 
 const h2_pal_touch_vtable_t kTouchVtable = {
-    touch_open, touch_get_info, touch_poll, touch_close, touch_poll_pointer,
+    touch_open,  touch_get_info,     touch_poll,
+    touch_close, touch_poll_pointer, nullptr,
 };
 
 }  // namespace

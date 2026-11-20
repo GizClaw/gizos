@@ -237,8 +237,9 @@ static h2_pal_result_t touch_cleanup(void) {
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t touch_open(void* user) {
+static h2_pal_result_t touch_open_pointer(void* user, bool* needs_close) {
   (void)user;
+  if (needs_close) *needs_close = false;
   if (s_touch.opened) return H2_PAL_ERR_BUSY;
   if (s_touch.task != NULL || s_touch.reset_owned || s_touch.interrupt_owned ||
       s_touch.bus_owned)
@@ -374,9 +375,14 @@ static h2_pal_result_t touch_open(void* user) {
   s_touch.pending = true;
   s_touch.opened = true;
   rtos_exit_critical(flags);
+  if (needs_close) *needs_close = true;
   return H2_PAL_OK;
 fail: {
   h2_pal_result_t cleanup = touch_cleanup();
+  if (needs_close) {
+    *needs_close = cleanup != H2_PAL_OK;
+    return result;
+  }
   return cleanup != H2_PAL_OK ? cleanup : result;
 }
 }
@@ -428,8 +434,9 @@ static h2_pal_result_t touch_close(void* user) {
 
 #else
 
-static h2_pal_result_t touch_open(void* user) {
+static h2_pal_result_t touch_open_pointer(void* user, bool* needs_close) {
   (void)user;
+  if (needs_close) *needs_close = false;
   return H2_PAL_ERR_UNAVAILABLE;
 }
 
@@ -453,6 +460,10 @@ static h2_pal_result_t touch_close(void* user) {
 }
 
 #endif
+
+static h2_pal_result_t touch_open(void* user) {
+  return touch_open_pointer(user, NULL);
+}
 
 /* The reader either latches the error until close or (when the controller
  * resynchronizes) queues points from a new contact after the verified lift.
@@ -478,6 +489,7 @@ static const h2_pal_touch_vtable_t s_touch_vtable = {
     .poll_event = touch_poll_event,
     .close = touch_close,
     .poll_pointer = touch_poll_pointer,
+    .open_pointer = touch_open_pointer,
 };
 
 static const h2_pal_touch_api_t s_touch_api = {

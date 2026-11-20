@@ -937,10 +937,9 @@ h2_pal_result_t h2_fruit_slice_run(h2_runtime_t* runtime,
     if (rc == H2_PAL_OK && status.phase != H2_RUNTIME_INPUT_PHASE_STOPPED)
       rc = H2_PAL_ERR_BUSY;
     if (rc == H2_PAL_OK) {
-      const h2_runtime_input_poll_config_t input = {.touch_poll_interval_ms =
-                                                        TOUCH_POLL_INTERVAL_MS};
       owns_input = true;
-      rc = h2_runtime_input_start(runtime, &input);
+      rc = h2_runtime_input_start_with_touch(runtime, NULL,
+                                             TOUCH_POLL_INTERVAL_MS);
     }
     if (rc != H2_PAL_OK) (void)failure_at(s, "input_start", rc);
   }

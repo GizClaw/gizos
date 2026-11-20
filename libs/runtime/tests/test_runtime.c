@@ -3424,7 +3424,7 @@ static void test_runtime_owns_input_task_lifecycle(void) {
 typedef struct test_touch {
   bool opened;
   unsigned opens, closes;
-  h2_pal_result_t info_rc, close_rc;
+  h2_pal_result_t open_rc, info_rc, close_rc;
   const h2_pal_touch_event_t* script;
   size_t count;
 } test_touch_t;
@@ -3435,6 +3435,13 @@ static int pointer_open(void* user) {
   t->opened = true;
   ++t->opens;
   return H2_PAL_OK;
+}
+static int pointer_open_owned(void* user, bool* needs_close) {
+  test_touch_t* t = user;
+  if (t->opened) return H2_PAL_ERR_BUSY;
+  (void)pointer_open(user);
+  *needs_close = true;
+  return t->open_rc;
 }
 static int pointer_close(void* user) {
   test_touch_t* t = user;
@@ -3469,7 +3476,8 @@ static void test_touch_lifecycle_and_mapped_input(void) {
   const h2_pal_touch_vtable_t ops = {.open = pointer_open,
                                      .get_info = pointer_info,
                                      .poll_event = pointer_read,
-                                     .close = pointer_close};
+                                     .close = pointer_close,
+                                     .open_pointer = pointer_open_owned};
   const h2_pal_touch_api_t touch = {&t, &ops};
   h2_runtime_config_t config = test_runtime_config(&env);
   config.touch = &touch;
@@ -3478,17 +3486,28 @@ static void test_touch_lifecycle_and_mapped_input(void) {
   assert(h2_runtime_init(&config, &rt) == H2_PAL_OK);
   assert(h2_runtime_input_start(rt, NULL) == H2_PAL_OK && !t.opens);
   assert(h2_runtime_input_stop(rt) == H2_PAL_OK);
-  const h2_runtime_input_poll_config_t input = {.touch_poll_interval_ms = 8};
+  assert(pointer_open(&t) == H2_PAL_OK);
+  assert(h2_runtime_input_start_with_touch(rt, NULL, 8u) == H2_PAL_ERR_BUSY &&
+         t.opened && !t.closes);
+  assert(pointer_close(&t) == H2_PAL_OK);
+  t.open_rc = H2_PAL_ERR_IO;
+  t.close_rc = H2_PAL_ERR_TASK;
+  assert(h2_runtime_input_start_with_touch(rt, NULL, 8u) == H2_PAL_ERR_IO);
+  assert(t.opened && env.task_state.handle_count == 0);
+  assert(h2_runtime_destroy(&rt) == H2_PAL_ERR_TASK && rt);
+  t.open_rc = t.close_rc = H2_PAL_OK;
+  assert(h2_runtime_input_stop(rt) == H2_PAL_OK && !t.opened);
   t.info_rc = H2_PAL_ERR_IO;
   t.close_rc = H2_PAL_ERR_BUSY;
-  assert(h2_runtime_input_start(rt, &input) == H2_PAL_ERR_BUSY);
+  assert(h2_runtime_input_start_with_touch(rt, NULL, 8u) == H2_PAL_ERR_IO);
   assert(t.opened && env.task_state.handle_count == 0);
   assert(h2_runtime_destroy(&rt) == H2_PAL_ERR_BUSY && rt != NULL);
   t.info_rc = t.close_rc = H2_PAL_OK;
   assert(h2_runtime_input_stop(rt) == H2_PAL_OK && !t.opened);
-  assert(h2_runtime_input_start(rt, &input) == H2_PAL_OK);
+  assert(h2_runtime_input_start_with_touch(rt, NULL, 8u) == H2_PAL_OK);
   assert(env.task_state.handle_count == 2 && t.opened);
-  assert(h2_runtime_input_start(rt, &input) == H2_PAL_ERR_INVALID_STATE);
+  assert(h2_runtime_input_start_with_touch(rt, NULL, 8u) ==
+         H2_PAL_ERR_INVALID_STATE);
   h2_runtime_test_control_t* control = NULL;
   assert(h2_runtime_test_control_open(rt, &control) ==
              H2_PAL_ERR_INVALID_STATE &&
@@ -3507,7 +3526,7 @@ static void test_touch_lifecycle_and_mapped_input(void) {
   env.task_state.join_rc = H2_PAL_OK;
   assert(h2_runtime_input_stop(rt) == H2_PAL_OK && !t.opened);
   env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
-  assert(h2_runtime_input_start(rt, &input) == H2_PAL_OK);
+  assert(h2_runtime_input_start_with_touch(rt, NULL, 8u) == H2_PAL_OK);
   uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
   h2_runtime_event_t event = event_with_payload(payload);
   assert(h2_runtime_poll_event(rt, &event) == H2_PAL_OK &&
@@ -3548,14 +3567,18 @@ static void test_touch_lifecycle_and_mapped_input(void) {
   const unsigned prior_opens = t.opens;
   assert(h2_runtime_init(&config, &rt) == H2_PAL_OK);
   env.sync_state.mutex_create_rc = H2_PAL_ERR_NO_MEMORY;
-  assert(h2_runtime_input_start(rt, &input) == H2_PAL_ERR_NO_MEMORY);
+  assert(h2_runtime_input_start_with_touch(rt, NULL, 8u) ==
+         H2_PAL_ERR_NO_MEMORY);
   h2_runtime_input_status_t status;
   assert(h2_runtime_input_status(rt, &status) == H2_PAL_OK);
-  assert(status.phase == H2_RUNTIME_INPUT_PHASE_STOPPED &&
-         !status.touch_error_count);
+  assert(status.phase == H2_RUNTIME_INPUT_PHASE_STOPPED);
+  uint32_t errors;
+  h2_pal_result_t last;
+  assert(h2_runtime_input_touch_errors(rt, &errors, &last) == H2_PAL_OK &&
+         !errors && last == H2_PAL_OK);
   assert(t.opens == prior_opens);
   env.sync_state.mutex_create_rc = H2_PAL_OK;
-  assert(h2_runtime_input_start(rt, &input) == H2_PAL_OK &&
+  assert(h2_runtime_input_start_with_touch(rt, NULL, 8u) == H2_PAL_OK &&
          env.task_state.handle_count == 1);
   assert(h2_runtime_destroy(&rt) == H2_PAL_OK && !rt);
 }

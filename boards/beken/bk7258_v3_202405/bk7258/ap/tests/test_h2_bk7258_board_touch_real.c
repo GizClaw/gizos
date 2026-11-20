@@ -447,6 +447,17 @@ int main(void) {
   assert(!bus_live && !task_live && interrupt_callback == NULL);
   fail_enable = 0;
 
+  /* Failed rollback transfers only the caller's own partial session. */
+  fail_enable = fail_join = 1;
+  bool owes_close = false;
+  assert(h2_pal_touch_open_pointer(touch, &owes_close) == H2_PAL_ERR_IO);
+  assert(owes_close && task_live && bus_live);
+  bool foreign = true;
+  assert(h2_pal_touch_open_pointer(touch, &foreign) == H2_PAL_ERR_BUSY &&
+         !foreign);
+  fail_enable = fail_join = 0;
+  clean();
+
   assert(h2_pal_touch_open(touch) == H2_PAL_OK);
   fail_join = 1;
   int closes_before = bus_closes;

@@ -76,6 +76,15 @@ static h2_pal_result_t touch_open(void* user) {
   return H2_PAL_OK;
 }
 
+static h2_pal_result_t touch_open_pointer(void* user, bool* needs_close) {
+  *needs_close = false;
+  if (s_touch.handle || s_touch.io) return H2_PAL_ERR_BUSY;
+  const h2_pal_result_t rc = touch_open(user);
+  /* Failed GT911 creation can leave the new panel I/O handle for retry. */
+  *needs_close = s_touch.io != NULL;
+  return rc;
+}
+
 static h2_pal_result_t touch_get_info(void* user, h2_pal_touch_info_t* out) {
   (void)user;
   if (out == NULL) return H2_PAL_ERR_INVALID_ARG;
@@ -137,7 +146,8 @@ const h2_pal_touch_api_t* h2_esp_board_touch_api(void) {
   static const h2_pal_touch_vtable_t ops = {.open = touch_open,
                                             .get_info = touch_get_info,
                                             .poll_event = touch_poll_event,
-                                            .close = touch_close};
+                                            .close = touch_close,
+                                            .open_pointer = touch_open_pointer};
   static const h2_pal_touch_api_t api = {.vtable = &ops};
   return &api;
 }
