@@ -97,6 +97,10 @@ test --build_tests_only
 test --test_output=errors
 test --remote_download_outputs=minimal
 
+# Native Linux host tools build the RK3326 Linux SD image.
+build:rk3326 --platforms=//tools/bazel/platforms:rk3326
+build:rk3326 --extra_toolchains=//tools/bazel/platforms:linux_arm64_test_toolchain,//tools/bazel/platforms:linux_x86_64_test_toolchain
+
 build:esp --repo_env=IDF_PATH
 build:esp --repo_env=IDF_TOOLS_PATH
 build:esp --repo_env=IDF_PYTHON_ENV_PATH

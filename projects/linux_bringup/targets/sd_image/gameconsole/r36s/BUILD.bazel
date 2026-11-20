@@ -1,0 +1,27 @@
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load("//tools/bazel/native/rockchip:sd_image.bzl", "r36s_sd_image")
+
+package(default_visibility = ["//visibility:public"])
+
+r36s_sd_image(
+    name = "gizos-r36s-panel0",
+    boot_script = "//boards/gameconsole/r36s/rk3326:boot.cmd",
+    busybox_config = "busybox.config",
+    exec_compatible_with = ["@platforms//os:linux"],
+    inittab = "inittab",
+    kernel_config = "//boards/gameconsole/r36s/rk3326:kernel.config",
+    layout = "//boards/gameconsole/r36s/rk3326:sdcard.cfg",
+    rc_sysinit = "rcS",
+    target_compatible_with = ["//tools/bazel/platforms:target_rk3326"],
+    upstream = "@r36s_sources//:inputs",
+)
+
+sh_test(
+    name = "image_test",
+    srcs = ["image_test.sh"],
+    args = ["$(rootpath :gizos-r36s-panel0)"],
+    data = [":gizos-r36s-panel0"],
+    exec_compatible_with = ["@platforms//os:linux"],
+    tags = ["manual"],
+    target_compatible_with = ["//tools/bazel/platforms:target_rk3326"],
+)

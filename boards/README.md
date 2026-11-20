@@ -10,6 +10,8 @@ boards/
 │   ├── esp32p4_func_ev_board_v1_4/
 │   ├── esp32s3_devkitc_1/
 │   └── mosaico/
+├── gameconsole/
+│   └── r36s/
 ├── jieli/
 │   └── jieli_ac791n_devkit/
 ├── jlc/
@@ -35,6 +37,8 @@ GPIO48 for its RGB LED, as on the initial revision; the
 specifies GPIO38. The model directory does not imply a PCB revision.
 `esp32s3_szp` is JLC's ShiZhanPai (SZP) ESP32-S3 development board; its official
 product documentation lists the ESP32-S3-WROOM-1-N16R8 module.
+
+The genuine RK3326 `r36s` board has a TF1 Linux image for the original Panel 0. [Build and boot details](../projects/linux_bringup/README.md)
 
 Each board owns its chip or target directories:
 

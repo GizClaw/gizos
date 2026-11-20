@@ -61,6 +61,10 @@ register_toolchains(
     dev_dependency = True,
 )
 
+r36s_sources = use_repo_rule("//third_party/r36s:repositories.bzl", "r36s_sources")
+
+r36s_sources(name = "r36s_sources")
+
 http_archive = use_repo_rule(
     "@bazel_tools//tools/build_defs/repo:http.bzl",
     "http_archive",

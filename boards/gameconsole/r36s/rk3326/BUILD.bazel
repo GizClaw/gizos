@@ -1,0 +1,5 @@
+exports_files([
+    "boot.cmd",
+    "kernel.config",
+    "sdcard.cfg",
+])

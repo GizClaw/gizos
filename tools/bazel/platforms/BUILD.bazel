@@ -70,6 +70,20 @@ constraint_value(
     constraint_setting = ":firmware_target",
 )
 
+constraint_value(
+    name = "target_rk3326",
+    constraint_setting = ":firmware_target",
+)
+
+platform(
+    name = "rk3326",
+    constraint_values = [
+        ":target_rk3326",
+        "@platforms//cpu:arm64",
+        "@platforms//os:linux",
+    ],
+)
+
 empty_test_toolchain(
     name = "host_test_toolchain_info",
 )

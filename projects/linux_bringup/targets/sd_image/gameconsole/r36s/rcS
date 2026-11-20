@@ -1,0 +1,10 @@
+#!/bin/sh
+set -e
+mount -t proc proc /proc
+mount -t sysfs sysfs /sys
+mount -t tmpfs tmpfs /run
+mount -t tmpfs -o mode=1777 tmpfs /tmp
+banner='GizOS Linux bring-up | R36S-V12 / original Panel 0'
+printf '\n%s\n' "$banner" > /dev/console
+# The last hardware console is UART2. Also leave the result on the LCD VT.
+if [ -c /dev/tty1 ]; then printf '\n%s\n' "$banner" > /dev/tty1; fi
