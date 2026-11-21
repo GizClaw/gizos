@@ -91,6 +91,9 @@ jieli_target_task_policy(
     graph = [":garden_guard_entry"],
     policies = [
         "garden-guard/game 10 8192 128",
+        # Keep the PCM client on the SDK scheduler with a native task queue,
+        # as used by the Fruit Slice audio producer on this board.
+        "garden-guard/audio 11 2048 32",
         "h2loader/appcmd 10 12288 128",
         "h2loader/blecmd 10 12288 128",
         "$bleikcp/server 10 12288 128",

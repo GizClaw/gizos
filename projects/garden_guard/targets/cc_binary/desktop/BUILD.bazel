@@ -17,6 +17,7 @@ cc_binary(
         "//libs/runtime",
         "//libs/sync/atomic/providers/c11",
         "//pal:unsupported",
+        "//pal/providers/backends/portaudio",
         "//pal/providers/backends/sdl3",
         "//pal/providers/platforms/desktop/pal_core:core",
         "//projects/garden_guard/app:garden_guard",

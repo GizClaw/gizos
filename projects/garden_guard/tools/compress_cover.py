@@ -1,10 +1,17 @@
-"""Add an indexed Huffman layer to the original Garden Guard cover's RLE."""
+"""Add indexed row copies and Huffman coding to the original Garden Guard cover."""
 
 import argparse
 from collections import Counter
 from heapq import heappop, heappush
 from pathlib import Path
 import re
+
+ROWS_PER_GROUP = 16
+MAX_RUN = 130
+COPY = 256
+SHIFTED_COPY = 384
+SHIFTS = (-3, -2, -1, 1, 2, 3)
+SHIFT_MAX_RUN = 12
 
 
 def array_match(source, name):
@@ -20,7 +27,7 @@ def huffman(data):
     nodes = []
     for value, count in sorted(counts.items()):
         heappush(heap, (count, value, -value - 1))
-    serial = 256
+    serial = 512
     while len(heap) > 1:
         count_a, _, left = heappop(heap)
         count_b, _, right = heappop(heap)
@@ -65,18 +72,103 @@ def encode(data, rows, codes):
     return encoded, offsets
 
 
-def verify(encoded, offsets, nodes, data, rows):
-    for row, bit_offset in enumerate(offsets):
-        start = rows[row]
-        end = rows[row + 1] if row + 1 < len(rows) else len(data)
-        for expected in data[start:end]:
-            node = len(nodes) - 1
-            while node >= 0:
-                bit = (encoded[bit_offset >> 3] >> (7 - (bit_offset & 7))) & 1
-                bit_offset += 1
-                node = nodes[node][bit]
-            if node != -expected - 1:
-                raise ValueError(f"Bad decoded symbol in row {row}")
+def unpack_rows(data, offsets):
+    rows = []
+    for start, end in zip(offsets, offsets[1:] + [len(data)]):
+        line = bytearray()
+        while start < end:
+            token = data[start]
+            start += 1
+            if token < 128:
+                line.append(token)
+            else:
+                line.extend([data[start]] * (token - 128 + 3))
+                start += 1
+        rows.append(line)
+    return rows
+
+
+def tokenize(rows):
+    """A group begins with a self-contained row. Copy runs reuse the prior row."""
+    tokens, groups = [], []
+    for y, row in enumerate(rows):
+        previous = None if y % ROWS_PER_GROUP == 0 else rows[y - 1]
+        if previous is None:
+            groups.append(len(tokens))
+        x = 0
+        while x < len(row):
+            limit = min(MAX_RUN, len(row) - x)
+            run, copy = 1, 0
+            shift_index = None
+            while run < limit and row[x + run] == row[x]:
+                run += 1
+            if previous is not None:
+                while copy < limit and row[x + copy] == previous[x + copy]:
+                    copy += 1
+                for index, shift in enumerate(SHIFTS):
+                    n, start = 0, x + shift
+                    if start < 0 or copy >= SHIFT_MAX_RUN:
+                        continue
+                    limit_shifted = min(limit, SHIFT_MAX_RUN, len(row) - start)
+                    while n < limit_shifted and row[x + n] == previous[start + n]:
+                        n += 1
+                    if n > copy:
+                        copy, shift_index = n, index
+            if copy >= 3 and copy >= run // 2:
+                token = COPY + copy - 3
+                if shift_index is not None:
+                    token = SHIFTED_COPY + shift_index * (SHIFT_MAX_RUN - 2) + copy - 3
+                tokens.append(token)
+                x += copy
+            elif run >= 3:
+                tokens.extend((128 + run - 3, row[x]))
+                x += run
+            else:
+                tokens.append(row[x])
+                x += 1
+    return tokens, groups
+
+
+def verify(encoded, offsets, nodes, rows):
+    def symbol():
+        nonlocal bit_offset
+        node = len(nodes) - 1
+        while node >= 0:
+            bit = (encoded[bit_offset >> 3] >> (7 - (bit_offset & 7))) & 1
+            bit_offset += 1
+            node = nodes[node][bit]
+        return -node - 1
+
+    previous = bytearray(len(rows[0]))
+    for y, expected in enumerate(rows):
+        line = bytearray(len(expected))
+        first = y % ROWS_PER_GROUP == 0
+        if first:
+            bit_offset = offsets[y // ROWS_PER_GROUP]
+        x = 0
+        while x < len(line):
+            token = symbol()
+            if token < 128:
+                line[x] = token
+                x += 1
+            elif token < COPY:
+                length = token - 128 + 3
+                line[x:x + length] = bytes([symbol()]) * length
+                x += length
+            else:
+                if first:
+                    raise ValueError(f"Unexpected cross-group copy in row {y}")
+                start, length = x, token - COPY + 3
+                if token >= SHIFTED_COPY:
+                    shift, count = divmod(token - SHIFTED_COPY, SHIFT_MAX_RUN - 2)
+                    start, length = x + SHIFTS[shift], count + 3
+                if start < 0 or start + length > len(previous):
+                    raise ValueError(f"Invalid copy span in row {y}")
+                line[x:x + length] = previous[start:start + length]
+                x += length
+        if x != len(expected) or line != expected:
+            raise ValueError(f"Bad decoded pixels in row {y}")
+        previous = line
 
 
 def print_array(stream, kind, name, values, columns, fmt):
@@ -96,13 +188,19 @@ def main():
     rows = [int(value) for value in re.findall(r"(\d+)u", row_table[1])]
     raw = array_match(source, "k_title_art")[1]
     data = bytes(int(value, 16) for value in re.findall(r"0x([0-9a-f]+)", raw))
-    nodes, codes = huffman(data)
-    encoded, offsets = encode(data, rows, codes)
-    verify(encoded, offsets, nodes, data, rows)
+    pixels = unpack_rows(data, rows)
+    tokens, groups = tokenize(pixels)
+    nodes, codes = huffman(tokens)
+    encoded, offsets = encode(tokens, groups, codes)
+    verify(encoded, offsets, nodes, pixels)
     with args.output.open("w", encoding="ascii", newline="\n") as stream:
         prefix = source[source.index("#define TITLE_ART_WIDTH"):source.rfind("\n", 0, row_table.start())].rstrip()
         print("/* Original cover, generated by tools/compress_cover.py. */", file=stream)
         print(prefix + "\n", file=stream)
+        print(f"#define TITLE_ART_ROWS_PER_GROUP {ROWS_PER_GROUP}", file=stream)
+        print(f"#define TITLE_ART_SHIFTED_COPY {SHIFTED_COPY}", file=stream)
+        print(f"#define TITLE_ART_SHIFT_MAX_RUN {SHIFT_MAX_RUN}", file=stream)
+        print_array(stream, "int8_t", "k_title_copy_shifts", SHIFTS, 9, str)
         print_array(stream, "uint32_t", "k_title_bit_offsets", offsets, 9, lambda v: f"{v}u")
         print(file=stream)
         print("static const int16_t k_title_tree[][2] = {", file=stream)
@@ -111,7 +209,7 @@ def main():
             print(line, file=stream)
         print("};\n", file=stream)
         print_array(stream, "uint8_t", "k_title_art", encoded, 13, lambda v: f"0x{v:02x}")
-    print(f"Cover bytes including index and decode table: {len(encoded) + 4 * (len(rows) + len(nodes))} (was {len(data) + 4 * len(rows)})")
+    print(f"Cover bytes including index and decode table: {len(encoded) + 4 * (len(groups) + len(nodes))} (was {len(data) + 4 * len(rows)})")
 
 
 if __name__ == "__main__":

@@ -57,6 +57,7 @@ pkg_tar(
         "droid-sans.woff",
         "droid-sans-fallback.woff",
         "droid-sans-fallback-notice.txt",
+        "garden-audio.js",
         ":garden_guard_wasm",
     ],
     out = "garden-guard.web.tar",

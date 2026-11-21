@@ -1,5 +1,7 @@
 #include "h2_garden_guard.h"
 
+#include "h2_garden_guard_audio.h"
+
 #include "h2_garden_guard_game.h"
 #include "h2_garden_guard_render.h"
 
@@ -25,6 +27,7 @@ typedef struct dirty {
 
 typedef struct session {
   h2_runtime_t* runtime;
+  gg_audio_t* audio;
   h2_garden_guard_config_t config;
   const h2_pal_mem_api_t* allocator;
   h2_display_info_t display;
@@ -705,7 +708,9 @@ static h2_pal_result_t play(session_t* s) {
 
     if (s->config.reduce_motion != NULL)
       s->game.reduce_motion = s->config.reduce_motion(s->config.user);
+    const h2_garden_guard_phase_t previous_phase = s->game.phase;
     const bool was_paused = h2_garden_guard_paused(&s->game);
+    s->game.sounds = 0;
     s->touch_activity = false;
     rc = poll_touch(s);
     if (rc != H2_PAL_OK) return rc;
@@ -716,6 +721,15 @@ static h2_pal_result_t play(session_t* s) {
         s->config.exit_on_unhandled_back)
       return H2_PAL_OK;
     if (!was_paused) h2_garden_guard_game_step(&s->game, (uint32_t)dt);
+    const bool playing = s->game.phase == H2_GARDEN_GUARD_PHASE_PLAYING;
+    const bool reset_audio =
+        s->game.phase != previous_phase &&
+        (playing || s->game.phase == H2_GARDEN_GUARD_PHASE_TITLE);
+    const bool hidden = s->config.audio_active != NULL &&
+                        !s->config.audio_active(s->config.user);
+    gg_audio_publish(s->audio, s->game.sounds,
+                     playing && !h2_garden_guard_paused(&s->game),
+                     s->game.muted || hidden, reset_audio);
     save_language(s);
     save_profile(s, now);
     rc = render_frame(s);
@@ -838,7 +852,16 @@ h2_pal_result_t h2_garden_guard_run(h2_runtime_t* runtime,
     touch_open = true;
     rc = prepare(s);
   }
-  if (rc == H2_PAL_OK) rc = play(s);
+  if (rc == H2_PAL_OK) {
+    if (s->config.enable_audio) s->audio = gg_audio_start(runtime);
+    s->game.sound_control = s->audio != NULL;
+    rc = play(s);
+  }
+  int joined;
+  while ((joined = gg_audio_join(s->audio)) != H2_PAL_OK) {
+    /* The provider still owns a borrowed context until the join succeeds. */
+    (void)h2_pal_time_sleep_ms(runtime->time, 20u);
+  }
 
   char message[64];
   (void)snprintf(message, sizeof(message),

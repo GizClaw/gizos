@@ -1903,7 +1903,7 @@ static void draw_toolbar_status(h2_garden_guard_canvas_t* canvas,
 
 #include "h2_garden_guard_title.inc"
 
-static uint8_t title_symbol(uint32_t* offset) {
+static uint16_t title_symbol(uint32_t* offset) {
   int32_t node = (int32_t)(sizeof(k_title_tree) / sizeof(k_title_tree[0])) - 1;
   uint32_t pos = *offset;
   while (node >= 0) {
@@ -1913,12 +1913,11 @@ static uint8_t title_symbol(uint32_t* offset) {
     ++pos;
   }
   *offset = pos;
-  return (uint8_t)(-node - 1);
+  return (uint16_t)(-node - 1);
 }
 
-/* Expand a single source row when the scale needs it. The illustration uses
- * flash plus a scanline on the stack. No extra framebuffer or codec is needed.
- */
+/* Expand rows in order into two scanlines. A group starts with a complete
+ * row, and copy tokens predict spans from the preceding row. */
 static void draw_title_art(h2_garden_guard_canvas_t* canvas, float x, float y,
                            float scale) {
   region_t bounds;
@@ -1926,26 +1925,46 @@ static void draw_title_art(h2_garden_guard_canvas_t* canvas, float x, float y,
                     y + TITLE_ART_HEIGHT * scale, &bounds))
     return;
   const float inverse = 1.0f / scale;
-  uint8_t line[TITLE_ART_WIDTH];
+  uint8_t lines[2][TITLE_ART_WIDTH];
   int32_t decoded = -1;
+  uint32_t offset = 0;
   for (int32_t py = bounds.y0; py < bounds.y1; ++py) {
     const int32_t sy = (int32_t)clampf(((float)py + 0.5f - y) * inverse, 0.0f,
                                        (float)(TITLE_ART_HEIGHT - 1));
-    if (decoded != sy) {
-      uint32_t offset = k_title_bit_offsets[sy];
+    const int32_t group = sy / TITLE_ART_ROWS_PER_GROUP;
+    const int32_t first = group * TITLE_ART_ROWS_PER_GROUP;
+    if (decoded < first) {
+      decoded = first - 1;
+      offset = k_title_bit_offsets[group];
+    }
+    while (decoded < sy) {
+      ++decoded;
+      uint8_t* const line = lines[decoded & 1];
+      const uint8_t* const previous = lines[(decoded & 1) ^ 1];
       int32_t sx = 0;
       while (sx < TITLE_ART_WIDTH) {
-        const uint8_t token = title_symbol(&offset);
-        if ((token & 128u) == 0u) {
-          line[sx++] = token;
-        } else {
-          const size_t count = (token & 127u) + 3u;
+        const uint16_t token = title_symbol(&offset);
+        if (token < 128u) {
+          line[sx++] = (uint8_t)token;
+        } else if (token < 256u) {
+          const size_t count = token - 128u + 3u;
           memset(&line[sx], title_symbol(&offset), count);
+          sx += (int32_t)count;
+        } else {
+          int32_t start = sx;
+          size_t count = token - 256u + 3u;
+          if (token >= TITLE_ART_SHIFTED_COPY) {
+            const unsigned predictor = token - TITLE_ART_SHIFTED_COPY;
+            const unsigned lengths = TITLE_ART_SHIFT_MAX_RUN - 2u;
+            start += k_title_copy_shifts[predictor / lengths];
+            count = predictor % lengths + 3u;
+          }
+          memcpy(line + sx, previous + start, count);
           sx += (int32_t)count;
         }
       }
-      decoded = sy;
     }
+    const uint8_t* line = lines[decoded & 1];
     uint16_t* row = row_at(canvas, py);
     for (int32_t px = bounds.x0; px < bounds.x1; ++px) {
       const int32_t sx = (int32_t)clampf(((float)px + 0.5f - x) * inverse, 0.0f,
@@ -2824,6 +2843,31 @@ static void draw_pause(h2_garden_guard_canvas_t* canvas,
   text_centered(canvas, L("PAUSED", "已暂停"), cx, y + 71.0f * s,
                 text_scale(s, 3.0f), cream, 256u);
   menu_button(canvas, center, L("RESUME", "继续游戏"), gold, ink);
+  if (game->sound_control) {
+    const h2_garden_guard_rect_t button =
+        h2_garden_guard_action_rect(l, H2_GARDEN_GUARD_ACTION_SOUND);
+    const float x = button.x + button.w * 0.5f, cy = button.y + button.h * 0.5f;
+    /* Speaker and a slash/moving air, independent of the font subset. */
+    rounded_rect(canvas, button.x, button.y, button.x + button.w,
+                 button.y + button.h, 7.0f * s, green, 256u);
+    fill_rect(canvas, x - 14.0f * s, cy - 4.0f * s, x - 6.0f * s, cy + 4.0f * s,
+              cream, 256u);
+    for (unsigned i = 0; i < 8u; ++i) {
+      const float d = (float)i * s;
+      fill_rect(canvas, x - 7.0f * s + d, cy - 4.0f * s - d, x - 6.0f * s + d,
+                cy + 4.0f * s + d, cream, 256u);
+    }
+    if (game->muted) {
+      for (unsigned i = 0; i < 16u; ++i) {
+        const float d = (float)i * s;
+        disc(canvas, x + 16.0f * s - d, cy - 8.0f * s + d, 1.5f * s, gold,
+             256u);
+      }
+    } else {
+      disc(canvas, x + 6.0f * s, cy, 2.5f * s, cream, 256u);
+      disc(canvas, x + 13.0f * s, cy, 2.0f * s, cream, 256u);
+    }
+  }
   menu_button(
       canvas,
       h2_garden_guard_action_rect(l, H2_GARDEN_GUARD_ACTION_PAUSE_LANGUAGE),

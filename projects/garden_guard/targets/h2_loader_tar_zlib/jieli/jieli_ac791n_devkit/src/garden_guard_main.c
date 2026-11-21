@@ -62,6 +62,7 @@ static void game(void* user) {
   h2_garden_guard_jieli_plant_spans_t plant_spans = {.runtime = runtime};
   const h2_garden_guard_config_t config = {
       .brightness_percent = 100u,
+      .enable_audio = true,
       .cache_plants = true,
       .ready = confirm,
       .plant_spans_find = h2_garden_guard_jieli_find_plant_spans,

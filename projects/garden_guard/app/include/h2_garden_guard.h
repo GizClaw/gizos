@@ -88,6 +88,11 @@ typedef struct h2_garden_guard_config {
    * game calls it in idle time on the title or through wave two. One call
    * must process at most one small block and perform no external I/O. */
   void (*plant_spans_prepare_step)(void* user);
+  /** Enable optional Audio PAL playback on a separate task. */
+  bool enable_audio;
+  /** Optional quick run-thread query, e.g. foreground and audio activation.
+   * Falling false discards queued audio and holds the score cursor. */
+  bool (*audio_active)(void* user);
   /** Borrowed user value passed to the configured callbacks. */
   void* user;
 } h2_garden_guard_config_t;

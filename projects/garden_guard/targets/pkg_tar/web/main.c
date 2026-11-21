@@ -44,7 +44,7 @@ static h2_runtime_config_t runtime_config(h2_web_platform_t* platform) {
   config.power = h2_pal_unsupported_power_api();
   config.camera = h2_pal_unsupported_camera_api();
   config.display = h2_web_platform_display_api(platform);
-  config.audio = h2_pal_unsupported_audio_api();
+  config.audio = h2_web_platform_audio_api(platform);
   config.audio_decoder = h2_pal_unsupported_audio_decoder_api();
   config.periph = h2_pal_unsupported_periph_api();
   config.button = h2_pal_unsupported_button_api();
@@ -138,6 +138,16 @@ static h2_garden_guard_cover_action_t take_cover_action(void* user) {
 
 static atomic_bool web_back;
 static atomic_bool web_reduce_motion;
+static atomic_bool web_audio_active;
+
+EMSCRIPTEN_KEEPALIVE void h2_garden_guard_web_audio_active(int active) {
+  atomic_store(&web_audio_active, active != 0);
+}
+
+static bool audio_active(void* user) {
+  (void)user;
+  return atomic_load(&web_audio_active);
+}
 
 EMSCRIPTEN_KEEPALIVE void h2_garden_guard_web_back(void) {
   atomic_store(&web_back, true);
@@ -169,7 +179,9 @@ int main(void) {
   const h2_runtime_config_t config = runtime_config(platform);
   h2_runtime_t* runtime = NULL;
   int rc = h2_runtime_init(&config, &runtime);
-  const h2_garden_guard_config_t game = {.language_changed = language_changed,
+  const h2_garden_guard_config_t game = {.enable_audio = true,
+                                         .audio_active = audio_active,
+                                         .language_changed = language_changed,
                                          .back_pressed = back_pressed,
                                          .reduce_motion = reduce_motion,
                                          .cover_changed = cover_changed,

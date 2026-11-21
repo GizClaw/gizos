@@ -60,6 +60,7 @@
   </div>
   <p id="game-status" role="status">Loading…</p>
 </main>
+<script src="garden-audio.js"></script>
 <script>
   const gameStatus = document.getElementById('game-status');
   const messages = {
@@ -303,6 +304,7 @@
     print: text => console.log(text),
     printErr: text => console.error(text),
     onRuntimeInitialized: () => {
+      h2GardenInstallAudio(Module);
       state = 'ready';
       showStatus();
       const motion = matchMedia('(prefers-reduced-motion: reduce)');
