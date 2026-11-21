@@ -33,6 +33,10 @@ Owns native build execution so SDK actions share one runtime and validation cont
 1. **Include:** SDK rules and runners, locator validation, compiler-cache integration, archive ABI checks, identity pins, native CMake support, post-processing and tool tests.
 2. **Exclude:** Board-driver behavior, App lifecycle code, Device boot policy and H2Loader package or release policy.
 
+### `native/rockchip/`
+
+Provides [public Bzlmod rules for ARM64 Linux, legacy Rockchip U-Boot, BusyBox SquashFS and raw SD images](native/rockchip/README.md). The product repository supplies the board, pinned source files, rootfs contents, partition layout and final target.
+
 ### `mobile/`
 
 Owns mobile artifact support so Android and iOS packages use consistent host orchestration.

@@ -1,0 +1,20 @@
+load("@rules_python//python:defs.bzl", "py_test")
+load("//tools/bazel/platforms:compatibility.bzl", "POSIX_HOST_TOOL_COMPATIBILITY")
+
+exports_files(["defs.bzl"])
+
+exports_files(
+    ["runner.py"],
+    visibility = ["//visibility:private"],
+)
+
+py_test(
+    name = "runner_test",
+    srcs = [
+        "runner.py",
+        "tests/runner_test.py",
+    ],
+    legacy_create_init = 0,
+    main = "tests/runner_test.py",
+    target_compatible_with = POSIX_HOST_TOOL_COMPATIBILITY,
+)
