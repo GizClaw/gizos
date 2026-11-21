@@ -5,6 +5,9 @@
 #include "h2_fruit_slice_desktop_pref.h"
 #include "h2_portaudio.h"
 #include "h2_sdl3.h"
+#ifdef __APPLE__
+#include <SDL3/SDL_hints.h>
+#endif
 #include <stdio.h>
 
 typedef struct window {
@@ -62,6 +65,11 @@ int main(int argc, char** argv) {
     fprintf(stderr, "fruit-slice: persistent Preferences failed rc=%d\n", rc);
     return 1;
   }
+#ifdef __APPLE__
+  /* The Cocoa renderer can present at the display cadence. Set the hint
+   * before Display opens and respect an explicit SDL environment setting. */
+  (void)SDL_SetHintWithPriority(SDL_HINT_RENDER_VSYNC, "1", SDL_HINT_DEFAULT);
+#endif
   const h2_sdl3_config_t surface = {
       .title = "Fruit Slice", .width = width, .height = height};
   window_t window = {0};
@@ -86,7 +94,18 @@ int main(int argc, char** argv) {
   rc = h2_runtime_init(&config, &runtime);
   if (rc == H2_PAL_OK) {
     const h2_fruit_slice_config_t game = {
-        .should_exit = should_exit, .is_paused = is_paused, .user = &window};
+        .should_exit = should_exit,
+        .is_paused = is_paused,
+        .user = &window,
+#ifdef __APPLE__
+        /* Leave headroom for a 60 Hz refresh and keep a bounded wait when
+         * the renderer cannot pace us or the screen has no dirty pixels. */
+        .frame_period_ms = 15u,
+        /* CoreAudio startup can block on the first gesture. Open and feed
+         * the track on the existing PCM worker instead of the window thread. */
+        .audio_worker = true,
+#endif
+    };
     rc = h2_fruit_slice_run(runtime, &game);
   }
   const int destroyed = runtime != NULL ? h2_runtime_destroy(&runtime) : 0;
