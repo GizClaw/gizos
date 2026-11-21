@@ -439,7 +439,7 @@ static int32_t han_size(int32_t scale) {
   return scale == 1 ? HAN_SMALL_SIDE : 7 * scale;
 }
 
-static const uint32_t* han_bitmap(uint32_t code, bool small) {
+static size_t han_index(uint32_t code) {
   size_t lo = 0, hi = sizeof(k_han) / sizeof(k_han[0]);
   while (lo < hi) {
     const size_t mid = lo + (hi - lo) / 2u;
@@ -449,8 +449,8 @@ static const uint32_t* han_bitmap(uint32_t code, bool small) {
       hi = mid;
   }
   return lo < sizeof(k_han) / sizeof(k_han[0]) && k_han[lo].code == code
-             ? (small ? k_han[lo].small : k_han[lo].rows)
-             : NULL;
+             ? lo
+             : sizeof(k_han) / sizeof(k_han[0]);
 }
 
 int32_t h2_garden_guard_text_width(const char* text, int32_t scale) {
@@ -471,14 +471,13 @@ static int32_t label_height(const char* label, int32_t scale) {
 }
 
 #ifdef __EMSCRIPTEN__
-static void collect_menu_label(h2_garden_guard_canvas_t* canvas,
-                               const char* text, float x, float y,
-                               int32_t scale, uint16_t color, uint32_t alpha,
-                               bool centered) {
-  h2_garden_guard_menu_labels_t* menu = canvas->menu_labels;
-  if (menu == NULL || menu->count >= H2_GARDEN_GUARD_MAX_MENU_LABELS) return;
-  h2_garden_guard_menu_label_t* label = &menu->labels[menu->count++];
-  *label = (h2_garden_guard_menu_label_t){
+static void collect_label(h2_garden_guard_canvas_t* canvas, const char* text,
+                          float x, float y, int32_t scale, uint16_t color,
+                          uint32_t alpha, bool centered) {
+  h2_garden_guard_labels_t* menu = canvas->labels;
+  if (menu == NULL || menu->count >= H2_GARDEN_GUARD_MAX_LABELS) return;
+  h2_garden_guard_label_t* label = &menu->labels[menu->count++];
+  *label = (h2_garden_guard_label_t){
       .x = x,
       .y = y,
       .width = (float)h2_garden_guard_text_width(text, scale),
@@ -494,9 +493,8 @@ static void text_layer(h2_garden_guard_canvas_t* canvas, const char* text,
                        int32_t x, int32_t y, int32_t scale, uint16_t color,
                        uint32_t alpha) {
 #ifdef __EMSCRIPTEN__
-  if (canvas->external_menu_labels) {
-    collect_menu_label(canvas, text, (float)x, (float)y, scale, color, alpha,
-                       false);
+  if (canvas->external_labels) {
+    collect_label(canvas, text, (float)x, (float)y, scale, color, alpha, false);
     return;
   }
 #endif
@@ -504,8 +502,9 @@ static void text_layer(h2_garden_guard_canvas_t* canvas, const char* text,
   const int32_t font_side = scale == 1 ? HAN_SMALL_SIDE : HAN_SIDE;
   while (*text != '\0') {
     const uint32_t code = next_glyph(&text);
-    const uint32_t* han = code >= 128u ? han_bitmap(code, scale == 1) : NULL;
-    if (han != NULL) {
+    const size_t index =
+        code >= 128u ? han_index(code) : sizeof(k_han) / sizeof(k_han[0]);
+    if (index < sizeof(k_han) / sizeof(k_han[0])) {
       const int32_t px = han_size(scale);
       region_t bounds;
       if (region_begin(canvas, (float)x, (float)y, (float)(x + px),
@@ -513,7 +512,15 @@ static void text_layer(h2_garden_guard_canvas_t* canvas, const char* text,
         for (int32_t row = bounds.y0; row < bounds.y1; ++row) {
           uint16_t* dest = row_at(canvas, row);
           uint8_t* depth = depth_row(canvas, row);
-          const uint32_t bits = han[((row - y) * 2 + 1) * font_side / (px * 2)];
+          const int32_t sy = ((row - y) * 2 + 1) * font_side / (px * 2);
+          uint32_t bits;
+          if (scale == 1) {
+            const uint8_t* packed = k_han[index].small[sy];
+            bits = (uint32_t)packed[0] | ((uint32_t)packed[1] << 8u) |
+                   ((uint32_t)packed[2] << 16u);
+          } else {
+            bits = k_han[index].rows[sy];
+          }
           for (int32_t col = bounds.x0; col < bounds.x1; ++col) {
             const int32_t sx = ((col - x) * 2 + 1) * font_side / (px * 2);
             const uint32_t coverage = (bits >> (2 * sx)) & 3u;
@@ -544,9 +551,9 @@ static void text_layer(h2_garden_guard_canvas_t* canvas, const char* text,
 static void text(h2_garden_guard_canvas_t* canvas, const char* value, int32_t x,
                  int32_t y, int32_t scale, uint16_t color, uint32_t alpha) {
 #ifdef __EMSCRIPTEN__
-  if (canvas->external_menu_labels) {
-    collect_menu_label(canvas, value, (float)x, (float)y, scale, color, alpha,
-                       false);
+  if (canvas->external_labels) {
+    collect_label(canvas, value, (float)x, (float)y, scale, color, alpha,
+                  false);
     return;
   }
 #endif
@@ -563,8 +570,8 @@ static void text_centered(h2_garden_guard_canvas_t* canvas, const char* value,
                           float cx, float y, int32_t scale, uint16_t color,
                           uint32_t alpha) {
 #ifdef __EMSCRIPTEN__
-  if (canvas->external_menu_labels) {
-    collect_menu_label(canvas, value, cx, y, scale, color, alpha, true);
+  if (canvas->external_labels) {
+    collect_label(canvas, value, cx, y, scale, color, alpha, true);
     return;
   }
 #endif
@@ -1743,29 +1750,43 @@ static void draw_card(h2_garden_guard_canvas_t* canvas,
     draw_plant_kind(canvas, kind, gx, ground_y, scale, 0u, k_neutral_plant,
                     true);
   }
+  const uint32_t step = cooldown_step(game, card);
+  const bool denied = game->card_denied_ms[card] != 0u && !locked;
+  const float shade_bottom =
+      y0 + l->card_h * (float)step / (float)COOLDOWN_STEPS;
   if (cost > 0u) {
     char value[12];
-    if (locked)
-      (void)snprintf(value, sizeof(value), "%s",
-                     l->card_w < 35.0f ? L("L", "锁") : L("LOCK", "未解锁"));
-    else
+    if (locked) {
+      const char* lock = L("LOCK", "未解锁");
+      if ((float)h2_garden_guard_text_width(lock, 1) > l->card_w - inset)
+        lock = L("L", "已锁");
+      if ((float)h2_garden_guard_text_width(lock, 1) > l->card_w - inset)
+        lock = L("L", "锁");
+      (void)snprintf(value, sizeof(value), "%s", lock);
+    } else {
       (void)snprintf(value, sizeof(value), "%u", (unsigned)cost);
+    }
     const float text_h = y1 - well_y1;
     int32_t scale = (int32_t)(text_h * 0.62f / 7.0f + 0.5f);
     if (scale < 1) scale = 1;
     scale = fit_scale(value, l->card_w - 2.0f * inset, scale);
-    text_centered(canvas, value, cx,
-                  well_y1 + (text_h - 7.0f * (float)scale) * 0.5f, scale,
-                  affordable ? RGB(70, 44, 20) : RGB(70, 66, 60), 256u);
+    const float text_y =
+        well_y1 + (text_h - (float)label_height(value, scale)) * 0.5f;
+    uint16_t ink = affordable ? RGB(62, 40, 16) : RGB(42, 38, 31);
+#ifdef __EMSCRIPTEN__
+    /* The shade and denial flash live in the artwork. Keep the readout
+     * legible above them, while darkening it if the shade has reached it. */
+    if (canvas->external_labels && shade_bottom > (well_y1 + y1) * 0.5f)
+      ink = blend(ink, RGB(16, 12, 8), 140u);
+#endif
+    text_centered(canvas, value, cx, text_y, scale, ink, 256u);
   }
-  const uint32_t step = cooldown_step(game, card);
   if (step > 0u) {
     /* The shade drains from the top as the card recharges. */
-    const float bottom = y0 + l->card_h * (float)step / (float)COOLDOWN_STEPS;
-    rounded_rect(canvas, x0, y0, x1, bottom, fminf(radius, bottom - y0),
-                 RGB(16, 12, 8), 140u);
+    rounded_rect(canvas, x0, y0, x1, shade_bottom,
+                 fminf(radius, shade_bottom - y0), RGB(16, 12, 8), 140u);
   }
-  if (game->card_denied_ms[card] != 0u && !locked)
+  if (denied)
     rounded_rect(canvas, x0, y0, x1, y1, radius, RGB(230, 40, 32), 120u);
 }
 
@@ -1959,10 +1980,10 @@ static void menu_button(h2_garden_guard_canvas_t* canvas,
   rounded_rect(canvas, r.x, r.y, r.x + r.w, r.y + r.h, r.h * 0.23f, fill, 256u);
   const int32_t scale = fit_scale(label, r.w * 0.93f, r.h >= 25.0f ? 2 : 1);
 #ifdef __EMSCRIPTEN__
-  if (canvas->external_menu_labels) {
-    collect_menu_label(canvas, label, r.x + r.w * 0.5f,
-                       r.y + (r.h - (float)label_height(label, scale)) * 0.5f,
-                       scale, ink, 256u, true);
+  if (canvas->external_labels) {
+    collect_label(canvas, label, r.x + r.w * 0.5f,
+                  r.y + (r.h - (float)label_height(label, scale)) * 0.5f, scale,
+                  ink, 256u, true);
     return;
   }
 #endif
@@ -2030,8 +2051,8 @@ static void journal_card_face(h2_garden_guard_canvas_t* canvas,
       fit_scale(name, r.w - 16.0f * k, text_scale(k, detail ? 2.2f : 2.0f));
   const float name_y = picture_bottom + 8.0f * k;
 #ifdef __EMSCRIPTEN__
-  if (canvas->external_menu_labels)
-    collect_menu_label(canvas, name, cx, name_y, name_scale, ink, 256u, true);
+  if (canvas->external_labels)
+    collect_label(canvas, name, cx, name_y, name_scale, ink, 256u, true);
   else
 #endif
     text_layer(
@@ -2131,14 +2152,13 @@ static void draw_journal_focus(h2_garden_guard_canvas_t* canvas,
       from.x + (to.x - from.x) * eased, from.y + (to.y - from.y) * eased,
       from.w + (to.w - from.w) * eased, from.h + (to.h - from.h) * eased};
 #ifdef __EMSCRIPTEN__
-  if (canvas->menu_labels != NULL) {
-    h2_garden_guard_menu_labels_t* menu = canvas->menu_labels;
-    menu->foreground = menu->count;
+  if (canvas->labels != NULL) {
+    h2_garden_guard_labels_t* menu = canvas->labels;
     menu->card[0] = paint.x;
     menu->card[1] = paint.y;
     menu->card[2] = paint.w;
     menu->card[3] = paint.h;
-    menu->shade = eased * (180.0f / 256.0f);
+    menu->shade = (float)(uint32_t)(eased * 180.0f) / 256.0f;
   }
 #endif
   if (eased > 0.0f)
@@ -2161,7 +2181,7 @@ static void draw_shop(h2_garden_guard_canvas_t* canvas,
   const float cx = (float)l->width * 0.5f;
   const uint16_t paper = RGB(235, 216, 173);
   const uint16_t ink = RGB(35, 61, 51);
-  const uint16_t muted = RGB(87, 111, 88);
+  const uint16_t muted = RGB(65, 88, 67);
   const uint16_t light = RGB(244, 226, 176);
   fill_rect(canvas, 0.0f, 0.0f, (float)l->width, (float)l->height,
             RGB(19, 39, 35), 256u);
@@ -2798,7 +2818,8 @@ static void draw_pause(h2_garden_guard_canvas_t* canvas,
   const float y = center.y - 106.0f * s;
   const uint16_t cream = RGB(247, 227, 177), ink = RGB(27, 51, 42);
   const uint16_t green = RGB(50, 93, 78), gold = RGB(249, 202, 110);
-  fill_rect(canvas, 0.0f, 0.0f, (float)l->width, (float)l->height, ink, 158u);
+  fill_rect(canvas, 0.0f, 0.0f, (float)l->width, (float)l->height, ink,
+            H2_GARDEN_GUARD_PAUSE_SHADE);
   rounded_rect(canvas, cx - 188.0f * s, y + 51.0f * s, cx + 188.0f * s,
                y + 272.0f * s, 12.0f * s, RGB(24, 53, 43), 256u);
   if (game->menu == H2_GARDEN_GUARD_MENU_CONFIRM) {
@@ -2859,23 +2880,6 @@ static void draw_pause(h2_garden_guard_canvas_t* canvas,
     text_centered(canvas, L("LANGUAGE FOR THIS SESSION", "语言仅本次有效"), cx,
                   y + 253.0f * s, 1, cream, 256u);
 }
-
-#ifdef __EMSCRIPTEN__
-void h2_garden_guard_collect_menu_labels(h2_garden_guard_menu_labels_t* menu,
-                                         const h2_garden_guard_game_t* game) {
-  h2_garden_guard_canvas_t canvas = {.width = game->layout.width,
-                                     .height = game->layout.height,
-                                     .measure = true,
-                                     .external_menu_labels = true,
-                                     .menu_labels = menu};
-  if (game->menu == H2_GARDEN_GUARD_MENU_JOURNAL) {
-    draw_journal(&canvas, game);
-    if (game->journal_card != 0u) draw_journal_focus(&canvas, game);
-  } else if (game->menu == H2_GARDEN_GUARD_MENU_SHOP) {
-    draw_shop(&canvas, game);
-  }
-}
-#endif
 
 static void draw_frozen_scene(h2_garden_guard_canvas_t* canvas,
                               const h2_garden_guard_game_t* game);
@@ -3041,8 +3045,20 @@ static void paint_scene(h2_garden_guard_canvas_t* canvas,
       full_clip(canvas);
     else
       field_clip(canvas, l);
-    draw_sun(canvas, sun->x, sun->y, sun->collecting ? sun_r * 0.8f : sun_r,
-             spin, 256u);
+    const float radius = sun->collecting ? sun_r * 0.8f : sun_r;
+#ifdef __EMSCRIPTEN__
+    /* Only collecting suns can pass in front of toolbar text. */
+    h2_garden_guard_labels_t* labels = canvas->labels;
+    if (labels != NULL && sun->collecting &&
+        sun->y - radius * 1.45f < l->bar_h) {
+      float* mask = labels->suns[labels->sun_count++];
+      mask[0] = sun->x;
+      mask[1] = sun->y;
+      mask[2] = radius;
+      mask[3] = spin;
+    }
+#endif
+    draw_sun(canvas, sun->x, sun->y, radius, spin, 256u);
   }
   full_clip(canvas);
 
@@ -3064,9 +3080,14 @@ static void paint_scene(h2_garden_guard_canvas_t* canvas,
     }
     const int32_t scale =
         fit_scale(banner, l->field_w * 0.86f, text_scale(u, 5.0f));
-    text_centered(canvas, banner, l->mid_x,
-                  l->field_y + l->field_h * 0.45f - 3.5f * (float)scale, scale,
-                  RGB(255, 238, 120), alpha);
+    const float y = l->field_y + l->field_h * 0.45f - 3.5f * (float)scale;
+    const float height = (float)label_height(banner, scale);
+    const float half = (float)h2_garden_guard_text_width(banner, scale) * 0.5f;
+    rounded_rect(canvas, l->mid_x - half - 9.0f * u, y - 5.0f * u,
+                 l->mid_x + half + 9.0f * u, y + height + 5.0f * u, 5.0f * u,
+                 RGB(21, 48, 37), alpha * 220u / 256u);
+    text_centered(canvas, banner, l->mid_x, y, scale, RGB(255, 238, 145),
+                  alpha);
   }
 }
 

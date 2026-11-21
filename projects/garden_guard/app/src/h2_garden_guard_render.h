@@ -28,26 +28,31 @@ extern "C" {
 #define H2_GARDEN_GUARD_BAND_ROWS 16
 /** One bit per band: supports heights up to 64 * 16 = 1024 rows. */
 #define H2_GARDEN_GUARD_MAX_BANDS 64
+#define H2_GARDEN_GUARD_PAUSE_SHADE 158u
 
 #ifdef __EMSCRIPTEN__
-#define H2_GARDEN_GUARD_MAX_MENU_LABELS 28u
+#define H2_GARDEN_GUARD_MAX_LABELS 32u
 
-typedef struct h2_garden_guard_menu_label {
+typedef struct h2_garden_guard_label {
   float x, y, width, height;
   uint32_t rgb565, opacity, centered;
   char text[80];
-} h2_garden_guard_menu_label_t;
+} h2_garden_guard_label_t;
 
-typedef struct h2_garden_guard_menu_labels {
-  unsigned count, foreground;
+typedef struct h2_garden_guard_labels {
+  unsigned count;
+  /* The animated journal card covers and dims the shelf labels below it. */
   float card[4], shade;
-  h2_garden_guard_menu_label_t labels[H2_GARDEN_GUARD_MAX_MENU_LABELS];
-} h2_garden_guard_menu_labels_t;
+  unsigned sun_count;
+  /* Collecting suns can pass over the toolbar. x, y, radius, angle. */
+  float suns[H2_GARDEN_GUARD_MAX_SUNS][4];
+  h2_garden_guard_label_t labels[H2_GARDEN_GUARD_MAX_LABELS];
+} h2_garden_guard_labels_t;
 
-void h2_garden_guard_collect_menu_labels(h2_garden_guard_menu_labels_t* labels,
-                                         const h2_garden_guard_game_t* game);
-void h2_garden_guard_web_present_menu_labels(
-    const h2_garden_guard_menu_labels_t* labels);
+void h2_garden_guard_web_present_labels(const h2_garden_guard_labels_t* parts,
+                                        const h2_garden_guard_labels_t* scene,
+                                        unsigned field, bool paused,
+                                        bool with_artwork);
 #endif
 
 /* Optional scene cache for a fixed layout. A plant reuses its RGB565 result
@@ -84,8 +89,8 @@ typedef struct h2_garden_guard_canvas {
   h2_garden_guard_plant_cache_t* plant_cache;
   const h2_garden_guard_config_t* config;
 #ifdef __EMSCRIPTEN__
-  bool external_menu_labels;
-  h2_garden_guard_menu_labels_t* menu_labels;
+  bool external_labels;
+  h2_garden_guard_labels_t* labels;
 #endif
   /** Covered bands, and per covered band its half-open column range. */
   uint64_t bands;

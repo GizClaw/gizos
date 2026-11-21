@@ -48,7 +48,8 @@ typedef struct session {
   bool first_frame;
   bool cover_visible, cover_session_language;
 #ifdef __EMSCRIPTEN__
-  bool web_menu_visible;
+  h2_garden_guard_labels_t web_labels[PART_COUNT], web_scene_labels;
+  bool web_labels_changed;
 #endif
   unsigned touch_failures;
   bool touch_activity;
@@ -367,11 +368,20 @@ static h2_garden_guard_canvas_t layer_canvas(const session_t* s,
       .config = &s->config,
       .external_cover_labels = s->config.cover_changed != NULL,
 #ifdef __EMSCRIPTEN__
-      .external_menu_labels = s->game.menu == H2_GARDEN_GUARD_MENU_JOURNAL ||
-                              s->game.menu == H2_GARDEN_GUARD_MENU_SHOP,
+      .external_labels = true,
 #endif
       .depth = s->depth};
 }
+
+#ifdef __EMSCRIPTEN__
+static void update_web_labels(session_t* s, h2_garden_guard_labels_t* cached,
+                              const h2_garden_guard_labels_t* measured) {
+  if (memcmp(cached, measured, sizeof(*cached)) != 0) {
+    *cached = *measured;
+    s->web_labels_changed = true;
+  }
+}
+#endif
 
 /* Rebuild the static parts whose key changed, adding what changed. A part
  * intersecting the restored area is repainted whole after its own
@@ -390,7 +400,14 @@ static void update_static_layer(session_t* s, dirty_t* changed) {
       continue;
     }
     h2_garden_guard_canvas_t canvas = layer_canvas(s, s->static_layer, true);
+#ifdef __EMSCRIPTEN__
+    h2_garden_guard_labels_t labels = {0};
+    canvas.labels = &labels;
+#endif
     h2_garden_guard_render_static(&canvas, &s->game, part);
+#ifdef __EMSCRIPTEN__
+    update_web_labels(s, &s->web_labels[p], &labels);
+#endif
     dirty_from_canvas(&covers[p], &canvas);
     dirty_merge(changed, &covers[p]);
     dirty_merge(changed, &s->static_cover[p]);
@@ -498,7 +515,14 @@ static h2_pal_result_t render_frame(session_t* s) {
     return H2_PAL_OK;
   h2_garden_guard_canvas_t canvas = layer_canvas(s, s->frame, true);
   canvas.plant_cache = s->plant_cache;
+#ifdef __EMSCRIPTEN__
+  h2_garden_guard_labels_t labels = {0};
+  canvas.labels = &labels;
+#endif
   h2_garden_guard_render_scene(&canvas, &s->game);
+#ifdef __EMSCRIPTEN__
+  update_web_labels(s, &s->web_scene_labels, &labels);
+#endif
   dirty_t current;
   dirty_from_canvas(&current, &canvas);
   dirty_merge(&dirty, &current);
@@ -508,23 +532,19 @@ static h2_pal_result_t render_frame(session_t* s) {
   canvas.plant_cache = s->plant_cache;
   h2_garden_guard_render_scene(&canvas, &s->game);
   const uint64_t composed = clock_ms(s);
+#ifdef __EMSCRIPTEN__
+  if (s->web_labels_changed) {
+    h2_garden_guard_web_present_labels(
+        s->web_labels, &s->web_scene_labels, H2_GARDEN_GUARD_PART_FIELD,
+        h2_garden_guard_paused(&s->game), dirty.bands != 0u);
+    s->web_labels_changed = false;
+  }
+#endif
   const h2_pal_result_t rc = push_dirty(s, &dirty);
   const uint64_t pushed = clock_ms(s);
   s->compose_ms += composed - started;
   s->push_ms += pushed - composed;
   if (rc == H2_PAL_OK) {
-#ifdef __EMSCRIPTEN__
-    const bool menu = s->game.menu == H2_GARDEN_GUARD_MENU_JOURNAL ||
-                      s->game.menu == H2_GARDEN_GUARD_MENU_SHOP;
-    if (menu) {
-      h2_garden_guard_menu_labels_t labels = {0};
-      h2_garden_guard_collect_menu_labels(&labels, &s->game);
-      h2_garden_guard_web_present_menu_labels(&labels);
-    } else if (s->web_menu_visible) {
-      h2_garden_guard_web_present_menu_labels(NULL);
-    }
-    s->web_menu_visible = menu;
-#endif
     s->previous = current;
     s->previous_transient = transient;
     s->idle_pose_tick = tick;
