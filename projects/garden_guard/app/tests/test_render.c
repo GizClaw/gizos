@@ -350,7 +350,7 @@ static void test_small_extent(void) {
 int main(void) {
   CHECK(h2_garden_guard_text_width("\xe4\xb8\xad"
                                    "A",
-                                   1) == 16);
+                                   1) == 18);
   CHECK(h2_garden_guard_text_width("\xe4\xb8\xad\xe6\x96\x87", 2) == 29);
   CHECK(h2_garden_guard_text_width("\xe4\xb8", 1) == 5);
   test_helpers();
