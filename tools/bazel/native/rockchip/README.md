@@ -1,10 +1,21 @@
 # Rockchip Linux image rules
 
-A product can compose these rules through a Bzlmod dependency on GizOS. Each stage accepts labels for its inputs and declares ordinary output files. The consuming repository owns its upstream pins, patches, board wiring, target platform, init policy, flash geometry and final image target. [Public declarations](defs.bzl) · [Consuming GizOS](../../../../README.md#use-gizos-from-bzlmod)
+A product can compose these rules through a Bzlmod dependency on GizOS. Each stage accepts labels for its inputs and declares ordinary output files. The consuming repository selects its source and firmware inputs and owns its patches, board wiring, target platform, init policy, flash geometry and final image target. [Public declarations](defs.bzl) · [Consuming GizOS](../../../../README.md#use-gizos-from-bzlmod)
 
 ```starlark
 load("@gizos//tools/bazel/native/rockchip:defs.bzl", "busybox_squashfs", "rockchip_legacy_uboot", "rockchip_linux_kernel", "rockchip_sd_image")
 ```
+
+## Optional RK3326 legacy firmware
+
+Import Rockchip's pinned rkbin inputs from the consumer's `MODULE.bazel` when its board uses this legacy boot chain. Bazel verifies each file's SHA-256. The profile provides the RK3326 333 MHz DDR initializer v2.11, miniloader v1.40, BL31 v1.34 and the accompanying Rockchip license. [Version manifest](../versions/rk3326_legacy_rkbin.json) · [Upstream rkbin](https://github.com/rockchip-linux/rkbin/tree/74213af1e952c4683d2e35952507133b61394862)
+
+```starlark
+rockchip = use_extension("@gizos//tools/bazel/native/rockchip:repositories.bzl", "rockchip_repositories")
+use_repo(rockchip, "gizos_rk3326_legacy_rkbin")
+```
+
+Pass `@gizos_rk3326_legacy_rkbin//:ddr.bin`, `:miniloader.bin` and `:bl31.elf` from that repository to the corresponding attributes of `rockchip_legacy_uboot`. Include its `LICENSE` in the product's firmware notices. Consumers with a different validated firmware set can supply their own file labels. The product chooses its U-Boot sources, defconfig and patches, trust configuration, reference digest and card layout.
 
 ## Build host and cache
 

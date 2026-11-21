@@ -1,0 +1,21 @@
+{
+  "commit": "74213af1e952c4683d2e35952507133b61394862",
+  "files": {
+    "ddr.bin": {
+      "path": "bin/rk33/rk3326_ddr_333MHz_v2.11.bin",
+      "sha256": "2df577824953bea3584282e7f5118c96620e1348dbc378d50604fe07c70eb3e4"
+    },
+    "miniloader.bin": {
+      "path": "bin/rk33/rk3326_miniloader_v1.40.bin",
+      "sha256": "473aacd5378f356757a71efeb54f4339925db154fbce288df7e3c1177f45bc28"
+    },
+    "bl31.elf": {
+      "path": "bin/rk33/rk3326_bl31_v1.34.elf",
+      "sha256": "387aaee716a6753a9e6dd18c72b27783d125a294f6aa817531a5a6f340f16080"
+    },
+    "LICENSE": {
+      "path": "LICENSE",
+      "sha256": "d2765124a2c24d71aba3cbc6cdd6975a5a297821264eb6c26378a4c16cd16e92"
+    }
+  }
+}

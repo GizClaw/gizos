@@ -12,4 +12,5 @@ exports_files([
     "jieli_tool_versions.txt",
     "jieli_toolchain_archives.txt",
     "native_ccache_tools.txt",
+    "rk3326_legacy_rkbin.json",
 ])
