@@ -1,5 +1,9 @@
 #include "h2_garden_guard_game.h"
 
+#include "h2_garden_guard_audio.h"
+
+#define SOUND(game, cue) ((game)->sounds |= 1u << GG_SOUND_##cue)
+
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -481,6 +485,7 @@ static void finish(h2_garden_guard_game_t* game, bool won) {
       add_capped(game->profile.total_score, game->score);
   game->profile_dirty = true;
   game->phase = won ? H2_GARDEN_GUARD_PHASE_WON : H2_GARDEN_GUARD_PHASE_LOST;
+  game->sounds = 1u << (won ? GG_SOUND_WON : GG_SOUND_LOST);
   game->phase_started_ms = game->time_ms;
   if (game->score > game->best) {
     game->best = game->score;
@@ -557,12 +562,15 @@ static bool collect_suns_at(h2_garden_guard_game_t* game, float x, float y) {
       game->sun = H2_GARDEN_GUARD_SUN_LIMIT;
     taken = true;
   }
+  if (taken) SOUND(game, SUN);
   return taken;
 }
 
 static void deny(h2_garden_guard_game_t* game, int32_t card) {
-  if (card >= 0 && card < H2_GARDEN_GUARD_CARD_COUNT)
+  if (card >= 0 && card < H2_GARDEN_GUARD_CARD_COUNT) {
     game->card_denied_ms[card] = CARD_DENIED_MS;
+    SOUND(game, DENIED);
+  }
 }
 
 static uint8_t plant_stage(const h2_garden_guard_plant_t* plant) {
@@ -595,8 +603,10 @@ static void apply_card(h2_garden_guard_game_t* game, uint32_t lane,
   const int32_t card = game->selected;
   h2_garden_guard_plant_t* plant = &game->plants[lane][col];
   if (card == H2_GARDEN_GUARD_CARD_SHOVEL) {
-    if (plant->kind != H2_GARDEN_GUARD_PLANT_NONE)
+    if (plant->kind != H2_GARDEN_GUARD_PLANT_NONE) {
       remove_plant(game, lane, col, H2_GARDEN_GUARD_RGB(122, 86, 50));
+      SOUND(game, PLANT);
+    }
     game->selected = H2_GARDEN_GUARD_CARD_NONE;
     return;
   }
@@ -622,6 +632,7 @@ static void apply_card(h2_garden_guard_game_t* game, uint32_t lane,
   ++game->plant_revision;
   game->selected = H2_GARDEN_GUARD_CARD_NONE;
   plant_burst(game, lane, col, H2_GARDEN_GUARD_RGB(150, 112, 70));
+  SOUND(game, PLANT);
 }
 
 /* Cell a selected card applies to. Plants stand up out of their cell, so
@@ -682,6 +693,8 @@ h2_garden_guard_rect_t h2_garden_guard_action_rect(
       return menu_rect(l, 243.0f, 239.0f, 182.0f, 34.0f);
     case H2_GARDEN_GUARD_ACTION_RESULT_AGAIN:
       return menu_rect(l, 55.0f, 239.0f, 181.0f, 34.0f);
+    case H2_GARDEN_GUARD_ACTION_SOUND:
+      return menu_rect(l, 355.0f, 58.0f, 58.0f, 44.0f);
   }
   return (h2_garden_guard_rect_t){0};
 }
@@ -798,7 +811,12 @@ static void toggle_language(h2_garden_guard_game_t* game) {
   game->language_dirty = true;
 }
 
-enum { JOURNAL_BACK = 6, JOURNAL_CLOSE, JOURNAL_CARD_FIRST };
+enum {
+  JOURNAL_BACK = 6,
+  JOURNAL_CLOSE,
+  JOURNAL_CARD_FIRST,
+  PAUSE_SOUND = JOURNAL_CARD_FIRST + H2_GARDEN_GUARD_PEST_KIND_COUNT
+};
 
 static unsigned journal_action(const h2_garden_guard_game_t* game, float x,
                                float y) {
@@ -827,6 +845,9 @@ static unsigned modal_action(const h2_garden_guard_game_t* game, float x,
     if (hits_action(game, H2_GARDEN_GUARD_ACTION_PAUSE_LANGUAGE, x, y))
       return 2u;
     if (hits_action(game, H2_GARDEN_GUARD_ACTION_LEAVE, x, y)) return 3u;
+    if (game->sound_control &&
+        hits_action(game, H2_GARDEN_GUARD_ACTION_SOUND, x, y))
+      return PAUSE_SOUND;
   } else if (game->menu == H2_GARDEN_GUARD_MENU_CONFIRM) {
     if (hits_action(game, H2_GARDEN_GUARD_ACTION_CANCEL, x, y)) return 4u;
     if (hits_action(game, H2_GARDEN_GUARD_ACTION_CONFIRM, x, y)) return 5u;
@@ -877,9 +898,11 @@ static void press(h2_garden_guard_game_t* game, float x, float y) {
   if (card != H2_GARDEN_GUARD_CARD_NONE) {
     if (game->selected == card) {
       game->selected = H2_GARDEN_GUARD_CARD_NONE;
+      SOUND(game, TAP);
     } else if (card_usable(game, card)) {
       game->selected = card;
       game->drag_from_card = true;
+      SOUND(game, TAP);
     } else {
       deny(game, card);
       game->selected = H2_GARDEN_GUARD_CARD_NONE;
@@ -933,6 +956,10 @@ void h2_garden_guard_game_pointer(h2_garden_guard_game_t* game,
         switch (game->modal_press) {
           case 1u:
             game->menu = H2_GARDEN_GUARD_MENU_NONE;
+            SOUND(game, TAP);
+            break;
+          case PAUSE_SOUND:
+            game->muted = !game->muted;
             break;
           case 2u:
             toggle_language(game);
@@ -1107,6 +1134,7 @@ static void step_plants(h2_garden_guard_game_t* game, uint32_t dt) {
                                          .frost = frost,
                                          .x = (float)col + 0.75f};
           plant->action_ms = H2_GARDEN_GUARD_SHOT_POSE_MS;
+          SOUND(game, SHOT);
           break;
         }
         plant->timer_ms = frost ? 1660 : SHOOTER_PERIOD_MS;
@@ -1159,6 +1187,7 @@ static void step_peas(h2_garden_guard_game_t* game, float seconds) {
     }
     if (hit == NULL) continue;
     pea->active = false;
+    SOUND(game, HIT);
     float x, y;
     h2_garden_guard_field_point(&game->layout, pea->lane, pea->x, &x, &y);
     y -= H2_GARDEN_GUARD_PEA_HEIGHT *
@@ -1255,6 +1284,7 @@ static bool step_pests(h2_garden_guard_game_t* game, uint32_t dt,
     h2_garden_guard_cart_t* cart = &game->carts[pest->lane];
     if (cart->state == H2_GARDEN_GUARD_CART_READY) {
       cart->state = H2_GARDEN_GUARD_CART_SWEEPING;
+      SOUND(game, CART);
       cart->x = -0.4f;
     } else if (cart->state == H2_GARDEN_GUARD_CART_USED && pest->x < -0.5f) {
       return false;

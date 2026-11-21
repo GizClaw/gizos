@@ -249,6 +249,7 @@ typedef enum h2_garden_guard_action {
   H2_GARDEN_GUARD_ACTION_CONFIRM,
   H2_GARDEN_GUARD_ACTION_RESULT_HOME,
   H2_GARDEN_GUARD_ACTION_RESULT_AGAIN,
+  H2_GARDEN_GUARD_ACTION_SOUND,
 } h2_garden_guard_action_t;
 
 typedef struct h2_garden_guard_rect {
@@ -281,6 +282,8 @@ typedef struct h2_garden_guard_game {
   bool journal_closing, reduce_motion;
   uint8_t language, modal_press;
   bool language_dirty, language_unsaved;
+  bool sound_control, muted;
+  uint16_t sounds; /**< Coalesced sound cues since the last frame. */
   uint16_t sighting_ms;
   uint8_t sighting_kind;
   uint32_t earned_coins, defense_score;
