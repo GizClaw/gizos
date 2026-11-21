@@ -132,6 +132,26 @@ static void duplex_audio_requires_manual_aec(void) {
                            &durable) == H2_PAL_ERR_INVALID_ARG);
 }
 
+static void power_requires_operator_confirmation(void) {
+  h2_mfg_step_t step = {"power", H2_MFG_POWER, 0};
+  h2_mfg_profile_t power_profile = {
+      .board = "test", .revision = 4, .steps = &step, .total = 1};
+  h2_loader_mfg_summary_t summary = {.total = 1};
+  h2_mfg_model_t m;
+  save_result = 0;
+  assert(h2_mfg_model_init(&m, &power_profile, &summary, 1, persist,
+                           &durable) == 0);
+  assert(!h2_mfg_model_complete(&m));
+  assert(h2_mfg_model_action(&m, "confirm", "power", m.ticket) ==
+         H2_PAL_ERR_INVALID_STATE);
+  m.ready = 1;
+  assert(h2_mfg_model_action(&m, "confirm", "power", m.ticket) == 0);
+  assert(h2_mfg_model_complete(&m));
+  step.automatic = 1;
+  assert(h2_mfg_model_init(&m, &power_profile, &summary, 1, persist,
+                           &durable) == H2_PAL_ERR_INVALID_ARG);
+}
+
 static void button_mask_validation(void) {
   h2_mfg_profile_t p = profile;
   h2_mfg_model_t m;
@@ -150,6 +170,7 @@ static void button_mask_validation(void) {
 }
 
 int main(void) {
+  power_requires_operator_confirmation();
   button_mask_validation();
   confirmation_and_resume();
   persistence_failure_is_transactional();

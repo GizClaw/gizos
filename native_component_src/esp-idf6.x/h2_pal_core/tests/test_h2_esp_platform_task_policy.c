@@ -10,6 +10,14 @@
 #include <stdint.h>
 #include <string.h>
 
+#if defined(CONFIG_SPIRAM) && CONFIG_SPIRAM &&            \
+    defined(CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM) && \
+    CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM
+#define H2_TASK_POLICY_TEST_PSRAM_STACKS 1
+#else
+#define H2_TASK_POLICY_TEST_PSRAM_STACKS 0
+#endif
+
 void h2_esp_platform_task_test_reset(void);
 
 typedef struct test_state {
@@ -214,7 +222,7 @@ static h2_pal_result_t resolve(void* user, const char* name,
   if (name != NULL && strcmp(name, "known") == 0) {
     *out = (h2_esp_task_policy_t){
         .priority = 9u,
-        .core = H2_ESP_TASK_CORE_1,
+        .core = CONFIG_FREERTOS_NUMBER_OF_CORES - 1,
         .min_stack_size = 8192u,
         .stack_region = H2_ESP_TASK_STACK_INTERNAL,
     };
@@ -310,6 +318,7 @@ static void test_completion(const char* name, int join_on_give) {
   }
 }
 
+#if H2_TASK_POLICY_TEST_PSRAM_STACKS
 static void stack_free(void* user, void* ptr) {
   if (ptr != NULL) {
     assert(s.fail_create || s.fail_tcb || s.static_deletes == 1);
@@ -384,6 +393,8 @@ static void test_psram_stack_allocator(void) {
   }
 }
 
+#endif
+
 static void test_reserve_policy(void) {
   reset();
   h2_esp_task_policy_t policy = {.min_stack_size = 7u};
@@ -413,8 +424,7 @@ static void test_reserve_policy(void) {
     h2_pal_result_t expected = H2_PAL_ERR_TASK;
     if (i == 0u) expected = H2_PAL_OK;
     if (i == 1u) expected = H2_PAL_ERR_NOT_FOUND;
-    if (i == 8u && CONFIG_SPIRAM && CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM)
-      expected = H2_PAL_OK;
+    if (i == 8u && H2_TASK_POLICY_TEST_PSRAM_STACKS) expected = H2_PAL_OK;
     assert(h2_esp_platform_task_reserve_policy(names[i], &policy) == expected);
     assert(strcmp(s.resolver_name, names[i]) == 0);
     assert(h2_esp_platform_task_configure(&cfg) == H2_PAL_ERR_INVALID_STATE);
@@ -422,8 +432,8 @@ static void test_reserve_policy(void) {
     if (expected == H2_PAL_OK) {
       assert(policy.min_stack_size == (i == 0u ? 8192u : 12288u));
       assert(policy.priority == (i == 0u ? 9u : 6u));
-      assert(policy.core ==
-             (i == 0u ? H2_ESP_TASK_CORE_1 : H2_ESP_TASK_CORE_ANY));
+      assert(policy.core == (i == 0u ? CONFIG_FREERTOS_NUMBER_OF_CORES - 1
+                                     : H2_ESP_TASK_CORE_ANY));
       assert(policy.stack_region ==
              (i == 0u ? H2_ESP_TASK_STACK_INTERNAL : H2_ESP_TASK_STACK_PSRAM));
     } else {
@@ -434,7 +444,18 @@ static void test_reserve_policy(void) {
 
 int main(void) {
   test_reserve_policy();
-  if (!CONFIG_SPIRAM || !CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM) return 0;
+#if !H2_TASK_POLICY_TEST_PSRAM_STACKS
+  test_completion("known", 0);
+  test_completion("known", 1);
+  reset();
+  h2_esp_task_policy_config_t cfg = config();
+  assert(h2_esp_platform_task_configure(&cfg) == H2_PAL_OK);
+  h2_pal_task_options_t options = {.name = "dynamic-high"};
+  h2_pal_task_t* task = NULL;
+  assert(h2_pal_task_start(h2_esp_platform_task_api(), &options, entry, NULL,
+                           &task) == H2_PAL_ERR_TASK);
+  assert(task == NULL && s.creates == 0);
+#else
   test_psram_stack_allocator();
   const h2_pal_task_api_t* api = h2_esp_platform_task_api();
   h2_pal_task_t* task = (h2_pal_task_t*)(uintptr_t)7u;
@@ -539,5 +560,6 @@ int main(void) {
   test_completion("known", 1);
   test_completion("dynamic-high", 0);
   test_completion("dynamic-high", 1);
+#endif
   return 0;
 }

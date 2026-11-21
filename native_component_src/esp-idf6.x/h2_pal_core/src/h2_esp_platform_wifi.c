@@ -73,6 +73,14 @@ static size_t s_h2_esp_wifi_ap_client_count;
 #define H2_ESP_WIFI_EVENT_CONNECTED BIT0
 #define H2_ESP_WIFI_EVENT_DISCONNECTED BIT1
 #define H2_ESP_WIFI_EVENT_GOT_IP BIT2
+#define H2_ESP_WIFI_EVENT_ADDRESS_RELEASED BIT3
+#define H2_ESP_WIFI_ADDRESS_RELEASE 1
+#define H2_ESP_WIFI_EVENT_TIMEOUT_MS 1000u
+/* Only the serialized Wi-Fi owner changes this flag. After a timeout, reuse
+ * the pending event instead of posting a stale reset into a later connection.
+ */
+static int s_h2_esp_wifi_address_release_pending;
+static int s_h2_esp_wifi_cleanup_pending;
 #define H2_ESP_WIFI_SAFE_STACK_DEPTH 4096u
 #define H2_ESP_WIFI_STA_RECONNECT_ATTEMPTS 5u
 
@@ -441,6 +449,65 @@ static int h2_esp_wifi_teardown_driver(void) {
   return h2_esp_wifi_run_driver_teardown(&config);
 }
 
+/* Runs on the ESP event loop, after queued disconnect/IP callbacks. Publish
+ * loss of the old address before clearing the event loop's association state.
+ */
+static void h2_esp_wifi_release_address_state(void) {
+  h2_esp_wifi_post_sta_lost_ip(H2_PAL_WIFI_STA_STATE_DISCONNECTED,
+                               s_h2_esp_wifi_sta_disconnect_reason);
+  s_h2_esp_wifi_sta_disconnect_reason = 0;
+  memset(&s_h2_esp_wifi_association, 0, sizeof(s_h2_esp_wifi_association));
+  xEventGroupClearBits(s_h2_esp_wifi_events,
+                       H2_ESP_WIFI_EVENT_CONNECTED | H2_ESP_WIFI_EVENT_GOT_IP);
+  xEventGroupSetBits(
+      s_h2_esp_wifi_events,
+      H2_ESP_WIFI_EVENT_DISCONNECTED | H2_ESP_WIFI_EVENT_ADDRESS_RELEASED);
+}
+
+static int h2_esp_wifi_quiesce_address_events(void) {
+  if (s_h2_esp_wifi_events == NULL || !s_h2_esp_wifi_events_registered)
+    return H2_PAL_OK;
+  if (!s_h2_esp_wifi_address_release_pending) {
+    xEventGroupClearBits(s_h2_esp_wifi_events,
+                         H2_ESP_WIFI_EVENT_ADDRESS_RELEASED);
+    const esp_err_t err =
+        esp_event_post(H2_ESP_WIFI_ADDRESS_EVENT, H2_ESP_WIFI_ADDRESS_RELEASE,
+                       NULL, 0u, pdMS_TO_TICKS(H2_ESP_WIFI_EVENT_TIMEOUT_MS));
+    if (err != ESP_OK) return h2_esp_wifi_map_error(err);
+    s_h2_esp_wifi_address_release_pending = 1;
+  }
+  const EventBits_t bits = xEventGroupWaitBits(
+      s_h2_esp_wifi_events, H2_ESP_WIFI_EVENT_ADDRESS_RELEASED, pdFALSE, pdTRUE,
+      pdMS_TO_TICKS(H2_ESP_WIFI_EVENT_TIMEOUT_MS));
+  if ((bits & H2_ESP_WIFI_EVENT_ADDRESS_RELEASED) == 0u)
+    return H2_PAL_ERR_TIMEOUT;
+  s_h2_esp_wifi_address_release_pending = 0;
+  return H2_PAL_OK;
+}
+
+static int h2_esp_wifi_release_driver(void) {
+  s_h2_esp_wifi_cleanup_pending = 1;
+  int rc = h2_esp_wifi_teardown_driver();
+  if (rc != H2_PAL_OK) {
+    return rc;
+  }
+
+  if (s_h2_esp_wifi_address_timer != NULL)
+    (void)esp_timer_stop(s_h2_esp_wifi_address_timer);
+  rc = h2_esp_wifi_quiesce_address_events();
+  if (rc != H2_PAL_OK) return rc;
+  if (s_h2_esp_wifi_sta_netif != NULL) {
+    esp_netif_t* netif = s_h2_esp_wifi_sta_netif;
+    s_h2_esp_wifi_sta_netif = NULL;
+    esp_netif_destroy_default_wifi(netif);
+    (void)h2_esp_platform_netif_reconcile_default();
+  }
+  s_h2_esp_wifi_sta_dns_handler_registered = 0;
+  s_h2_esp_wifi_started = 0;
+  s_h2_esp_wifi_cleanup_pending = 0;
+  return H2_PAL_OK;
+}
+
 static int h2_esp_wifi_stop_driver_if_sta_idle(void) {
   if (s_h2_esp_wifi_events != NULL) {
     EventBits_t bits = xEventGroupGetBits(s_h2_esp_wifi_events);
@@ -457,24 +524,7 @@ static int h2_esp_wifi_stop_driver_if_sta_idle(void) {
   }
 
   h2_esp_wifi_sta_reconnect_disable();
-  int rc = h2_esp_wifi_teardown_driver();
-  if (rc != H2_PAL_OK) {
-    return rc;
-  }
-
-  if (s_h2_esp_wifi_sta_netif != NULL) {
-    esp_netif_destroy_default_wifi(s_h2_esp_wifi_sta_netif);
-    s_h2_esp_wifi_sta_netif = NULL;
-    s_h2_esp_wifi_sta_dns_handler_registered = 0;
-    (void)h2_esp_platform_netif_reconcile_default();
-  }
-  s_h2_esp_wifi_started = 0;
-  if (s_h2_esp_wifi_events != NULL) {
-    xEventGroupClearBits(s_h2_esp_wifi_events, H2_ESP_WIFI_EVENT_CONNECTED |
-                                                   H2_ESP_WIFI_EVENT_GOT_IP);
-    xEventGroupSetBits(s_h2_esp_wifi_events, H2_ESP_WIFI_EVENT_DISCONNECTED);
-  }
-  return H2_PAL_OK;
+  return h2_esp_wifi_release_driver();
 }
 
 /* Runs only on the serialized ESP event loop. Re-read current addresses,
@@ -545,7 +595,10 @@ static void h2_esp_wifi_event_handler(void* arg, esp_event_base_t event_base,
     return;
   }
   if (event_base == H2_ESP_WIFI_ADDRESS_EVENT) {
-    h2_esp_wifi_refresh_ip();
+    if (event_id == H2_ESP_WIFI_ADDRESS_RELEASE)
+      h2_esp_wifi_release_address_state();
+    else
+      h2_esp_wifi_refresh_ip();
     return;
   }
   if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_CONNECTED) {
@@ -749,6 +802,9 @@ static int h2_esp_wifi_map_error(esp_err_t err) {
 }
 
 int h2_esp_platform_wifi_ensure_started(void) {
+  /* A late event-loop release must never clear a new association. Complete
+   * checked stop first, including acknowledgment after a timed-out attempt. */
+  if (s_h2_esp_wifi_cleanup_pending) return H2_PAL_ERR_INVALID_STATE;
   if (s_h2_esp_wifi_started != 0) {
     return H2_PAL_OK;
   }
@@ -832,8 +888,9 @@ int h2_esp_platform_wifi_ensure_started(void) {
     if (err != ESP_OK) {
       return h2_esp_wifi_map_error(err);
     }
-    err = esp_event_handler_register(H2_ESP_WIFI_ADDRESS_EVENT, 0,
-                                     h2_esp_wifi_event_handler, NULL);
+    err =
+        esp_event_handler_register(H2_ESP_WIFI_ADDRESS_EVENT, ESP_EVENT_ANY_ID,
+                                   h2_esp_wifi_event_handler, NULL);
     if (err != ESP_OK) return h2_esp_wifi_map_error(err);
 #if CONFIG_LWIP_IPV6
     err = esp_event_handler_register(IP_EVENT, IP_EVENT_GOT_IP6,
@@ -1492,8 +1549,39 @@ static int h2_esp_wifi_ap_get_mac(h2_pal_wifi_ap_t* ap, uint8_t out_mac[6]) {
 }
 #endif
 
-/* One admission gate covers the entire authentication/IP/save transaction. */
+/* One admission gate covers authentication/IP/save and coordinated stop. */
 H2_ATOMIC_DEFINE_STATIC(flag, s_h2_esp_wifi_connect_busy, 0u);
+
+int h2_esp_platform_wifi_stop(void) {
+  if (h2_atomic_flag_test_and_set(&s_h2_esp_wifi_connect_busy,
+                                  H2_ATOMIC_SEQ_CST))
+    return H2_PAL_ERR_BUSY;
+  int rc = H2_PAL_OK;
+#if CONFIG_ESP_WIFI_SOFTAP_SUPPORT
+  portENTER_CRITICAL(&s_h2_esp_wifi_ap_lock);
+  int ap_active = s_h2_esp_wifi_ap_active;
+  portEXIT_CRITICAL(&s_h2_esp_wifi_ap_lock);
+  if (ap_active != 0) {
+    h2_atomic_flag_clear(&s_h2_esp_wifi_connect_busy, H2_ATOMIC_SEQ_CST);
+    return H2_PAL_ERR_BUSY;
+  }
+#endif
+  h2_esp_wifi_sta_reconnect_disable();
+  h2_esp_wifi_set_activity(1);
+  esp_err_t err = esp_wifi_disconnect();
+  /* A previous stop may have stopped the driver before deinit failed. Also
+   * clean up a partially initialized driver even when started was never set. */
+  if (err != ESP_OK && err != ESP_ERR_WIFI_NOT_INIT &&
+      err != ESP_ERR_WIFI_NOT_STARTED && err != ESP_ERR_WIFI_NOT_CONNECT &&
+      err != ESP_ERR_WIFI_NOT_ASSOC) {
+    rc = h2_esp_wifi_map_error(err);
+  } else {
+    rc = h2_esp_wifi_release_driver();
+  }
+  h2_esp_wifi_set_activity(0);
+  h2_atomic_flag_clear(&s_h2_esp_wifi_connect_busy, H2_ATOMIC_SEQ_CST);
+  return rc;
+}
 
 static int h2_esp_wifi_connect(void* user,
                                const h2_pal_wifi_sta_config_t* config,

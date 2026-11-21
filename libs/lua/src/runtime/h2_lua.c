@@ -681,6 +681,10 @@ h2_pal_result_t h2_lua_host_join(h2_lua_host_t* host) {
         if (close_result != H2_PAL_OK) result = close_result;
       }
     }
+    if (host->link_hooks != NULL) {
+      h2_pal_result_t link_result = host->link_hooks->join(host->link_user);
+      if (result == H2_PAL_OK) result = link_result;
+    }
   }
   if (result == H2_PAL_OK) {
     h2_atomic_store(&host->joined, 1);

@@ -324,6 +324,32 @@ static const char s_host_timeout[] = LUA_PRELUDE
     "wait(function() return s.err end);assert(s.err=='timeout',s.err);"
     "return 'host-timeout-ok'";
 
+static const char s_link_cleanup_busy[] =
+    "local link=require('link');"
+    "for _=1,3 do "
+    "local ok,err=link.host({tag='retry'});"
+    "assert(ok==nil and err=='link: busy',tostring(err));"
+    "ok,err=link.join({tag='retry'});"
+    "assert(ok==nil and err=='link: busy',tostring(err)) end;"
+    "return 'cleanup-busy-ok'";
+
+static const char s_host_cleanup_failure[] = LUA_PRELUDE
+    "link.on(ev.LINK_ERROR,function(e) s.err_result=e.result end);"
+    "assert(link.host({tag=args.tag,timeout_ms=50}));"
+    "wait(function() return s.err_result end);"
+    "assert(s.err=='ble' and s.err_result~=0);"
+    "local ok,err=link.host({tag='retry'});"
+    "assert(ok==nil and err=='link: busy',tostring(err));"
+    "ok,err=link.join({tag='retry'});"
+    "assert(ok==nil and err=='link: busy',tostring(err));"
+    "return 'cleanup-retained-ok'";
+
+static const char s_host_finalizer[] = LUA_PRELUDE
+    "_G.link_finalizer=setmetatable({}, {__gc=function() "
+    "link.host({tag='finalizer'}) end});"
+    "assert(link.host({tag=args.tag}));mark();"
+    "while true do rt.sleep(10) end";
+
 static const char s_unavailable[] =
     "local link=require('link');local rt=require('runtime');"
     "assert(link.available()==false);"
@@ -648,6 +674,142 @@ static void test_host_destroy_releases_link(void) {
   pair_close(&pair);
 }
 
+static void test_server_cleanup_retry(int failed_open) {
+  fake_air_t air;
+  h2_test_allocator_t allocator;
+  fake_air_init(&air);
+  fake_device_t* device = &air.devices[0];
+  h2_runtime_t* runtime = fake_create_runtime(&device->ble, &device->events);
+  fake_set_baseline(device);
+  h2_test_allocator_init(&allocator);
+  h2_lua_host_t* host = create_host(runtime, 1, NULL, &allocator.api);
+  pthread_mutex_lock(&air.mutex);
+  device->register_result = failed_open ? H2_PAL_ERR_IO : H2_PAL_OK;
+  device->server_join_result = failed_open ? H2_PAL_ERR_UNSUPPORTED : H2_PAL_OK;
+  device->unregister_result = failed_open ? H2_PAL_OK : H2_PAL_ERR_IO;
+  pthread_mutex_unlock(&air.mutex);
+
+  /* A failed registration leaves a live dispatch task when join fails. A
+   * successful open can instead retain its GATT callbacks on close failure. */
+  h2_lua_job_id_t job =
+      submit(host, "@cleanup.lua", s_host_cleanup_failure, "cleanup");
+  expect_success(host, job, "cleanup-retained-ok");
+  fake_snapshot_t snapshot = fake_snapshot(device);
+  assert(snapshot.registration_attempts == 1);
+  assert(snapshot.registered == !failed_open);
+  assert(snapshot.server_task_retained == failed_open);
+  assert(snapshot.server_join_calls == (failed_open ? 2 : 1));
+  assert(snapshot.unregister_calls == (failed_open ? 0 : 1));
+  assert(snapshot.subscriptions == device->baseline_subscriptions + 4);
+  assert(snapshot.adv_sets == 0);
+
+  /* Releasing and reusing the job slot must not release or overwrite the
+   * link-owned callbacks, characteristic handle storage or cleanup handle. */
+  job = submit(host, "@retry.lua", s_link_cleanup_busy, "retry");
+  h2_lua_job_status_t status = wait_job(host, job);
+  assert(status.state == H2_LUA_JOB_SUCCEEDED);
+  assert(strcmp(status.message, "cleanup-busy-ok") == 0);
+  assert(fake_snapshot(device).registration_attempts == 1);
+  const h2_pal_result_t cleanup_result =
+      failed_open ? H2_PAL_ERR_UNSUPPORTED : H2_PAL_ERR_IO;
+  assert(h2_lua_host_stop(host) == H2_PAL_OK);
+  assert(h2_lua_host_join(host) == cleanup_result);
+  size_t retained = h2_atomic_load(&allocator.live);
+  assert(retained > 0u);
+  snapshot = fake_snapshot(device);
+  assert(!snapshot.session_task_retained);
+  assert(snapshot.session_join_calls == 1);
+
+  for (int attempt = 0; attempt < 2; ++attempt) {
+    const fake_snapshot_t before = fake_snapshot(device);
+    if (attempt == 0) {
+      assert(h2_lua_host_destroy_checked(host) == cleanup_result);
+    } else {
+      h2_lua_host_destroy(host);
+    }
+    /* Every explicit retry attempts cleanup once; a failed void destroy also
+     * retains the same Host, job VM, link, allocator and Runtime borrows. */
+    snapshot = fake_snapshot(device);
+    assert(snapshot.server_join_calls ==
+           before.server_join_calls + failed_open);
+    assert(snapshot.unregister_calls == before.unregister_calls + !failed_open);
+    assert(snapshot.session_join_calls == before.session_join_calls);
+    assert(snapshot.registration_attempts == 1);
+    assert(snapshot.subscriptions == device->baseline_subscriptions + 4);
+    assert(h2_atomic_load(&allocator.live) == retained);
+    assert(h2_lua_job_get_status(host, job, &status) == H2_PAL_OK);
+    assert(status.state == H2_LUA_JOB_SUCCEEDED);
+    if (!failed_open) {
+      const h2_pal_ble_gatt_characteristic_t* characteristic =
+          &device->service[0].characteristics[2];
+      const h2_pal_ble_gatt_access_t access = {
+          .conn_handle = FAKE_PERIPHERAL_HANDLE,
+          .attr_handle = *characteristic->out_value_handle,
+      };
+      const uint8_t byte = 0x42u;
+      /* The provider still owns a real callback into the retained link. */
+      assert(characteristic->write(characteristic->user, &access, &byte, 1u) ==
+             H2_PAL_OK);
+    }
+  }
+
+  pthread_mutex_lock(&air.mutex);
+  device->server_join_result = H2_PAL_OK;
+  device->unregister_result = H2_PAL_OK;
+  pthread_mutex_unlock(&air.mutex);
+  assert(h2_lua_host_destroy_checked(host) == H2_PAL_OK);
+  assert(h2_atomic_load(&allocator.live) == 0u);
+  assert(fake_is_released(device));
+  snapshot = fake_snapshot(device);
+  assert(!snapshot.session_task_retained && !snapshot.server_task_retained);
+  h2_test_allocator_destroy(&allocator);
+  h2_runtime_deinit(runtime);
+}
+
+static void test_session_join_retry(void) {
+  fake_air_t air;
+  h2_test_allocator_t allocator;
+  fake_air_init(&air);
+  fake_device_t* device = &air.devices[0];
+  h2_runtime_t* runtime = fake_create_runtime(&device->ble, &device->events);
+  fake_set_baseline(device);
+  h2_test_allocator_init(&allocator);
+  h2_atomic_store(&s_marks[0], 0);
+  h2_lua_host_t* host = create_host(runtime, 1, &s_marks[0], &allocator.api);
+  h2_lua_job_id_t job =
+      submit(host, "@join-retry.lua", s_host_finalizer, "join-retry");
+  wait_until(mark_reached, &s_marks[0]);
+  wait_until(device_advertising, device);
+  pthread_mutex_lock(&air.mutex);
+  device->session_join_result = H2_PAL_ERR_TIMEOUT;
+  pthread_mutex_unlock(&air.mutex);
+  assert(h2_lua_host_destroy_checked(host) == H2_PAL_ERR_TIMEOUT);
+  wait_until(device_released, device);
+  const size_t retained = h2_atomic_load(&allocator.live);
+  const fake_snapshot_t before = fake_snapshot(device);
+  assert(retained > 0u && before.session_task_retained);
+  assert(h2_lua_host_destroy_checked(host) == H2_PAL_ERR_TIMEOUT);
+  assert(h2_atomic_load(&allocator.live) == retained);
+  assert(fake_snapshot(device).session_join_calls ==
+         before.session_join_calls + 1);
+  h2_lua_job_status_t status;
+  assert(h2_lua_job_get_status(host, job, &status) == H2_PAL_OK);
+  assert(status.state == H2_LUA_JOB_STOPPED);
+
+  pthread_mutex_lock(&air.mutex);
+  device->session_join_result = H2_PAL_OK;
+  pthread_mutex_unlock(&air.mutex);
+  assert(h2_lua_host_destroy_checked(host) == H2_PAL_OK);
+  assert(h2_atomic_load(&allocator.live) == 0u);
+  assert(fake_is_released(device));
+  /* VM finalizers run after checked join; they cannot restart the provider. */
+  const fake_snapshot_t after = fake_snapshot(device);
+  assert(after.registration_attempts == 1);
+  assert(!after.session_task_retained && !after.server_task_retained);
+  h2_test_allocator_destroy(&allocator);
+  h2_runtime_deinit(runtime);
+}
+
 static void test_tag_mismatch_and_timeouts(void) {
   pair_t pair;
   pair_open(&pair);
@@ -752,6 +914,12 @@ int main(void) {
   test_job_exit_releases_link();
   fprintf(stderr, "== test_host_destroy_releases_link\n");
   test_host_destroy_releases_link();
+  fprintf(stderr, "== test_failed_open_cleanup_retry\n");
+  test_server_cleanup_retry(1);
+  fprintf(stderr, "== test_server_close_cleanup_retry\n");
+  test_server_cleanup_retry(0);
+  fprintf(stderr, "== test_session_join_retry\n");
+  test_session_join_retry();
   fprintf(stderr, "== test_tag_mismatch_and_timeouts\n");
   test_tag_mismatch_and_timeouts();
   puts("lua link tests passed");

@@ -15,8 +15,17 @@
  * Three characteristics per service cover provisioning and LuaLink. Every
  * table and the startup dynamic CCCD reservation derive from this capacity.
  */
+#ifndef H2_ESP_BLE_MAX_GATT_SERVICES
 #define H2_ESP_BLE_MAX_GATT_SERVICES 6u
+#endif
+#ifndef H2_ESP_BLE_MAX_GATT_CHARACTERISTICS_PER_SERVICE
 #define H2_ESP_BLE_MAX_GATT_CHARACTERISTICS_PER_SERVICE 3u
+#endif
+#if H2_ESP_BLE_MAX_GATT_SERVICES < 1 || H2_ESP_BLE_MAX_GATT_SERVICES > 6 || \
+    H2_ESP_BLE_MAX_GATT_CHARACTERISTICS_PER_SERVICE < 1 ||                  \
+    H2_ESP_BLE_MAX_GATT_CHARACTERISTICS_PER_SERVICE > 3
+#error "GATT schema capacity exceeds the supported image budget"
+#endif
 #define H2_ESP_BLE_MAX_GATT_CHARACTERISTICS \
   (H2_ESP_BLE_MAX_GATT_SERVICES *           \
    H2_ESP_BLE_MAX_GATT_CHARACTERISTICS_PER_SERVICE)

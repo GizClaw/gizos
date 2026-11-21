@@ -19,7 +19,8 @@
  * here and can inject a failed join deterministically. */
 static int close_result;
 static unsigned closes;
-static unsigned enters;
+static unsigned enters, leaves, ticks;
+static int preparation_blocked, preparation_error, leave_busy, render_fault;
 static int reset_from_summary;
 static int polling_fault;
 static unsigned fault_ticks, failure_saves;
@@ -36,11 +37,21 @@ static int count_failure_saves(void* user,
 int h2_mfg_hardware_enter(h2_mfg_t* m, uint64_t now) {
   (void)now;
   ++enters;
+  m->preparation_pending = preparation_blocked;
+  if (preparation_blocked) return H2_PAL_ERR_WOULD_BLOCK;
+  if (preparation_error) return preparation_error;
   m->model.ready = m->model.current == 0;
   return 0;
 }
+int h2_mfg_hardware_service(h2_mfg_t* m, uint64_t now) {
+  (void)now;
+  return m->model.error == 0 ? render_fault : 0;
+}
+
 int h2_mfg_hardware_tick(h2_mfg_t* m, uint64_t now, const char** action) {
   (void)now;
+  ++ticks;
+  assert(m->hardware_ticket == m->model.ticket);
   if (reset_from_summary && h2_mfg_model_complete(&m->model)) {
     reset_from_summary = 0;
     *action = "reset";
@@ -54,6 +65,11 @@ int h2_mfg_hardware_tick(h2_mfg_t* m, uint64_t now, const char** action) {
 }
 int h2_mfg_hardware_leave(h2_mfg_t* m) {
   (void)m;
+  ++leaves;
+  if (leave_busy) {
+    --leave_busy;
+    return H2_PAL_ERR_BUSY;
+  }
   return 0;
 }
 int h2_mfg_hardware_close(h2_mfg_t* m) {
@@ -62,8 +78,8 @@ int h2_mfg_hardware_close(h2_mfg_t* m) {
   return close_result;
 }
 int h2_mfg_ui_draw(h2_mfg_t* m, uint64_t now) {
-  (void)m;
   (void)now;
+  if (m->render_service != NULL) m->render_service_error = m->render_service(m);
   return 0;
 }
 
@@ -353,6 +369,110 @@ static void consecutive_polling_failures_preserve_ticket_and_save_count(void) {
   teardown(&r);
 }
 
+static void asynchronous_preparation_releases_locks_without_reopening(void) {
+  test_run_t r;
+  setup(&r);
+  preparation_blocked = 1;
+  unsigned before_enters = enters, before_leaves = leaves, before_ticks = ticks;
+  assert(pthread_create(&r.thread, NULL, run_session, &r) == 0);
+  int observed = 0;
+  for (unsigned i = 0; i < 200 && !observed; ++i) {
+    assert(h2_pal_time_sleep_ms(r.runtime.time, 10) == 0);
+    assert(h2_pal_mutex_lock(r.runtime.sync, r.operation) == 0);
+    assert(h2_pal_mutex_lock(r.runtime.sync, r.mfg->mutex) == 0);
+    observed = enters >= before_enters + 3;
+    if (observed) {
+      assert(r.mfg->preparing_ticket == r.mfg->model.ticket);
+      assert(r.mfg->hardware_ticket != r.mfg->model.ticket);
+      assert(!r.mfg->model.ready && r.mfg->model.error == 0);
+      assert(r.mfg->model.summary.step_status[0] ==
+             H2_LOADER_MFG_STEP_UNTESTED);
+      assert(leaves == before_leaves + 1 && ticks == before_ticks);
+      preparation_blocked = 0;
+    }
+    assert(h2_pal_mutex_unlock(r.runtime.sync, r.mfg->mutex) == 0);
+    assert(h2_pal_mutex_unlock(r.runtime.sync, r.operation) == 0);
+  }
+  assert(observed);
+  await_step(&r, 0);
+  assert(h2_pal_mutex_lock(r.runtime.sync, r.operation) == 0);
+  assert(h2_mfg_before_disruptive(r.mfg, H2_LOADER_DISRUPTIVE_REBOOT_LOADER) ==
+         0);
+  assert(pthread_join(r.thread, NULL) == 0 && r.result == H2_PAL_EXIT);
+  assert(h2_pal_mutex_unlock(r.runtime.sync, r.operation) == 0);
+  teardown(&r);
+}
+
+static void transient_prior_cleanup_does_not_end_session(void) {
+  test_run_t r;
+  setup(&r);
+  assert(pthread_create(&r.thread, NULL, run_session, &r) == 0);
+  await_step(&r, 0);
+  assert(h2_pal_mutex_lock(r.runtime.sync, r.mfg->mutex) == 0);
+  leave_busy = 3;
+  unsigned before = enters;
+  assert(h2_pal_mutex_unlock(r.runtime.sync, r.mfg->mutex) == 0);
+  assert(control(&r, "confirm", "display",
+                 H2_LOADER_COMMAND_TRANSPORT_SERIAL) == 0);
+  await_step(&r, 1);
+  assert(h2_pal_mutex_lock(r.runtime.sync, r.mfg->mutex) == 0);
+  assert(r.mfg->running && r.mfg->model.error == 0 && enters == before + 1);
+  assert(leave_busy == 0);
+  assert(h2_pal_mutex_unlock(r.runtime.sync, r.mfg->mutex) == 0);
+  assert(h2_mfg_before_disruptive(r.mfg, H2_LOADER_DISRUPTIVE_REBOOT_LOADER) ==
+         0);
+  assert(pthread_join(r.thread, NULL) == 0 && r.result == H2_PAL_EXIT);
+  teardown(&r);
+}
+
+static void hardware_would_block_is_not_async_preparation(void) {
+  test_run_t r;
+  setup(&r);
+  preparation_error = H2_PAL_ERR_WOULD_BLOCK;
+  assert(pthread_create(&r.thread, NULL, run_session, &r) == 0);
+  await_step(&r, 0);
+  assert(h2_pal_mutex_lock(r.runtime.sync, r.mfg->mutex) == 0);
+  assert(r.mfg->model.summary.step_status[0] == H2_LOADER_MFG_STEP_FAILED);
+  assert(r.mfg->model.error == H2_PAL_ERR_WOULD_BLOCK);
+  preparation_error = 0;
+  assert(h2_pal_mutex_unlock(r.runtime.sync, r.mfg->mutex) == 0);
+  assert(control(&r, "retry", "display", H2_LOADER_COMMAND_TRANSPORT_SERIAL) ==
+         0);
+  await_step(&r, 0);
+  assert(h2_mfg_before_disruptive(r.mfg, H2_LOADER_DISRUPTIVE_REBOOT_LOADER) ==
+         0);
+  assert(pthread_join(r.thread, NULL) == 0 && r.result == H2_PAL_EXIT);
+  teardown(&r);
+}
+
+static void render_service_failure_records_failure_without_ending_session(
+    void) {
+  test_run_t r;
+  setup(&r);
+  render_fault = H2_PAL_ERR_IO;
+  assert(pthread_create(&r.thread, NULL, run_session, &r) == 0);
+  int failed = 0;
+  for (unsigned i = 0; i < 200 && !failed; ++i) {
+    assert(h2_pal_time_sleep_ms(r.runtime.time, 10) == 0);
+    assert(h2_pal_mutex_lock(r.runtime.sync, r.mfg->mutex) == 0);
+    failed = r.mfg->model.summary.step_status[0] == H2_LOADER_MFG_STEP_FAILED;
+    if (failed) {
+      assert(r.mfg->running && r.mfg->model.error == H2_PAL_ERR_IO);
+      assert(!r.mfg->model.ready && r.mfg->render_service == NULL);
+      render_fault = 0;
+    }
+    assert(h2_pal_mutex_unlock(r.runtime.sync, r.mfg->mutex) == 0);
+  }
+  assert(failed);
+  assert(control(&r, "retry", "display", H2_LOADER_COMMAND_TRANSPORT_SERIAL) ==
+         0);
+  await_step(&r, 0);
+  assert(h2_mfg_before_disruptive(r.mfg, H2_LOADER_DISRUPTIVE_REBOOT_LOADER) ==
+         0);
+  assert(pthread_join(r.thread, NULL) == 0 && r.result == H2_PAL_EXIT);
+  teardown(&r);
+}
+
 static void status_includes_current_touch_coordinates(void) {
   test_run_t r;
   setup(&r);
@@ -372,6 +492,10 @@ static void status_includes_current_touch_coordinates(void) {
 }
 
 int main(void) {
+  render_service_failure_records_failure_without_ending_session();
+  transient_prior_cleanup_does_not_end_session();
+  hardware_would_block_is_not_async_preparation();
+  asynchronous_preparation_releases_locks_without_reopening();
   status_includes_current_touch_coordinates();
   consecutive_polling_failures_preserve_ticket_and_save_count();
   summary_retest_revokes_durable_acceptance();

@@ -189,6 +189,57 @@ static void test_sessions(void) {
   assert(transport.physical_io.read == physical_read);
 }
 
+static void test_legacy_config_initializer(void) {
+  /* This is the complete public initializer before RX budgets were appended. */
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
+#endif
+  const h2_device_serial_config_t config = {
+      s_physical, &s_mem, &s_time, NULL, NULL, 0u, 0u, 0u, 8u};
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
+  assert(config.receive_window == 8u && config.rx_buffer_size == 0u);
+  h2_device_serial_t transport;
+  assert(h2_device_serial_init_with_config(&transport, &config) == H2_PAL_OK);
+  open_session(&transport, 87u);
+  assert(transport.receive_window == 8u);
+  h2_device_serial_deinit(&transport);
+}
+
+static void test_receive_budgets(void) {
+  h2_device_serial_t transport;
+  h2_device_serial_config_t config = {
+      .physical_io = s_physical,
+      .allocator = &s_mem,
+      .time = &s_time,
+      .rx_buffer_size = 1024u,
+      .receive_window = 8u,
+  };
+  assert(h2_device_serial_init_with_config(&transport, &config) == H2_PAL_OK);
+  open_session(&transport, 88u);
+  h2_device_serial_deinit(&transport);
+  const size_t invalid_sizes[] = {H2_IOSTREAMIKCP_DEFAULT_MTU - 1u, 4097u,
+                                  SIZE_MAX};
+  for (size_t i = 0u; i < sizeof(invalid_sizes) / sizeof(invalid_sizes[0]);
+       ++i) {
+    config.rx_buffer_size = invalid_sizes[i];
+    assert(h2_device_serial_init_with_config(&transport, &config) ==
+           H2_PAL_ERR_INVALID_ARG);
+  }
+  config.rx_buffer_size = 1024u;
+  const uint32_t invalid_windows[] = {H2_IOSTREAMIKCP_MIN_RECEIVE_WINDOW - 1u,
+                                      H2_IOSTREAMIKCP_MAX_RECEIVE_WINDOW + 1u,
+                                      UINT32_MAX};
+  for (size_t i = 0u; i < sizeof(invalid_windows) / sizeof(invalid_windows[0]);
+       ++i) {
+    config.receive_window = invalid_windows[i];
+    assert(h2_device_serial_init_with_config(&transport, &config) ==
+           H2_PAL_ERR_INVALID_ARG);
+  }
+}
+
 static void test_flush_and_backpressure(void) {
   h2_device_serial_t transport;
   assert(h2_device_serial_init(&transport, &s_mem, &s_time, &s_physical) ==
@@ -229,6 +280,8 @@ static void test_flush_and_backpressure(void) {
 int main(void) {
   test_endpoint();
   test_sessions();
+  test_legacy_config_initializer();
+  test_receive_budgets();
   test_flush_and_backpressure();
   return 0;
 }

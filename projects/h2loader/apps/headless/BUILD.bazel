@@ -60,6 +60,20 @@ cc_library(
 )
 
 cc_test(
+    name = "bleikcp_command_service_test",
+    srcs = [
+        "src/h2loader_bleikcp.c",
+        "src/h2loader_bleikcp_internal.h",
+        "tests/test_h2loader_bleikcp.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [":loader"],
+)
+
+cc_test(
     name = "lifetime_test",
     srcs = ["tests/test_lifetime.c"],
     conlyopts = H2_C11_OPTS,

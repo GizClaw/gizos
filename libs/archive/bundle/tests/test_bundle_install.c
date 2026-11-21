@@ -23,20 +23,33 @@ typedef struct bundle_test_context {
   int data_clears;
   int data_writes;
   int checksum_writes;
+  size_t allocations, live_allocations, fail_allocation;
+  unsigned archive_opens, archive_closes;
+  int read_error;
 } bundle_test_context_t;
 
 static void* test_alloc(void* user, size_t len) {
-  (void)user;
-  return malloc(len);
+  bundle_test_context_t* context = user;
+  if (++context->allocations == context->fail_allocation) return NULL;
+  void* pointer = malloc(len);
+  if (pointer != NULL) ++context->live_allocations;
+  return pointer;
 }
 
 static void* test_realloc(void* user, void* ptr, size_t len) {
-  (void)user;
+  if (ptr == NULL) return test_alloc(user, len);
+  bundle_test_context_t* context = user;
+  assert(len != 0);
+  if (++context->allocations == context->fail_allocation) return NULL;
   return realloc(ptr, len);
 }
 
 static void test_free(void* user, void* ptr) {
-  (void)user;
+  bundle_test_context_t* context = user;
+  if (ptr != NULL) {
+    assert(context->live_allocations != 0);
+    --context->live_allocations;
+  }
   free(ptr);
 }
 
@@ -49,6 +62,7 @@ static int test_fs_open(void* user, const char* path,
       return H2_PAL_FS_ERR_NOT_FOUND;
     }
     assert(strcmp(path, "/dl/update.tar.zlib") == 0);
+    ++context->archive_opens;
     context->file.output_kind = 0;
     context->file.offset = 0u;
     *out_file = &context->file;
@@ -68,6 +82,7 @@ static int test_fs_read(void* user, h2_pal_fs_file_t* file, void* data,
                         size_t len, size_t* out_read) {
   bundle_test_context_t* context = (bundle_test_context_t*)user;
   assert(file->output_kind == 0);
+  if (context->read_error) return H2_PAL_FS_ERR_IO;
   size_t remaining = context->archive_len - file->offset;
   size_t take = remaining < len ? remaining : len;
   memcpy(data, context->archive + file->offset, take);
@@ -103,8 +118,8 @@ static int test_fs_mkdir(void* user, const char* path) {
 }
 
 static int test_fs_close(void* user, h2_pal_fs_file_t* file) {
-  (void)user;
-  (void)file;
+  bundle_test_context_t* context = user;
+  if (file->output_kind == 0) ++context->archive_closes;
   return H2_PAL_FS_OK;
 }
 
@@ -239,7 +254,7 @@ static int install_archive(bundle_test_context_t* context, int skip_app,
       .free = test_free,
   };
   const h2_pal_fs_api_t fs = {.user = context, .vtable = &fs_vtable};
-  const h2_pal_mem_api_t mem = {.vtable = &mem_vtable};
+  const h2_pal_mem_api_t mem = {.user = context, .vtable = &mem_vtable};
   const h2_bundle_app_writer_t writer = {
       .user = context,
       .begin = app_begin,
@@ -257,10 +272,40 @@ static int install_archive(bundle_test_context_t* context, int skip_app,
   options.clear_data_user = context;
   options.skip_app_install = skip_app;
   options.skip_data_install = skip_data;
-  return h2_bundle_install_ota(&installer, &options);
+  int rc = h2_bundle_install_ota(&installer, &options);
+  assert(context->live_allocations == 0);
+  assert(context->archive_opens == context->archive_closes);
+  return rc;
+}
+
+static void allocation_and_io_failures_release_workspace(void) {
+  uint8_t archive[8203];
+  bundle_test_context_t context = {.archive = archive};
+  size_t length = make_archive(archive, sizeof(archive), 1u);
+  context.archive_len = length;
+  assert(install_archive(&context, 0, 0) == H2_BUNDLE_OK);
+  size_t allocations = context.allocations;
+  assert(allocations >= 2);
+  for (size_t failure = 1; failure <= allocations; ++failure) {
+    context = (bundle_test_context_t){
+        .archive = archive, .archive_len = length, .fail_allocation = failure};
+    assert(install_archive(&context, 0, 0) < 0);
+    if (failure == 1) {
+      assert(context.archive_opens == 0 && context.app_begins == 0);
+      assert(context.data_clears == 0 && context.checksum_writes == 0);
+    }
+  }
+  context = (bundle_test_context_t){
+      .archive = archive, .archive_len = length, .read_error = 1};
+  assert(install_archive(&context, 0, 0) == H2_BUNDLE_ERR_FS);
+  context =
+      (bundle_test_context_t){.archive = archive, .archive_len = length - 1};
+  assert(install_archive(&context, 0, 0) == H2_BUNDLE_ERR_ZLIB);
+  assert(context.checksum_writes == 0);
 }
 
 int main(void) {
+  allocation_and_io_failures_release_workspace();
   uint8_t archive[8203];
   bundle_test_context_t context = {0};
 

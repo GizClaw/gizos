@@ -5,7 +5,7 @@
 static struct {
   unsigned mutexes, deinit, joins, closes, sleeps, stops;
   unsigned join_failures, close_failures;
-  int serve_live, service_live;
+  int serve_live, service_live, open_result;
   h2_pal_task_entry_t entry;
   void* context;
   h2_loader_t* loader;
@@ -104,7 +104,7 @@ static int open_service(void* user, h2_runtime_t* runtime,
   assert(command->loader == state.loader && state.serve_live);
   state.service_live = 1;
   *out = &state;
-  return H2_PAL_OK;
+  return state.open_result;
 }
 static int close_service(void* user, void* service) {
   (void)user;
@@ -145,5 +145,14 @@ int main(void) {
       assert(state.sleeps == joins + closes && state.stops == joins);
     }
   }
+  /* A failed open's retained handle must not block startup or outlive Loader.
+   */
+  memset(&state, 0, sizeof(state));
+  state.open_result = H2_PAL_ERR_UNSUPPORTED;
+  state.close_failures = 2u;
+  assert(h2loader_app_run_with_command_service(&runtime, &config, &service) ==
+         H2_PAL_ERR_IO);
+  assert(state.deinit == 1u && state.mutexes == 0u);
+  assert(state.joins == 1u && state.closes == 3u && state.sleeps == 2u);
   return 0;
 }

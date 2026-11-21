@@ -4,6 +4,8 @@
 
 int h2_esp_platform_wifi_ensure_started(void) { return H2_PAL_ERR_UNSUPPORTED; }
 
+int h2_esp_platform_wifi_stop(void) { return H2_PAL_ERR_UNSUPPORTED; }
+
 static int h2_esp_wifi_unsupported_get_status(
     h2_pal_wifi_sta_t* sta, h2_pal_wifi_sta_status_t* out_status) {
   (void)sta;

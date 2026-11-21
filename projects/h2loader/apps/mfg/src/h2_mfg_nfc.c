@@ -107,7 +107,9 @@ int h2_mfg_nfc_enter(h2_mfg_t* m) {
   m->nfc.armed = state.status == H2_RUNTIME_NFC_STATE_ABSENT;
   rc = h2_runtime_dropped_event_count(m->rt, &m->nfc.dropped);
   if (rc != 0) return fault(m, rc);
-  return h2_mfg_nfc_tick(m);
+  /* The session commits hardware ownership after preparation/enter succeeds.
+   * Its first controller tick revalidates health with that committed ticket. */
+  return m->hardware_ticket == m->model.ticket ? h2_mfg_nfc_tick(m) : 0;
 }
 
 void h2_mfg_nfc_event(h2_mfg_t* m, const h2_runtime_event_t* event) {
