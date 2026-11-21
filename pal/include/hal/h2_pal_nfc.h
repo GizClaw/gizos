@@ -5,6 +5,7 @@
 #include "os/h2_pal_mem.h"
 #include "hal/h2_pal_periph.h"
 
+#include <stdbool.h>
 #include <string.h>
 
 #ifdef __cplusplus
@@ -56,6 +57,7 @@ typedef struct h2_pal_nfc_data_read {
 } h2_pal_nfc_data_read_t;
 
 typedef struct h2_pal_nfc_vtable {
+  /** BUSY indicates temporary contention and provides no discovery result. */
   h2_pal_result_t (*scan_nfc_reader)(void* user, h2_pal_periph_id_t id,
                                      h2_pal_nfc_scan_t* out_scan);
 
@@ -65,6 +67,34 @@ typedef struct h2_pal_nfc_vtable {
                                    h2_pal_nfc_data_type_t requested_type,
                                    const h2_pal_mem_api_t* allocator,
                                    h2_pal_nfc_data_read_t* out_data);
+  /** Blocking write to the selected tag, guarded by its exact nonempty UID.
+   * NDEF bytes are a complete message, without tag-specific headers/TLVs.
+   * Success means the tag acknowledged the complete write. No automatic
+   * readback is required; persistence and business acceptance are not implied.
+   * A failed physical write may leave partial content; callers must not
+   * blindly retry a transaction.
+   * BUSY means no device write was started; callers may wait and retry the
+   * same request without regenerating its payload or payment context.
+   * Caller serializes read/write; absent capability returns UNSUPPORTED. */
+  h2_pal_result_t (*write_nfc_data)(void* user, h2_pal_periph_id_t id,
+                                    const uint8_t* expected_uid,
+                                    uint8_t expected_uid_len,
+                                    h2_pal_nfc_data_type_t type,
+                                    const uint8_t* bytes, size_t length);
+  /** Read NDEF and reserve its selection for a short, provider-bounded
+   * interval. Return caller-owned bytes using allocator. Keep out_data at
+   * the same address until finish; it identifies this preparation. */
+  h2_pal_result_t (*prepare_ndef_write)(void* user, h2_pal_periph_id_t id,
+                                        const uint8_t* expected_uid,
+                                        uint8_t expected_uid_len,
+                                        const h2_pal_mem_api_t* allocator,
+                                        h2_pal_nfc_data_read_t* out_data);
+  /** Write without rereading or reselecting, or cancel with NULL and 0.
+   * Finish consumes the matching preparation even on failure, except BUSY
+   * which means no operation started. Finish before freeing the read bytes. */
+  h2_pal_result_t (*finish_ndef_write)(void* user, h2_pal_periph_id_t id,
+                                       const h2_pal_nfc_data_read_t* prepared,
+                                       const uint8_t* bytes, size_t length);
 } h2_pal_nfc_vtable_t;
 
 typedef struct h2_pal_nfc_api {
@@ -103,6 +133,97 @@ static inline h2_pal_result_t h2_pal_nfc_read_nfc_data(
                                     expected_uid_len, requested_type, allocator,
                                     out_data);
 }
+
+static inline h2_pal_result_t h2_pal_nfc_write_nfc_data(
+    const h2_pal_nfc_api_t* api, h2_pal_periph_id_t id,
+    const uint8_t* expected_uid, uint8_t expected_uid_len,
+    h2_pal_nfc_data_type_t type, const uint8_t* bytes, size_t length) {
+  if (expected_uid == NULL || expected_uid_len == 0u ||
+      expected_uid_len > H2_PAL_NFC_UID_MAX_LEN || bytes == NULL ||
+      length == 0u || type != H2_PAL_NFC_DATA_NDEF)
+    return H2_PAL_ERR_INVALID_ARG;
+  if (api == NULL || api->vtable == NULL || api->vtable->write_nfc_data == NULL)
+    return H2_PAL_ERR_UNSUPPORTED;
+  return api->vtable->write_nfc_data(api->user, id, expected_uid,
+                                     expected_uid_len, type, bytes, length);
+}
+
+static inline h2_pal_result_t h2_pal_nfc_prepare_ndef_write(
+    const h2_pal_nfc_api_t* api, h2_pal_periph_id_t id,
+    const uint8_t* expected_uid, uint8_t expected_uid_len,
+    const h2_pal_mem_api_t* allocator, h2_pal_nfc_data_read_t* out_data) {
+  if (expected_uid == NULL || expected_uid_len == 0u ||
+      expected_uid_len > H2_PAL_NFC_UID_MAX_LEN || allocator == NULL ||
+      out_data == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  if (api == NULL || api->vtable == NULL ||
+      api->vtable->prepare_ndef_write == NULL ||
+      api->vtable->finish_ndef_write == NULL)
+    return H2_PAL_ERR_UNSUPPORTED;
+  return api->vtable->prepare_ndef_write(api->user, id, expected_uid,
+                                         expected_uid_len, allocator, out_data);
+}
+
+static inline h2_pal_result_t h2_pal_nfc_finish_ndef_write(
+    const h2_pal_nfc_api_t* api, h2_pal_periph_id_t id,
+    const h2_pal_nfc_data_read_t* prepared, const uint8_t* bytes,
+    size_t length) {
+  if (prepared == NULL || (bytes == NULL) != (length == 0u))
+    return H2_PAL_ERR_INVALID_ARG;
+  if (api == NULL || api->vtable == NULL ||
+      api->vtable->finish_ndef_write == NULL)
+    return H2_PAL_ERR_UNSUPPORTED;
+  return api->vtable->finish_ndef_write(api->user, id, prepared, bytes, length);
+}
+
+/** Per-session Type 2 acquisition policy, selected after a normal header READ.
+ * Defaults use ordinary READ and validate a standard NDEF write layout. */
+typedef struct h2_pal_nfc_reader_options {
+  bool fast_read;
+  bool prepare_ndef_write;
+} h2_pal_nfc_reader_options_t;
+/** Blocking acquisition callback. Header contains physical pages 0..3; UID and
+ * header are borrowed only for this call. Errors propagate without acquiring
+ * the user area or reserving a preparation. No NFC I/O or reentry is permitted.
+ */
+typedef h2_pal_result_t (*h2_pal_nfc_reader_select_fn)(
+    void* user, const uint8_t* uid, uint8_t uid_length,
+    const uint8_t header[16], h2_pal_nfc_reader_options_t* options);
+typedef struct h2_pal_nfc_reader_reply {
+  size_t bits;    /** Data bits after hardware parity removal. */
+  bool crc_valid; /** A retained CRC-A was checked successfully. */
+} h2_pal_nfc_reader_reply_t;
+/** Optional reader-session extension, independent of the legacy NFC vtable.
+ * Externally serialize with the same reader's scan/read/write operations.
+ * prepare returns allocator-owned NDEF bytes and reserves the selection using
+ * the exact out_data address, just like prepare_ndef_write. The provider
+ * invokes select before acquiring the full snapshot. Fast-read failure may
+ * restart acquisition using ordinary READ, but must recheck the original UID,
+ * discard partial bytes and invoke select again with the new header. exchange
+ * sends exactly one command with hardware TX CRC-A and parity, checks RX
+ * errors, and returns data bits/retained CRC status. It never retries, reads
+ * back, or reselects. BUSY means nothing was sent; all other errors may
+ * represent uncertain submission. It retains the preparation for subsequent
+ * frames. Finish/cancel through the same reader's finish_ndef_write before
+ * freeing out_data bytes. Nonempty NDEF finish is valid only if the selected
+ * options requested prepare_ndef_write. Dependencies remain borrowed for each
+ * call. */
+typedef struct h2_pal_nfc_reader_session_api {
+  void* user;
+  h2_pal_result_t (*prepare)(void* user, h2_pal_periph_id_t id,
+                             const uint8_t* expected_uid,
+                             uint8_t expected_uid_length,
+                             h2_pal_nfc_reader_select_fn select,
+                             void* select_user,
+                             const h2_pal_mem_api_t* allocator,
+                             h2_pal_nfc_data_read_t* out_data);
+  h2_pal_result_t (*exchange)(void* user, h2_pal_periph_id_t id,
+                              const h2_pal_nfc_data_read_t* prepared,
+                              const uint8_t* command, size_t command_length,
+                              uint32_t timeout_ms, uint8_t* reply,
+                              size_t reply_capacity,
+                              h2_pal_nfc_reader_reply_t* out_reply);
+} h2_pal_nfc_reader_session_api_t;
 
 /** RF technologies supported by the independent card-emulation capability. */
 typedef enum h2_pal_nfc_card_emulation_technology {

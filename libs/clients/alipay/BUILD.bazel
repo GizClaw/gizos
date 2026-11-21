@@ -1,0 +1,468 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
+load("@rules_python//python:defs.bzl", "py_test")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
+load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "api",
+    hdrs = ["include/h2_alipay_api.h"],
+    includes = ["include"],
+)
+
+cc_library(
+    name = "crypto_compat",
+    srcs = ["src/h2_alipay_crypto_compat.c"],
+    hdrs = ["src/h2_alipay_crypto_compat.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    visibility = ["//visibility:private"],
+    deps = [
+        "//libs/crypto/common",
+        "//pal",
+    ],
+)
+
+cc_library(
+    name = "client",
+    srcs = [
+        "src/h2_alipay_account.c",
+        "src/h2_alipay_aid.c",
+        "src/h2_alipay_amount.c",
+        "src/h2_alipay_binding.c",
+        "src/h2_alipay_client.c",
+        "src/h2_alipay_client_internal.h",
+        "src/h2_alipay_migration.c",
+        "src/h2_alipay_paycode.c",
+        "src/h2_alipay_payment.c",
+        "src/h2_alipay_provision.c",
+        "src/h2_alipay_scan.c",
+        "src/h2_alipay_tap.c",
+        "src/h2_alipay_tap_internal.h",
+        "src/h2_alipay_tap_tag.c",
+        "src/h2_alipay_transit.c",
+        "src/h2_alipay_transit_internal.h",
+        "src/h2_alipay_union.c",
+    ],
+    hdrs = [
+        "include/h2_alipay_client.h",
+        "include/h2_alipay_scan.h",
+        "include/h2_alipay_tap.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    deps = [
+        ":crypto_compat",
+        ":protocol",
+        "//libs/crypto/common",
+        "//libs/crypto/sha256",
+        "//libs/encoding",
+        "//pal",
+        "@h2_vendor_yyjson//:yyjson",
+    ],
+)
+
+cc_library(
+    name = "alipay",
+    srcs = [
+        "src/h2_alipay.c",
+        "src/h2_alipay_client_internal.h",
+        "src/h2_alipay_tap_internal.h",
+        "src/h2_alipay_transit_internal.h",
+    ],
+    hdrs = ["include/h2_alipay_context.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    deps = [
+        ":api",
+        ":client",
+        ":crypto_compat",
+        "//libs/crypto/common",
+        "//libs/encoding",
+        "//libs/sync/atomic",
+        "@h2_vendor_yyjson//:yyjson",
+    ],
+)
+
+cc_library(
+    name = "test_binding",
+    testonly = True,
+    srcs = [
+        "src/h2_alipay_client_internal.h",
+        "src/h2_alipay_tap_internal.h",
+        "tests/h2_alipay_test_binding.c",
+    ],
+    hdrs = ["tests/h2_alipay_test_binding.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "src",
+        "tests",
+    ],
+    deps = [
+        ":client",
+        ":crypto_compat",
+    ],
+)
+
+cc_library(
+    name = "protocol",
+    srcs = ["src/h2_alipay_protocol.c"],
+    hdrs = ["include/h2_alipay_protocol.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    deps = [
+        ":crypto_compat",
+        "//libs/crypto/sha256",
+        "//libs/crypto/sm3",
+        "//libs/encoding",
+        "//pal",
+        "@h2_vendor_yyjson//:yyjson",
+    ],
+)
+
+cc_test(
+    name = "crypto_compat_test",
+    srcs = ["tests/test_crypto_compat.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        ":crypto_compat",
+        "//libs/crypto/common",
+        "//libs/testing:testing_pal",
+        "//pal/providers/backends/wolfssl:wolfcrypt_test_support",
+    ],
+)
+
+cc_test(
+    name = "public_api_cpp_test",
+    srcs = ["tests/test_public_api_cpp.cc"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        ":alipay",
+        "//libs/sync/atomic/providers/c11",
+    ],
+)
+
+cc_test(
+    name = "public_api_test",
+    srcs = ["tests/test_public_api.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        ":alipay",
+        "//libs/sync/atomic/providers/c11",
+        "//libs/testing:testing_pal",
+        "//pal/providers/backends/wolfssl:wolfcrypt_test_support",
+    ],
+)
+
+cc_test(
+    name = "client_test",
+    srcs = ["tests/test_client.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        ":client",
+        "//libs/testing:testing_pal",
+        "//pal/providers/backends/corehttp:corehttp_test_support",
+    ],
+)
+
+cc_test(
+    name = "protocol_test",
+    srcs = ["tests/test_protocol.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        ":protocol",
+        "//libs/testing:testing_pal",
+    ],
+)
+
+cc_test(
+    name = "binding_test",
+    srcs = ["tests/test_binding.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        ":client",
+        "//libs/testing:testing_pal",
+        "//pal/providers/backends/wolfssl:wolfcrypt_test_support",
+    ],
+)
+
+cc_test(
+    name = "migration_test",
+    srcs = ["tests/test_migration.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        ":alipay",
+        "//libs/crypto/common",
+        "//libs/sync/atomic/providers/c11",
+        "//libs/testing:testing_pal",
+        "//pal/providers/backends/wolfssl:wolfcrypt_test_support",
+    ],
+)
+
+cc_test(
+    name = "scan_test",
+    srcs = [
+        "src/h2_alipay_client_internal.h",
+        "tests/test_scan.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        ":client",
+        "//libs/crypto/sha256",
+        "//libs/testing:testing_pal",
+    ],
+)
+
+cc_test(
+    name = "payment_test",
+    srcs = [
+        "src/h2_alipay_client_internal.h",
+        "tests/test_payment.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        ":alipay",
+        "//libs/crypto/sha256",
+        "//libs/sync/atomic/providers/c11",
+        "//libs/testing:testing_pal",
+        "//pal/providers/backends/wolfssl:wolfcrypt_test_support",
+    ],
+)
+
+cc_test(
+    name = "tap_wallet_test",
+    srcs = [
+        "src/h2_alipay_client_internal.h",
+        "tests/test_tap_wallet.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        ":alipay",
+        "//libs/sync/atomic/providers/c11",
+        "//libs/testing:testing_pal",
+        "//pal/providers/backends/wolfssl:wolfcrypt_test_support",
+    ],
+)
+
+cc_binary(
+    name = "api_candidate_runner",
+    testonly = True,
+    srcs = [
+        "src/h2_alipay_client_internal.h",
+        "src/h2_alipay_tap_internal.h",
+        "tests/api_candidate_runner.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        ":alipay",
+        "//libs/crypto/sha256",
+        "//libs/sync/atomic/providers/c11",
+        "//libs/testing:testing_pal",
+        "//pal/providers/backends/wolfssl:wolfcrypt_test_support",
+        "@h2_vendor_yyjson//:yyjson",
+    ],
+)
+
+py_test(
+    name = "binding_compatibility_test",
+    size = "medium",
+    srcs = ["tests/test_compatibility.py"],
+    args = [
+        "--case=binding",
+        "--runner=$(location :api_candidate_runner)",
+        "--manifest=$(location tests/fixtures/compatibility.json)",
+        "--fixture=$(location tests/fixtures/binding.jsonl.gz)",
+    ],
+    data = [
+        "tests/fixtures/binding.jsonl.gz",
+        "tests/fixtures/compatibility.json",
+        ":api_candidate_runner",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_compatibility.py",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+
+py_test(
+    name = "payment_compatibility_test",
+    size = "medium",
+    srcs = ["tests/test_compatibility.py"],
+    args = [
+        "--case=payment",
+        "--runner=$(location :api_candidate_runner)",
+        "--manifest=$(location tests/fixtures/compatibility.json)",
+        "--fixture=$(location tests/fixtures/payment.jsonl.gz)",
+    ],
+    data = [
+        "tests/fixtures/compatibility.json",
+        "tests/fixtures/payment.jsonl.gz",
+        ":api_candidate_runner",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_compatibility.py",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+
+py_test(
+    name = "scan_compatibility_test",
+    size = "medium",
+    srcs = ["tests/test_compatibility.py"],
+    args = [
+        "--case=scan",
+        "--exclude-image-decoding",
+        "--runner=$(location :api_candidate_runner)",
+        "--manifest=$(location tests/fixtures/compatibility.json)",
+        "--fixture=$(location tests/fixtures/scan.jsonl.gz)",
+    ],
+    data = [
+        "tests/fixtures/compatibility.json",
+        "tests/fixtures/scan.jsonl.gz",
+        ":api_candidate_runner",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_compatibility.py",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+
+py_test(
+    name = "migration_compatibility_test",
+    size = "medium",
+    srcs = ["tests/test_compatibility.py"],
+    args = [
+        "--case=migration",
+        "--runner=$(location :api_candidate_runner)",
+        "--manifest=$(location tests/fixtures/compatibility.json)",
+        "--fixture=$(location tests/fixtures/migration.jsonl.gz)",
+    ],
+    data = [
+        "tests/fixtures/compatibility.json",
+        "tests/fixtures/migration.jsonl.gz",
+        ":api_candidate_runner",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_compatibility.py",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+
+py_test(
+    name = "provision_compatibility_test",
+    size = "medium",
+    srcs = ["tests/test_compatibility.py"],
+    args = [
+        "--case=provision",
+        "--runner=$(location :api_candidate_runner)",
+        "--manifest=$(location tests/fixtures/compatibility.json)",
+        "--fixture=$(location tests/fixtures/provision.jsonl.gz)",
+    ],
+    data = [
+        "tests/fixtures/compatibility.json",
+        "tests/fixtures/provision.jsonl.gz",
+        ":api_candidate_runner",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_compatibility.py",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+
+py_test(
+    name = "sync_compatibility_test",
+    size = "medium",
+    srcs = ["tests/test_compatibility.py"],
+    args = [
+        "--case=sync",
+        "--runner=$(location :api_candidate_runner)",
+        "--manifest=$(location tests/fixtures/compatibility.json)",
+        "--fixture=$(location tests/fixtures/sync.jsonl.gz)",
+    ],
+    data = [
+        "tests/fixtures/compatibility.json",
+        "tests/fixtures/sync.jsonl.gz",
+        ":api_candidate_runner",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_compatibility.py",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+
+py_test(
+    name = "transit_compatibility_test",
+    size = "medium",
+    srcs = ["tests/test_compatibility.py"],
+    args = [
+        "--case=transit",
+        "--exclude-transit-scripts",
+        "--runner=$(location :api_candidate_runner)",
+        "--manifest=$(location tests/fixtures/compatibility.json)",
+        "--fixture=$(location tests/fixtures/transit.jsonl.gz)",
+    ],
+    data = [
+        "tests/fixtures/compatibility.json",
+        "tests/fixtures/transit.jsonl.gz",
+        ":api_candidate_runner",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_compatibility.py",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+
+cc_test(
+    name = "transit_test",
+    srcs = [
+        "src/h2_alipay_client_internal.h",
+        "src/h2_alipay_transit_internal.h",
+        "tests/test_transit.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        ":alipay",
+        "//libs/sync/atomic/providers/c11",
+        "//libs/testing:testing_pal",
+        "//pal/providers/backends/wolfssl:wolfcrypt_test_support",
+    ],
+)
+
+cc_test(
+    name = "payment_profile_test",
+    srcs = ["tests/test_payment_profile.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [
+        ":alipay",
+        "//libs/sync/atomic/providers/c11",
+        "//libs/testing:testing_pal",
+    ],
+)

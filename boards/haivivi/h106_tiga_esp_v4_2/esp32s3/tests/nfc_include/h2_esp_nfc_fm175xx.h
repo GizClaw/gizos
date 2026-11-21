@@ -2,6 +2,8 @@
 #define H2_TEST_NFC_FM175XX_H
 #include "driver/i2c_master.h"
 #include "hal/h2_pal_nfc.h"
+#include "os/h2_pal_log.h"
+#include "os/h2_pal_time.h"
 typedef struct {
   int unused;
 } h2_esp_nfc_fm175xx_t;
@@ -11,9 +13,13 @@ typedef struct {
   uint16_t i2c_address;
   uint32_t i2c_speed_hz;
   size_t read_capacity;
+  const h2_pal_time_api_t* time;
+  const h2_pal_log_api_t* log;
 } h2_esp_nfc_fm175xx_config_t;
 h2_pal_result_t h2_esp_nfc_fm175xx_init(
     h2_esp_nfc_fm175xx_t* adapter, const h2_esp_nfc_fm175xx_config_t* config);
 void h2_esp_nfc_fm175xx_deinit(h2_esp_nfc_fm175xx_t* adapter);
 const h2_pal_nfc_api_t* h2_esp_nfc_fm175xx_api(h2_esp_nfc_fm175xx_t* adapter);
+const h2_pal_nfc_reader_session_api_t* h2_esp_nfc_fm175xx_session_api(
+    h2_esp_nfc_fm175xx_t* adapter);
 #endif

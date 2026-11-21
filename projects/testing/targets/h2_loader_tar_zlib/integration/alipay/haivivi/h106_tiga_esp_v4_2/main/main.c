@@ -1,0 +1,498 @@
+#include "h2_alipay_e2e.h"
+#include "h2_alipay_e2e_target.h"
+#include "h2_alipay_tiga_storage.h"
+#include "h2_alipay_tiga_identity.h"
+#include "h2_alipay_nfc.h"
+#include "h2_e2e_fixture_wifi.h"
+#include "h2_esp_board.h"
+#include "h2_esp_board_config.h"
+#include "h2_device_service.h"
+#include "h2_esp_target_task_policy.h"
+#include "h2_sha256.h"
+#include "esp_app_desc.h"
+#include "esp_log.h"
+#include "esp_netif_sntp.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include <stdio.h>
+#include <string.h>
+#include <sys/time.h>
+
+static h2_device_app_commands_t management = {
+    .config = {.hardware_capabilities = H2_LOADER_CAPABILITIES_ALL,
+               .identity_policy = H2_DEVICE_IDENTITY_NATIVE,
+               .digest_yield_ms = 1u,
+               .command_stack_size = 49152u},
+};
+static h2_runtime_t* runtime;
+static h2_runtime_config_t runtime_config;
+static uint16_t* transferred;
+static int capture_width, capture_height, capture_rc;
+static size_t transfer_count;
+static char run_id[33];
+static uint8_t run_nonce[16];
+static uint64_t capture_sequence;
+static bool confirmed;
+static int storage_audit_rc;
+
+static bool payment_uses_nfc(void) {
+  const h2_alipay_payment_api_t* api = h2_alipay_e2e_target_payment_api();
+  return api != NULL && api->vtable != NULL && api->vtable->start_tap != NULL;
+}
+
+/* App logical input ids are assembled here from the concrete board. */
+static const h2_runtime_component_mapping_entry_t payment_buttons[] = {
+    {.component_id = 2u, .periph_id = H2_TIGA_ESP_BUTTON_LEFT_ID},
+    {.component_id = 3u, .periph_id = H2_TIGA_ESP_BUTTON_RIGHT_ID},
+    {.component_id = 4u, .periph_id = H2_TIGA_ESP_BUTTON_OK_ID},
+    {.component_id = 5u, .periph_id = H2_TIGA_ESP_BUTTON_CANCEL_ID},
+};
+static int payment_mapping_list(void* user, h2_runtime_component_t filter,
+                                h2_runtime_component_mapping_cb_t callback,
+                                void* callback_user) {
+  (void)user;
+  if (filter == H2_RUNTIME_COMPONENT_NFC_READER && payment_uses_nfc()) {
+    const h2_runtime_component_mapping_entry_t entry = {
+        .component_id = 1u, .periph_id = H2_TIGA_ESP_NFC_READER_ID};
+    return callback(callback_user, &entry);
+  }
+  if (filter == H2_RUNTIME_COMPONENT_BUTTON)
+    for (size_t i = 0u;
+         i < sizeof(payment_buttons) / sizeof(payment_buttons[0]); ++i) {
+      int rc = callback(callback_user, &payment_buttons[i]);
+      if (rc != H2_PAL_OK) return rc;
+    }
+  return H2_PAL_OK;
+}
+static int payment_mapping_get(void* user, h2_runtime_component_id_t id,
+                               h2_pal_periph_id_t* out) {
+  (void)user;
+  if (out == NULL) return H2_PAL_ERR_INVALID_ARG;
+  if (id == 1u && payment_uses_nfc()) {
+    *out = H2_TIGA_ESP_NFC_READER_ID;
+    return H2_PAL_OK;
+  }
+  for (size_t i = 0u; i < sizeof(payment_buttons) / sizeof(payment_buttons[0]);
+       ++i)
+    if (payment_buttons[i].component_id == id) {
+      *out = payment_buttons[i].periph_id;
+      return H2_PAL_OK;
+    }
+  return H2_PAL_ERR_NOT_FOUND;
+}
+static const h2_runtime_component_mapper_vtable_t payment_mapping_vtable = {
+    .list = payment_mapping_list, .get_periph_id = payment_mapping_get};
+static const h2_runtime_component_mapper_t payment_mapper = {
+    .vtable = &payment_mapping_vtable};
+
+static void hold(void) {
+  fflush(stdout);
+  for (;;) vTaskDelay(pdMS_TO_TICKS(1000));
+}
+static void fail(const char* stage, int rc) {
+  for (;;) {
+    printf("H2_ALIPAY_E2E_SETUP_FAIL stage=%s rc=%d\n", stage, rc);
+    fflush(stdout);
+    vTaskDelay(pdMS_TO_TICKS(10000));
+  }
+}
+static void hex(const uint8_t* data, size_t length, char* out) {
+  static const char digits[] = "0123456789abcdef";
+  for (size_t i = 0; i < length; ++i) {
+    out[2 * i] = digits[data[i] >> 4];
+    out[2 * i + 1] = digits[data[i] & 15];
+  }
+  out[2 * length] = '\0';
+}
+static void capture(void* user, const h2_display_rect_t* rect,
+                    const uint16_t* pixels) {
+  (void)user;
+  if (transferred == NULL || rect == NULL || pixels == NULL || rect->x < 0 ||
+      rect->y < 0 || rect->width <= 0 || rect->height <= 0 ||
+      rect->x >= capture_width || rect->y >= capture_height ||
+      rect->width > capture_width - rect->x ||
+      rect->height > capture_height - rect->y) {
+    capture_rc = H2_PAL_ERR_IO;
+    return;
+  }
+  const uint8_t* bytes = (const uint8_t*)pixels;
+  for (int y = 0; y < rect->height; ++y)
+    for (int x = 0; x < rect->width; ++x) {
+      size_t offset = ((size_t)y * rect->width + x) * 2;
+      transferred[(size_t)(rect->y + y) * capture_width + rect->x + x] =
+          (uint16_t)((uint16_t)bytes[offset] << 8) | bytes[offset + 1];
+    }
+  ++transfer_count;
+}
+static h2_pal_result_t observe(void* user, const uint8_t* pixels, size_t stride,
+                               int width, int height) {
+  (void)user;
+  int rc = capture_rc;
+  if (width != capture_width || height != capture_height || !transfer_count)
+    rc = H2_PAL_ERR_IO;
+  for (int y = 0; rc == H2_PAL_OK && y < height; ++y)
+    if (memcmp(pixels + (size_t)y * stride, transferred + (size_t)y * width,
+               (size_t)width * 2) != 0)
+      rc = H2_PAL_ERR_IO;
+  printf(
+      "H2_ALIPAY_E2E_DISPLAY source=completed-SPI-DMA chunks=%zu "
+      "optical_verified=0 rc=%d\n",
+      transfer_count, rc);
+  return rc;
+}
+static h2_pal_result_t prepare(h2_runtime_t* rt, void* user) {
+  (void)user;
+  const h2_pal_wifi_sta_config_t* fixture = h2_e2e_fixture_wifi();
+  int rc = fixture != NULL
+               ? h2_pal_wifi_sta_connect(rt->wifi_sta, fixture, 20000)
+               : h2_runtime_wifi_connect_saved(rt, 20000);
+  if (rc != H2_PAL_OK) return rc;
+  uint64_t started;
+  rc = h2_pal_time_get_monotonic_ms(rt->time, &started);
+  if (rc != H2_PAL_OK) return rc;
+  for (;;) {
+    h2_pal_wifi_sta_status_t status = {0};
+    rc = h2_pal_wifi_sta_get_status(rt->wifi_sta, &status);
+    if (rc != H2_PAL_OK) return rc;
+    if (status.state == H2_PAL_WIFI_STA_STATE_GOT_IP && status.ip_valid &&
+        status.ip.ip4 != 0)
+      break;
+    uint64_t current;
+    rc = h2_pal_time_get_monotonic_ms(rt->time, &current);
+    if (rc != H2_PAL_OK) return rc;
+    if (current - started >= 20000) return H2_PAL_ERR_TIMEOUT;
+    rc = h2_pal_time_sleep_ms(rt->time, 100);
+    if (rc != H2_PAL_OK) return rc;
+  }
+  puts("H2_ALIPAY_E2E_NETWORK ip=ready");
+  static const char* const time_servers[] = {
+      "pool.ntp.org",
+      "ntp.aliyun.com",
+      "time.cloudflare.com",
+  };
+  esp_err_t time_rc = ESP_ERR_TIMEOUT;
+  for (size_t i = 0; i < sizeof(time_servers) / sizeof(time_servers[0]); ++i) {
+    const esp_sntp_config_t time_config =
+        ESP_NETIF_SNTP_DEFAULT_CONFIG(time_servers[i]);
+    time_rc = esp_netif_sntp_init(&time_config);
+    if (time_rc == ESP_OK) {
+      time_rc = esp_netif_sntp_sync_wait(pdMS_TO_TICKS(20000));
+      esp_netif_sntp_deinit();
+    }
+    printf("H2_ALIPAY_E2E_TIME server=%s attempt=%zu sync_rc=%d\n",
+           time_servers[i], i + 1u, (int)time_rc);
+    if (time_rc != ESP_OK && time_rc != ESP_ERR_TIMEOUT) return H2_PAL_ERR_IO;
+    if (time_rc == ESP_OK) break;
+  }
+  if (time_rc != ESP_OK) return H2_PAL_ERR_TIMEOUT;
+  struct timeval wall;
+  if (gettimeofday(&wall, NULL) != 0 || wall.tv_sec <= 0) return H2_PAL_ERR_IO;
+  rc = h2_pal_time_set_wall_ms(
+      rt->time, (uint64_t)wall.tv_sec * 1000 + (uint64_t)wall.tv_usec / 1000);
+  if (rc == H2_PAL_OK) puts("H2_ALIPAY_E2E_TIME calibrated=true");
+  if (rc != H2_PAL_OK) return rc;
+  return H2_PAL_OK;
+}
+static const char* source_name(void) { return "independent"; }
+
+static void trace_report(const h2_alipay_e2e_result_t* r) {
+  const h2_alipay_api_t* api = h2_alipay_e2e_target_api();
+  const h2_alipay_trace_t* trace = api->trace;
+  const char* version = esp_app_get_description()->version;
+  char version_hex[2 * sizeof(esp_app_get_description()->version) + 1];
+  hex((const uint8_t*)version, strlen(version), version_hex);
+  printf(
+      "H2_ALIPAY_META {\"schema\":1,\"run_id\":\"%s\","
+      "\"case_id\":\"alipay/standalone\",\"source\":\"%s\","
+      "\"storage\":\"%s\",\"board\":\"%s\",\"target\":\"%s\","
+      "\"firmware_version_hex\":\"%s\","
+      "\"firmware_rc\":0,\"firmware_git_sha\":null,"
+      "\"git_sha_source\":\"host_build_manifest_required\","
+      "\"private_raw\":false,\"plaintext_http_available\":false}\n",
+      run_id, source_name(),
+      api->storage_scope == H2_ALIPAY_STORAGE_SESSION ? "session"
+                                                      : "persistent",
+      runtime->board, runtime->target, version_hex);
+  for (size_t i = 0; i < trace->count; ++i) {
+    const h2_alipay_trace_event_t* e = &trace->events[i];
+    char digest[65], detail[sizeof(e->detail) * 2 + 1];
+    h2_sha256_hex(e->digest, digest);
+    hex((const uint8_t*)e->detail, strlen(e->detail), detail);
+    printf(
+        "H2_ALIPAY_EVENT {\"run_id\":\"%s\","
+        "\"case_id\":\"alipay/standalone\",\"source\":\"%s\","
+        "\"seq\":%u,\"call_id\":%u,\"parent_id\":%u,\"connection_id\":%u,"
+        "\"mono_ms\":%llu,\"utc_ms\":%llu,\"utc_valid\":%s,"
+        "\"wall_source\":%u,\"duration_ms\":%llu,\"operation\":\"%s\","
+        "\"boundary\":\"%s\",\"result\":%d,\"item\":%u,\"length\":%zu,"
+        "\"captured\":%zu,\"sha256\":\"%s\",\"detail_hex\":\"%s\"}\n",
+        run_id,
+        strcmp(e->boundary, "independent") == 0 ? "runtime_independent"
+                                                : "runtime_product",
+        (unsigned)e->sequence, (unsigned)e->call_id, (unsigned)e->parent_id,
+        (unsigned)e->connection_id, (unsigned long long)e->mono_ms,
+        (unsigned long long)e->utc_ms, e->utc_valid ? "true" : "false",
+        (unsigned)e->wall_source, (unsigned long long)e->duration_ms,
+        e->operation, e->boundary, e->result, (unsigned)e->item, e->length,
+        e->captured, digest, detail);
+  }
+  printf(
+      "H2_ALIPAY_RESULT {\"run_id\":\"%s\","
+      "\"case_id\":\"alipay/standalone\",\"source\":\"%s\","
+      "\"stage\":%d,\"result\":%d,\"pre_init_rc\":%d,"
+      "\"first_init\":%s,\"code_rc\":%d,\"length\":%zu,"
+      "\"qr_visible\":%s,\"init_ms\":%llu,\"code_ms\":%llu,"
+      "\"binding_state\":%d,\"binding_sdk_status\":%d,"
+      "\"binding_storage_rc\":%d,\"binding_queries\":%u,"
+      "\"tid_length\":%zu,\"uid_length\":%zu,"
+      "\"key_length\":%zu,\"seed_length\":%zu}\n",
+      run_id, source_name(), (int)r->stage, r->result, r->init_sdk_rc,
+      r->first_init ? "true" : "false", r->code_sdk_rc, r->length,
+      r->qr_visible ? "true" : "false", (unsigned long long)r->init_ms,
+      (unsigned long long)r->code_ms, (int)r->binding.state,
+      r->binding.sdk_status, r->binding.storage_rc, r->binding_queries,
+      r->binding.tid_length, r->binding.uid_length,
+      r->binding.shared_key_length, r->binding.seed_length);
+  printf(
+      "H2_ALIPAY_END {\"run_id\":\"%s\","
+      "\"case_id\":\"alipay/standalone\",\"complete\":%s,"
+      "\"dropped\":%u,\"truncated_bytes\":%zu,\"events\":%zu,"
+      "\"raw_complete\":false}\n",
+      run_id, trace->dropped == 0 ? "true" : "false", (unsigned)trace->dropped,
+      trace->truncated_bytes, trace->count);
+}
+static void report(h2_runtime_t* rt, void* user,
+                   const h2_alipay_e2e_result_t* r, bool replay) {
+  (void)user;
+  if (!replay) {
+    if (!h2_alipay_trace_capture_begin(run_nonce, &capture_sequence, run_id))
+      fail("capture-id", H2_PAL_ERR_INVALID_STATE);
+    storage_audit_rc = h2_alipay_tiga_storage_audit();
+    trace_report(r);
+  }
+  bool required = h2_alipay_e2e_target_complete_binding();
+  bool existing = required && r->stage == H2_ALIPAY_E2E_BINDING_COMPLETE &&
+                  r->code_sdk_rc == H2_ALIPAY_E2E_NOT_CALLED;
+  bool initialized =
+      r->init_rc == H2_PAL_OK && r->init_sdk_rc == 0 && r->reused;
+  bool display_error = r->display_rc != H2_PAL_OK;
+  bool code = r->code_presented && r->code_sdk_rc == 0 && !display_error &&
+              storage_audit_rc == H2_PAL_OK;
+  bool credentials = required && r->result == H2_PAL_OK &&
+                     r->binding.state == H2_ALIPAY_BINDING_COMPLETE &&
+                     storage_audit_rc == H2_PAL_OK;
+  if (h2_alipay_e2e_target_payment_api() == NULL && !replay && initialized &&
+      !display_error && (required ? credentials : code) && !confirmed) {
+    int rc = h2_device_app_confirm(&management, rt);
+    printf("H2_ALIPAY_E2E_CONFIRM rc=%d\n", rc);
+    confirmed = rc == H2_PAL_OK;
+  }
+  bool init_blocked = r->init_rc == H2_ALIPAY_E2E_NOT_CALLED;
+  bool blocked = r->code_sdk_rc == H2_ALIPAY_E2E_NOT_CALLED;
+  bool credentials_blocked = required && !existing && !r->code_presented &&
+                             r->stage != H2_ALIPAY_E2E_PREREQUISITES;
+  unsigned selected = 1u + (unsigned)!existing + (unsigned)required;
+  bool code_error = !existing && display_error;
+  bool credentials_error = required && existing && display_error;
+  unsigned passed = (unsigned)initialized + (unsigned)(!existing && code) +
+                    (unsigned)(credentials && !credentials_error);
+  unsigned errors = (unsigned)code_error + (unsigned)credentials_error;
+  unsigned blocked_count =
+      (unsigned)init_blocked + (unsigned)(!existing && !code_error && blocked) +
+      (unsigned)(credentials_blocked && !credentials_error);
+  unsigned failed = selected - passed - errors - blocked_count;
+  printf(
+      "H2_ALIPAY_E2E_CASE case=alipay/pre-init source=%s "
+      "status=%s sdk_rc=%d reused=%d\n",
+      source_name(),
+      initialized    ? "PASS"
+      : init_blocked ? "BLOCKED"
+                     : "FAIL",
+      r->init_sdk_rc, r->reused);
+  if (!existing)
+    printf(
+        "H2_ALIPAY_E2E_CASE case=alipay/binding-code source=%s "
+        "status=%s sdk_rc=%d qr_visible=%d display_rc=%d\n",
+        source_name(),
+        display_error ? "ERROR"
+        : code        ? "PASS"
+        : blocked     ? "BLOCKED"
+                      : "FAIL",
+        r->code_sdk_rc, r->qr_visible, r->display_rc);
+  if (required)
+    printf(
+        "H2_ALIPAY_E2E_CASE case=alipay/binding-credentials source=%s "
+        "status=%s state=%d sdk_rc=%d sdk_status=%d storage_rc=%d "
+        "tid_length=%zu uid_length=%zu key_length=%zu seed_length=%zu queries=%u storage=%s storage_audit_rc=%d\n",
+        source_name(),
+        display_error && existing ? "ERROR"
+        : credentials             ? "PASS"
+        : credentials_blocked     ? "BLOCKED"
+                                  : "FAIL",
+        (int)r->binding.state, r->binding.sdk_rc, r->binding.sdk_status,
+        r->binding.storage_rc, r->binding.tid_length, r->binding.uid_length,
+        r->binding.shared_key_length, r->binding.seed_length,
+        r->binding_queries,
+        h2_alipay_e2e_target_api()->storage_scope == H2_ALIPAY_STORAGE_SESSION
+            ? "session"
+            : "persistent",
+        storage_audit_rc);
+  printf(
+      "H2_ALIPAY_E2E_SUMMARY run_id=%s selected=%u terminal=%u pass=%u "
+      "fail=%u error=%u blocked=%u setup_rc=%d display_rc=%d "
+      "complete=true exit_code=%u replay=%s\n",
+      run_id, selected, selected, passed, failed, errors, blocked_count,
+      r->prepare_rc, r->display_rc, (unsigned)(passed != selected),
+      replay ? "true" : "false");
+  fflush(stdout);
+}
+static int payment_ready(h2_runtime_t* rt, void* user) {
+  (void)user;
+  int rc = h2_alipay_tiga_storage_audit();
+  if (rc == 0 && !confirmed) {
+    rc = h2_device_app_confirm(&management, rt);
+    confirmed = rc == 0;
+  }
+  printf("H2_ALIPAY_PAYMENT_MENU_CONFIRM rc=%d\n", rc);
+  return rc;
+}
+
+static void binding_code_ready(h2_runtime_t* rt, void* user,
+                               const h2_alipay_e2e_result_t* result) {
+  (void)rt;
+  (void)user;
+  printf(
+      "H2_ALIPAY_BINDING_WAIT source=%s storage=%s timeout_ms=0 length=%zu\n",
+      source_name(),
+      h2_alipay_e2e_target_api()->storage_scope == H2_ALIPAY_STORAGE_SESSION
+          ? "session"
+          : "persistent",
+      result->length);
+  fflush(stdout);
+}
+
+static void binding_progress(h2_runtime_t* rt, void* user,
+                             const h2_alipay_e2e_result_t* result) {
+  (void)rt;
+  (void)user;
+  if (result->binding_queries != 1u && result->binding_queries % 5u != 0u &&
+      result->binding.state == H2_ALIPAY_BINDING_PENDING)
+    return;
+  printf(
+      "H2_ALIPAY_BINDING_PROGRESS queries=%u elapsed_ms=%llu state=%d "
+      "sdk_rc=%d sdk_status=%d storage_rc=%d\n",
+      result->binding_queries, (unsigned long long)result->binding_ms,
+      (int)result->binding.state, result->binding.sdk_rc,
+      result->binding.sdk_status, result->binding.storage_rc);
+  fflush(stdout);
+}
+
+static void run(void* user) {
+  (void)user;
+  int rc = h2_alipay_e2e_target_configure(runtime);
+  if (rc != H2_PAL_OK) fail("alipay-configure", rc);
+  const h2_alipay_api_t* api = h2_alipay_e2e_target_api();
+  if (api == NULL || api->source != H2_ALIPAY_SOURCE_INDEPENDENT ||
+      api->trace == NULL)
+    fail("alipay-provider", H2_PAL_ERR_INVALID_STATE);
+  h2_alipay_e2e_product_info_t product;
+  h2_alipay_e2e_target_product_info(&product);
+  char registration_model[sizeof(product.company) + sizeof(product.model)];
+  (void)snprintf(registration_model, sizeof(registration_model), "%s-%s",
+                 product.company, product.model);
+  printf(
+      "H2_ALIPAY_PRODUCT_INFO source=%s company_rc=%d model_rc=%d "
+      "company=%s product_model=%s company_matches_config=%u "
+      "model_matches_config=%u registration_model=%s "
+      "registration_matches_form=%u\n",
+      source_name(), product.company_rc, product.model_rc, product.company,
+      product.model,
+      (unsigned)(product.company_rc == 0 &&
+                 strcmp(product.company, H2_ALIPAY_TIGA_COMPANY_NAME) == 0),
+      (unsigned)(product.model_rc == 0 &&
+                 strcmp(product.model, H2_ALIPAY_TIGA_PRODUCT_MODEL) == 0),
+      registration_model,
+      (unsigned)(product.company_rc == 0 && product.model_rc == 0 &&
+                 strcmp(registration_model,
+                        H2_ALIPAY_TIGA_REGISTRATION_MODEL) == 0));
+  rc = h2_pal_crypto_random(runtime->crypto, run_nonce, sizeof(run_nonce));
+  if (rc != H2_PAL_OK) fail("run-id", rc);
+  h2_display_info_t info = h2_alipay_e2e_target_capture(NULL, NULL);
+  if (info.width < 240 || info.height < 240 || info.width > 1024 ||
+      info.height > 1024 || info.native_format != H2_DISPLAY_PIXEL_RGB565)
+    fail("capture-geometry", H2_PAL_ERR_UNSUPPORTED);
+  capture_width = info.width;
+  capture_height = info.height;
+  size_t bytes = (size_t)info.width * info.height * 2;
+  transferred = h2_pal_mem_alloc(runtime->mem, bytes);
+  if (transferred == NULL) fail("capture-memory", H2_PAL_ERR_NO_MEMORY);
+  memset(transferred, 0, bytes);
+  (void)h2_alipay_e2e_target_capture(capture, NULL);
+  h2_alipay_e2e_config_t config = {
+      .alipay = api,
+      .feature = h2_alipay_e2e_target_feature(),
+      .payment = h2_alipay_e2e_target_payment_api(),
+      .payment_nfc_session = h2_esp_board_nfc_session_api(),
+      .payment_nfc_fast_read = true,
+      .payment_nfc_fast_write = true,
+      .payment_nfc_component_id = 1u,
+      .payment_nfc_encode_reply = h2_alipay_nfc_encode_wallet_reply,
+      .payment_ready = payment_ready,
+      .payment_buttons = {.previous = 2u,
+                          .next = 3u,
+                          .activate = 4u,
+                          .back = 5u},
+      .complete_binding = h2_alipay_e2e_target_complete_binding(),
+      .binding_timeout_ms = 0u,
+      .binding_interval_ms = 2000u,
+      .prepare = prepare,
+      .observe = observe,
+      .binding_code_ready = binding_code_ready,
+      .binding_progress = binding_progress,
+      .report = report,
+  };
+  rc = h2_alipay_e2e_validate_payment(runtime, &config);
+  if (rc != H2_PAL_OK) fail("payment-mappings", rc);
+  rc = h2_alipay_e2e_run(runtime, &config);
+  (void)h2_alipay_e2e_target_capture(NULL, NULL);
+  h2_pal_mem_free(runtime->mem, transferred);
+  transferred = NULL;
+  fail("app-returned", rc);
+}
+static void image_entry(void* user) {
+  (void)user;
+  int rc = h2_esp_board_runtime_config(&runtime_config);
+  if (rc != H2_PAL_OK) fail("board", rc);
+  bool payments = h2_alipay_e2e_target_payment_api() != NULL;
+  if (payments) {
+    runtime_config.component_mapper = &payment_mapper;
+    h2_esp_board_set_nfc_enabled(payment_uses_nfc());
+  }
+  rc = h2_device_app_commands_prepare_named(&management, &runtime_config,
+                                            "alipay-e2e", 1u, 3u);
+  if (rc != H2_PAL_OK) fail("commands", rc);
+  rc = h2_runtime_init(&runtime_config, &runtime);
+  if (rc != H2_PAL_OK) fail("runtime", rc);
+  if (payments) {
+    rc = h2_runtime_input_start(runtime, NULL);
+    if (rc != H2_PAL_OK) fail("payment-input", rc);
+  }
+
+  printf("H2_ALIPAY_E2E_BOOT board=%s target=%s version=%s\n", runtime->board,
+         runtime->target, esp_app_get_description()->version);
+  printf(
+      "H2_ALIPAY_NFC_PROFILE mode=negotiated source=independent callbacks=1 fast_read=1 fast_write=1\n");
+  run(NULL);
+}
+
+void app_main(void) {
+  esp_log_level_set("alipay/payment", ESP_LOG_INFO);
+  printf(
+      "H2_ALIPAY_LOG_CONFIG default_level=%d maximum_level=%d payment_level=%d\n",
+      CONFIG_LOG_DEFAULT_LEVEL, CONFIG_LOG_MAXIMUM_LEVEL, ESP_LOG_INFO);
+  int rc = h2_esp_target_task_policy_install_with_configure(
+      h2_esp_board_task_configure);
+  if (rc == H2_PAL_OK)
+    rc = h2_esp_board_start_entry_task("alipay/e2e/runner", image_entry, NULL);
+  if (rc != H2_PAL_OK) fail("entry", rc);
+}

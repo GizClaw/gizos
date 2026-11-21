@@ -1,0 +1,3 @@
+# Compile INFO diagnostics, enabling only the payment scope at runtime.
+# CONFIG_LOG_MAXIMUM_EQUALS_DEFAULT is not set
+CONFIG_LOG_MAXIMUM_LEVEL_INFO=y

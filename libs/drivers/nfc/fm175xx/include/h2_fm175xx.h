@@ -61,6 +61,32 @@ int h2_fm175xx_open_type_a(h2_fm175xx_t* reader);
  */
 int h2_fm175xx_type_a_activate(h2_fm175xx_t* reader,
                                h2_fm175xx_type_a_card_t* out_card);
+typedef enum h2_fm175xx_activation_phase {
+  H2_FM175XX_ACTIVATION_FIELD,
+  H2_FM175XX_ACTIVATION_HALT,
+  H2_FM175XX_ACTIVATION_REQUEST,
+  H2_FM175XX_ACTIVATION_ANTICOLLISION,
+  H2_FM175XX_ACTIVATION_SELECT,
+  H2_FM175XX_ACTIVATION_COMPLETE
+} h2_fm175xx_activation_phase_t;
+
+typedef struct h2_fm175xx_activation_diagnostics {
+  h2_fm175xx_activation_phase_t phase;
+  uint8_t command;
+  uint8_t cascade_level;
+  size_t reply_bits;
+  int status_result;
+  uint8_t last_irq, last_error, last_fifo, last_control;
+} h2_fm175xx_activation_diagnostics_t;
+
+/** Same default selection with optional per-call phase/frame observations.
+ * Diagnostics are cleared before use and contain no UID or payload. A failed
+ * selection samples status after command cleanup without consuming FIFO.
+ * status_result is OK only when the complete snapshot succeeded.
+ * Result semantics, response budget and serialization are unchanged. */
+int h2_fm175xx_type_a_activate_diagnostic(
+    h2_fm175xx_t* reader, h2_fm175xx_type_a_card_t* out_card,
+    h2_fm175xx_activation_diagnostics_t* diagnostics);
 /**
  * Same selection with a caller-selected RF response budget per frame, 1..50 ms.
  * This is not a total-operation deadline. The original entry keeps its 1 ms
@@ -91,6 +117,167 @@ int h2_fm175xx_type_a_activate_profile(
     uint32_t timeout_ms, const h2_fm175xx_type_a_profile_t* profile);
 int h2_fm175xx_ntag_read_all(h2_fm175xx_t* reader, uint8_t* out_data,
                              size_t capacity, size_t* out_len);
+/** Non-payload observations of READ attempts during one NDEF operation.
+ * Retained CRC frames include malformed CRC replies; last_result preserves
+ * the last READ result independently of the enclosing NDEF parser result.
+ * required_capacity records the NDEF length after checking the tag extent.
+ * rx_status_result validates the RX-completion snapshot before FIFO consumption
+ * and command cleanup. A failed READ also samples post-cleanup control/status
+ * without consuming more FIFO bytes; status_result validates that snapshot. */
+typedef struct h2_fm175xx_read_diagnostics {
+  size_t read_count;
+  size_t retained_crc_frames;
+  size_t last_reply_bits;
+  uint8_t last_page;
+  int last_result;
+  size_t required_capacity;
+  int status_result;
+  uint8_t last_irq, last_error, last_fifo, last_control;
+  int rx_status_result;
+  uint8_t rx_irq, rx_error, rx_fifo, rx_control;
+  /** Raw exchange result, before full READ-frame validation. */
+  int transfer_result;
+  /** Only a complete four-bit control reply is retained, never data bytes. */
+  uint8_t short_reply_valid, short_reply_low4;
+} h2_fm175xx_read_diagnostics_t;
+
+/** Read the first NDEF TLV of a selected, formatted Type 2 tag. Complete
+ * message bytes exclude the CC/TLV header and stop at that message's end.
+ * Later pages need not be readable. Caller serializes selection/I/O. */
+int h2_fm175xx_ntag_read_ndef(h2_fm175xx_t* reader, uint8_t* out_data,
+                              size_t capacity, size_t* out_len);
+/** Same operation with optional per-call diagnostics, cleared before use.
+ * No tag UID or content is stored in diagnostics. Ownership and serialization
+ * are identical to read_ndef. */
+int h2_fm175xx_ntag_read_ndef_diagnostic(
+    h2_fm175xx_t* reader, uint8_t* out_data, size_t capacity, size_t* out_len,
+    h2_fm175xx_read_diagnostics_t* diagnostics);
+/** Replace a selected Type 2 tag's first NDEF TLV.
+ * Supports freely writable CC version 1 tags with NULL/Lock Control/Memory
+ * Control prefixes. Prefix bytes and partial-page neighbours are preserved.
+ * Static lock bytes and declared dynamic lock bits must be clear. Referenced
+ * lock bytes must be readable within the 1024-byte address range. Reserved
+ * pages intersecting the TLV stream or replacement are unsupported.
+ * Unknown prefix/trailing TLVs are rejected. No lock/config pages are written.
+ * Length is invalidated before payload writes and published last. Success
+ * requires an acknowledged response to every page write, with no automatic
+ * readback or persistence guarantee. Failure can leave an empty/incomplete
+ * message; do not retry a payment implicitly. */
+int h2_fm175xx_ntag_write_ndef(h2_fm175xx_t* reader, const uint8_t* data,
+                               size_t length);
+typedef enum h2_fm175xx_write_phase {
+  H2_FM175XX_WRITE_ARGUMENT,
+  H2_FM175XX_WRITE_READ_TAG,
+  H2_FM175XX_WRITE_CC,
+  H2_FM175XX_WRITE_LOCKS,
+  H2_FM175XX_WRITE_LAYOUT,
+  H2_FM175XX_WRITE_TRAILING_TLV,
+  H2_FM175XX_WRITE_CAPACITY,
+  H2_FM175XX_WRITE_INVALIDATE,
+  H2_FM175XX_WRITE_PAYLOAD,
+  H2_FM175XX_WRITE_PUBLISH,
+  /** Reserved legacy phase; writes no longer perform automatic readback. */
+  H2_FM175XX_WRITE_VERIFY,
+  H2_FM175XX_WRITE_COMPLETE
+} h2_fm175xx_write_phase_t;
+
+typedef struct h2_fm175xx_write_diagnostics {
+  h2_fm175xx_write_phase_t phase;
+  size_t tag_capacity;
+  size_t write_calls;
+  size_t ndef_offset;
+  size_t control_tlvs;
+  uint8_t metadata_valid;
+  uint8_t cc[4];
+  uint8_t static_locks[2];
+  uint8_t first_tlv;
+  uint8_t control_tlv[5];
+  uint8_t last_page;
+  size_t last_reply_bits;
+  uint8_t last_reply_low4;
+  uint8_t last_reply_crc_valid;
+  uint8_t last_reply[3];
+  int rx_status_result, configuration_result;
+  uint8_t rx_irq, rx_error, rx_fifo, rx_control;
+  uint8_t last_tx_mode, last_rx_mode, last_framing;
+  int last_command_result, last_restore_result, status_result;
+  uint8_t last_irq, last_error, last_fifo, last_control;
+  size_t before_ndef_length;
+  uint8_t before_ndef_valid, expected_ndef_valid;
+  uint8_t before_ndef_sha256[32];
+  uint8_t expected_ndef_sha256[32];
+  /** Existing pre-write READs only. required_capacity is the CC-declared
+   * total memory extent, including the first 16 bytes. Header metadata below
+   * is valid after a complete first READ, even if a later READ fails. */
+  h2_fm175xx_read_diagnostics_t preread;
+  uint8_t preread_header_valid, preread_cc[4], preread_static_locks[2];
+} h2_fm175xx_write_diagnostics_t;
+
+typedef struct h2_fm175xx_ndef_update {
+  size_t size, ndef_offset, value_offset, value_length;
+  uint8_t protected_pages[32];
+  uint8_t raw[1024];
+} h2_fm175xx_ndef_update_t;
+
+/** Selected-card operations. Caller serializes and keeps the same selection.
+ * read_snapshot uses the caller's already acquired first 16 bytes in
+ * update.raw. Fast reads use 32-byte chunks and a 20 ms per-frame response
+ * budget; ordinary reads retain their original 16-byte/5 ms behavior. Failure
+ * invalidates size. Snapshot read_count includes the supplied header; CRC and
+ * RX observations cover only the newly acquired user-area commands.
+ * prepare_snapshot performs no tag I/O, except existing
+ * dynamic-lock reads when validating a standard NDEF write layout. */
+int h2_fm175xx_ntag_read_header(h2_fm175xx_t* reader, uint8_t header[16]);
+int h2_fm175xx_ntag_read_snapshot(h2_fm175xx_t* reader,
+                                  h2_fm175xx_ndef_update_t* update,
+                                  int fast_read,
+                                  h2_fm175xx_write_diagnostics_t* diagnostics);
+int h2_fm175xx_ntag_prepare_snapshot(
+    h2_fm175xx_t* reader, h2_fm175xx_ndef_update_t* update, int prepare_write,
+    h2_fm175xx_write_diagnostics_t* diagnostics);
+/** Disable RF for recovery. The next activation restores the Type A field. */
+int h2_fm175xx_field_off(h2_fm175xx_t* reader);
+/** One byte-framed Type A exchange, without retry or reselection. Hardware
+ * handles TX CRC-A/parity and RX parity; RX CRC-A is retained and reported.
+ * bits excludes parity. Errors may represent uncertain submission. */
+int h2_fm175xx_type_a_exchange_bytes(h2_fm175xx_t* reader,
+                                     const uint8_t* command, size_t length,
+                                     uint32_t timeout_ms, uint8_t* reply,
+                                     size_t capacity, size_t* bits,
+                                     int* crc_valid);
+
+/** Capture a selected Type 2 tag's NDEF and write layout before building a
+ * reply. On success the input NDEF is
+ * raw[value_offset..value_offset+value_length). The caller owns the snapshot
+ * and must keep the same selection until commit. */
+int h2_fm175xx_ntag_prepare_ndef_update(
+    h2_fm175xx_t* reader, h2_fm175xx_ndef_update_t* update,
+    h2_fm175xx_write_diagnostics_t* diagnostics);
+/** Consume one prepared snapshot, even on failure. Only sends page writes. */
+int h2_fm175xx_ntag_commit_ndef_update(
+    h2_fm175xx_t* reader, h2_fm175xx_ndef_update_t* update, const uint8_t* data,
+    size_t length, h2_fm175xx_write_diagnostics_t* diagnostics);
+
+/** Same single write with optional per-call diagnostics.
+ * Cleared before validation; metadata_valid requires a complete tag read.
+ * Metadata and bounded control replies are retained, never UID or message
+ * bytes. write_calls counts page-write calls, including failed register setup.
+ * Writes require a four-bit ACK or the exact ACK byte with valid retained
+ * CRC_A. Unprotected byte-sized and malformed replies remain failures. Reply
+ * diagnostics retain at most three control-response
+ * bytes and the bit count, never the written message. rx_status_result
+ * validates the snapshot at RX completion before FIFO consumption and command
+ * cleanup; configuration_result validates the pre-command TX/RX/framing
+ * snapshot. Failure status registers are separately sampled after cleanup;
+ * status_result must be OK before interpreting that snapshot. Diagnostics do
+ * not retry I/O or read the message back after publishing its length.
+ * SHA-256 fingerprints cover complete NDEF bytes only. before_ndef is taken
+ * from the existing pre-write tag read; expected_ndef covers the input. Each
+ * valid flag must be set before using its digest. No extra device I/O is
+ * added. */
+int h2_fm175xx_ntag_write_ndef_diagnostic(
+    h2_fm175xx_t* reader, const uint8_t* data, size_t length,
+    h2_fm175xx_write_diagnostics_t* diagnostics);
 
 #ifdef __cplusplus
 }

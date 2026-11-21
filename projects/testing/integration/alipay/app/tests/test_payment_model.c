@@ -1,0 +1,56 @@
+#include "h2_alipay_payment_model.h"
+#include <assert.h>
+#include <string.h>
+
+static void test_query_with_earlier_snapshot(void) {
+  h2_alipay_payment_model_t model = {0};
+  const uint8_t code[] = "123456789012345678";
+  assert(h2_alipay_payment_model_code(&model, code, sizeof(code) - 1u, 1001u) ==
+         0);
+  h2_alipay_payment_attempt_t attempt;
+  assert(h2_alipay_payment_model_query(&model, 1000u, &attempt) == 0);
+  assert(strcmp(attempt.code, (const char*)code) == 0);
+  assert(h2_alipay_payment_model_has(&model, attempt.id));
+  assert(h2_alipay_payment_model_query(&model, 121000u, &attempt) == 0);
+  assert(h2_alipay_payment_model_has(&model, attempt.id));
+  uint32_t id = attempt.id;
+  assert(h2_alipay_payment_model_query(&model, 121001u, &attempt) ==
+         H2_PAL_ERR_WOULD_BLOCK);
+  assert(!h2_alipay_payment_model_has(&model, id));
+}
+
+int main(void) {
+  test_query_with_earlier_snapshot();
+  h2_alipay_payment_model_t model = {0};
+  /* These arrays intentionally lack a NUL byte: the model owns termination. */
+  uint8_t first[18];
+  memcpy(first, "123456789012345678", sizeof(first));
+  uint8_t second[19];
+  memcpy(second, "9876543210987654321", sizeof(second));
+  assert(h2_alipay_payment_model_code(&model, first, sizeof(first), 1000u) ==
+         0);
+  assert(model.length == 18u && model.refresh_ms == 61000u);
+  h2_alipay_payment_attempt_t old;
+  assert(h2_alipay_payment_model_query(&model, 1000u, &old) == 0);
+  assert(strcmp(old.code, "123456789012345678") == 0);
+  assert(h2_alipay_payment_model_code(&model, second, sizeof(second), 61000u) ==
+         0);
+  assert(strcmp(model.visible, "9876543210987654321") == 0);
+  assert(h2_alipay_payment_model_has(&model, old.id));
+  assert(strcmp(old.code, "123456789012345678") == 0);
+  h2_alipay_payment_attempt_t selected;
+  assert(h2_alipay_payment_model_query(&model, 61000u, &selected) == 0);
+  assert(strcmp(selected.code, "9876543210987654321") == 0);
+  assert(h2_alipay_payment_model_query(&model, 61001u, &selected) ==
+         H2_PAL_ERR_WOULD_BLOCK);
+  assert(h2_alipay_payment_model_query(&model, 63000u, &selected) == 0);
+  assert(strcmp(selected.code, "123456789012345678") == 0);
+  assert(h2_alipay_payment_model_query(&model, 121001u, &selected) == 0);
+  assert(!h2_alipay_payment_model_has(&model, old.id));
+  assert(strcmp(selected.code, "9876543210987654321") == 0);
+  assert(h2_alipay_payment_model_code(&model, (const uint8_t*)"123x", 4u,
+                                      122000u) == H2_PAL_ERR_FORMAT);
+  h2_alipay_payment_model_clear(&model);
+  assert(memcmp(&model, &(h2_alipay_payment_model_t){0}, sizeof(model)) == 0);
+  return 0;
+}

@@ -7,7 +7,7 @@
 #include "h2_atomic.h"
 #include "h2_atomic_static.h"
 
-#define H2_TIGA_ESP_NFC_READ_CAP 256u
+#define H2_TIGA_ESP_NFC_READ_CAP 512u
 
 static h2_esp_nfc_fm175xx_t s_nfc;
 static int s_nfc_initialized;
@@ -58,6 +58,8 @@ static h2_pal_result_t ensure_nfc_adapter(void) {
       .i2c_address = H2_TIGA_ESP_NFC_I2C_ADDR,
       .i2c_speed_hz = H2_TIGA_ESP_PERIPHERAL_I2C_SPEED_HZ,
       .read_capacity = H2_TIGA_ESP_NFC_READ_CAP,
+      .log = h2_esp_board_log_api(),
+      .time = h2_esp_board_time_api(),
   };
   h2_pal_result_t rc = h2_esp_nfc_fm175xx_init(&s_nfc, &config);
   if (rc != H2_PAL_OK) {
@@ -93,12 +95,13 @@ static h2_pal_result_t scan_nfc_reader(void* user, h2_pal_periph_id_t id,
   return rc;
 }
 
-static h2_pal_result_t read_nfc_data(void* user, h2_pal_periph_id_t id,
-                                     const uint8_t* expected_uid,
-                                     uint8_t expected_uid_len,
-                                     h2_pal_nfc_data_type_t requested_type,
-                                     const h2_pal_mem_api_t* allocator,
-                                     h2_pal_nfc_data_read_t* out_data) {
+static h2_pal_result_t read_nfc(void* user, h2_pal_periph_id_t id,
+                                const uint8_t* expected_uid,
+                                uint8_t expected_uid_len,
+                                h2_pal_nfc_data_type_t requested_type,
+                                const h2_pal_mem_api_t* allocator,
+                                h2_pal_nfc_data_read_t* out_data,
+                                bool prepare) {
   (void)user;
   if (id != H2_TIGA_ESP_NFC_READER_ID) {
     h2_pal_periph_info_t info;
@@ -112,10 +115,68 @@ static h2_pal_result_t read_nfc_data(void* user, h2_pal_periph_id_t id,
     return H2_PAL_ERR_BUSY;
   /* Only scan owns adapter initialization and power transitions. */
   h2_pal_result_t rc = H2_PAL_ERR_UNSUPPORTED;
+  if (h2_esp_board_nfc_enabled() && s_nfc_initialized) {
+    const h2_pal_nfc_api_t* api = h2_esp_nfc_fm175xx_api(&s_nfc);
+    rc = prepare
+             ? h2_pal_nfc_prepare_ndef_write(
+                   api, id, expected_uid, expected_uid_len, allocator, out_data)
+             : h2_pal_nfc_read_nfc_data(api, id, expected_uid, expected_uid_len,
+                                        requested_type, allocator, out_data);
+  }
+  h2_atomic_flag_clear(&s_nfc_busy, H2_ATOMIC_SEQ_CST);
+  return rc;
+}
+
+static h2_pal_result_t read_nfc_data(void* user, h2_pal_periph_id_t id,
+                                     const uint8_t* expected_uid,
+                                     uint8_t expected_uid_len,
+                                     h2_pal_nfc_data_type_t type,
+                                     const h2_pal_mem_api_t* allocator,
+                                     h2_pal_nfc_data_read_t* out_data) {
+  return read_nfc(user, id, expected_uid, expected_uid_len, type, allocator,
+                  out_data, false);
+}
+
+static h2_pal_result_t prepare_ndef_write(void* user, h2_pal_periph_id_t id,
+                                          const uint8_t* expected_uid,
+                                          uint8_t expected_uid_len,
+                                          const h2_pal_mem_api_t* allocator,
+                                          h2_pal_nfc_data_read_t* out_data) {
+  return read_nfc(user, id, expected_uid, expected_uid_len,
+                  H2_PAL_NFC_DATA_NDEF, allocator, out_data, true);
+}
+
+static h2_pal_result_t write_nfc_data(void* user, h2_pal_periph_id_t id,
+                                      const uint8_t* expected_uid,
+                                      uint8_t expected_uid_len,
+                                      h2_pal_nfc_data_type_t type,
+                                      const uint8_t* bytes, size_t length) {
+  (void)user;
+  if (id != H2_TIGA_ESP_NFC_READER_ID) return H2_PAL_ERR_NOT_FOUND;
+  if (!h2_esp_board_nfc_enabled()) return H2_PAL_ERR_UNSUPPORTED;
+  if (h2_atomic_flag_test_and_set(&s_nfc_busy, H2_ATOMIC_SEQ_CST))
+    return H2_PAL_ERR_BUSY;
+  int rc = H2_PAL_ERR_UNSUPPORTED;
   if (h2_esp_board_nfc_enabled() && s_nfc_initialized)
-    rc = h2_pal_nfc_read_nfc_data(h2_esp_nfc_fm175xx_api(&s_nfc), id,
-                                  expected_uid, expected_uid_len,
-                                  requested_type, allocator, out_data);
+    rc = h2_pal_nfc_write_nfc_data(h2_esp_nfc_fm175xx_api(&s_nfc), id,
+                                   expected_uid, expected_uid_len, type, bytes,
+                                   length);
+  h2_atomic_flag_clear(&s_nfc_busy, H2_ATOMIC_SEQ_CST);
+  return rc;
+}
+
+static h2_pal_result_t finish_ndef_write(void* user, h2_pal_periph_id_t id,
+                                         const h2_pal_nfc_data_read_t* prepared,
+                                         const uint8_t* bytes, size_t length) {
+  (void)user;
+  if (id != H2_TIGA_ESP_NFC_READER_ID) return H2_PAL_ERR_NOT_FOUND;
+  if (!h2_esp_board_nfc_enabled()) return H2_PAL_ERR_UNSUPPORTED;
+  if (h2_atomic_flag_test_and_set(&s_nfc_busy, H2_ATOMIC_SEQ_CST))
+    return H2_PAL_ERR_BUSY;
+  h2_pal_result_t rc = H2_PAL_ERR_UNSUPPORTED;
+  if (h2_esp_board_nfc_enabled() && s_nfc_initialized)
+    rc = h2_pal_nfc_finish_ndef_write(h2_esp_nfc_fm175xx_api(&s_nfc), id,
+                                      prepared, bytes, length);
   h2_atomic_flag_clear(&s_nfc_busy, H2_ATOMIC_SEQ_CST);
   return rc;
 }
@@ -124,9 +185,60 @@ const h2_pal_nfc_api_t* h2_esp_board_nfc_api(void) {
   static const h2_pal_nfc_vtable_t vtable = {
       .scan_nfc_reader = scan_nfc_reader,
       .read_nfc_data = read_nfc_data,
+      .write_nfc_data = write_nfc_data,
+      .prepare_ndef_write = prepare_ndef_write,
+      .finish_ndef_write = finish_ndef_write,
   };
   static h2_pal_nfc_api_t api = {
       .vtable = &vtable,
   };
+  return &api;
+}
+
+static h2_pal_result_t session_prepare(void* user, h2_pal_periph_id_t id,
+                                       const uint8_t* uid, uint8_t uid_length,
+                                       h2_pal_nfc_reader_select_fn select,
+                                       void* select_user,
+                                       const h2_pal_mem_api_t* allocator,
+                                       h2_pal_nfc_data_read_t* out_data) {
+  (void)user;
+  if (id != H2_TIGA_ESP_NFC_READER_ID) return H2_PAL_ERR_NOT_FOUND;
+  if (!h2_esp_board_nfc_enabled()) return H2_PAL_ERR_UNSUPPORTED;
+  if (h2_atomic_flag_test_and_set(&s_nfc_busy, H2_ATOMIC_SEQ_CST))
+    return H2_PAL_ERR_BUSY;
+  int rc = ensure_nfc_adapter();
+  if (rc == H2_PAL_OK) {
+    const h2_pal_nfc_reader_session_api_t* api =
+        h2_esp_nfc_fm175xx_session_api(&s_nfc);
+    rc = api->prepare(api->user, id, uid, uid_length, select, select_user,
+                      allocator, out_data);
+  }
+  h2_atomic_flag_clear(&s_nfc_busy, H2_ATOMIC_SEQ_CST);
+  return rc;
+}
+static h2_pal_result_t session_exchange(void* user, h2_pal_periph_id_t id,
+                                        const h2_pal_nfc_data_read_t* prepared,
+                                        const uint8_t* command, size_t length,
+                                        uint32_t timeout_ms, uint8_t* reply,
+                                        size_t capacity,
+                                        h2_pal_nfc_reader_reply_t* result) {
+  (void)user;
+  if (id != H2_TIGA_ESP_NFC_READER_ID) return H2_PAL_ERR_NOT_FOUND;
+  if (!h2_esp_board_nfc_enabled()) return H2_PAL_ERR_UNSUPPORTED;
+  if (h2_atomic_flag_test_and_set(&s_nfc_busy, H2_ATOMIC_SEQ_CST))
+    return H2_PAL_ERR_BUSY;
+  int rc = H2_PAL_ERR_INVALID_STATE;
+  if (s_nfc_initialized) {
+    const h2_pal_nfc_reader_session_api_t* api =
+        h2_esp_nfc_fm175xx_session_api(&s_nfc);
+    rc = api->exchange(api->user, id, prepared, command, length, timeout_ms,
+                       reply, capacity, result);
+  }
+  h2_atomic_flag_clear(&s_nfc_busy, H2_ATOMIC_SEQ_CST);
+  return rc;
+}
+const h2_pal_nfc_reader_session_api_t* h2_esp_board_nfc_session_api(void) {
+  static const h2_pal_nfc_reader_session_api_t api = {
+      .prepare = session_prepare, .exchange = session_exchange};
   return &api;
 }

@@ -25,9 +25,23 @@ static h2_pal_result_t unsupported_nfc_read_nfc_data(
   return H2_PAL_ERR_UNSUPPORTED;
 }
 
+static h2_pal_result_t unsupported_nfc_write_nfc_data(
+    void* user, h2_pal_periph_id_t id, const uint8_t* uid, uint8_t uid_length,
+    h2_pal_nfc_data_type_t type, const uint8_t* data, size_t length) {
+  (void)user;
+  (void)id;
+  (void)uid;
+  (void)uid_length;
+  (void)type;
+  (void)data;
+  (void)length;
+  return H2_PAL_ERR_UNSUPPORTED;
+}
+
 static const h2_pal_nfc_vtable_t unsupported_nfc_vtable = {
     .scan_nfc_reader = unsupported_nfc_scan_nfc_reader,
     .read_nfc_data = unsupported_nfc_read_nfc_data,
+    .write_nfc_data = unsupported_nfc_write_nfc_data,
 };
 static const h2_pal_nfc_api_t unsupported_nfc_api = {
     .user = NULL, .vtable = &unsupported_nfc_vtable};

@@ -554,7 +554,8 @@ h2_pal_result_t read_nfc(void*, h2_pal_periph_id_t id,
   return H2_PAL_OK;
 }
 
-const h2_pal_nfc_vtable_t nfc_vtable = {scan_nfc, read_nfc};
+const h2_pal_nfc_vtable_t nfc_vtable = {scan_nfc, read_nfc, nullptr, nullptr,
+                                        nullptr};
 h2_pal_nfc_api_t nfc_api = {nullptr, &nfc_vtable};
 
 h2_pal_result_t read_imu(void*, h2_pal_periph_id_t id,

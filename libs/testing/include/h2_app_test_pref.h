@@ -8,7 +8,7 @@ extern "C" {
 #define H2_APP_TEST_PREF_NAMESPACES_MAX 8u
 #define H2_APP_TEST_PREF_ENTRIES_MAX 64u
 #define H2_APP_TEST_PREF_NAME_MAX 63u
-#define H2_APP_TEST_PREF_VALUE_MAX 1024u
+#define H2_APP_TEST_PREF_VALUE_MAX 2048u
 #define H2_APP_TEST_PREF_HANDLES_MAX 16u
 /** Transactional in-memory preferences. One writer per namespace; readers see
  * committed data, writers see staged data. Failed commit retains staging for

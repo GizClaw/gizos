@@ -199,6 +199,7 @@ static h2_pal_result_t ensure_nfc(void) {
       .npd_gpio = H2_H200_NFC_NPD_GPIO,
       .clock_speed_hz = H2_H200_NFC_CLOCK_HZ,
       .read_capacity = H2_ESP_NFC_FM175XX_DEFAULT_READ_CAPACITY,
+      .log = h2_esp_board_log_api(),
   };
   h2_pal_result_t rc = h2_esp_nfc_fm175xx_spi_init(&s_nfc, &config);
   if (rc == H2_PAL_OK) {
