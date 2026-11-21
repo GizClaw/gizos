@@ -23,7 +23,10 @@ cc_library(
         "//pal/providers/platforms/desktop/pal_core:core",
         "//projects/fruit_slice/app:fruit_slice",
         "//projects/fruit_slice/libs/native-host:native_host",
-    ],
+    ] + select({
+        "//tools/bazel/platforms:host_macos_target_macos": ["@h2_vendor_sdl3//:sdl3"],
+        "//conditions:default": [],
+    }),
     alwayslink = True,
 )
 
