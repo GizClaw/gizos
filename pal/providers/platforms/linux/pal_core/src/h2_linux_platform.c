@@ -1298,7 +1298,6 @@ typedef struct linux_display_state {
   h2_linux_display_config_t config;
 #if !defined(H2_LINUX_NO_FB)
   int native_rgb565;
-  int native_argb8888;
   int fd;
   uint8_t* memory;
   size_t memory_size;
@@ -1350,6 +1349,30 @@ static int display_copy_page(uint8_t* memory, size_t memory_size,
   return 1;
 }
 
+#if !defined(H2_LINUX_NO_FB)
+static size_t display_native_pixel_size(const struct fb_var_screeninfo* mode) {
+  if (mode->bits_per_pixel == 16u && mode->red.offset == 11u &&
+      mode->red.length == 5u && mode->red.msb_right == 0u &&
+      mode->green.offset == 5u && mode->green.length == 6u &&
+      mode->green.msb_right == 0u && mode->blue.offset == 0u &&
+      mode->blue.length == 5u && mode->blue.msb_right == 0u &&
+      mode->transp.length == 0u) {
+    return sizeof(uint16_t);
+  }
+  if (mode->bits_per_pixel == 32u && mode->red.offset == 16u &&
+      mode->red.length == 8u && mode->red.msb_right == 0u &&
+      mode->green.offset == 8u && mode->green.length == 8u &&
+      mode->green.msb_right == 0u && mode->blue.offset == 0u &&
+      mode->blue.length == 8u && mode->blue.msb_right == 0u &&
+      (mode->transp.length == 0u ||
+       (mode->transp.offset == 24u && mode->transp.length == 8u &&
+        mode->transp.msb_right == 0u))) {
+    return sizeof(uint32_t);
+  }
+  return 0u;
+}
+#endif
+
 #if defined(H2_LINUX_TESTING)
 int h2_linux_display_test_back_page_yoffset(
     uint32_t visible_height, uint32_t virtual_height, uint32_t current_yoffset,
@@ -1369,20 +1392,22 @@ int h2_linux_display_test_copy_page(uint8_t* memory, size_t memory_size,
 
 #if !defined(H2_LINUX_NO_FB)
 int h2_linux_display_test_use_framebuffer(uint8_t* memory, size_t memory_size,
-                                          uint32_t width, uint32_t height,
+                                          const struct fb_var_screeninfo* mode,
                                           uint32_t line_length) {
+  const size_t pixel_size = display_native_pixel_size(mode);
+  const uint32_t width = mode->xres;
+  const uint32_t height = mode->yres;
   uint32_t draw_yoffset = 0u;
   if (memory == NULL || memory_size > UINT32_MAX || width == 0u ||
-      height == 0u || height > UINT32_MAX / 2u ||
-      line_length < (size_t)width * sizeof(uint16_t) ||
-      !display_back_page_yoffset(height, height * 2u, 0u, line_length,
-                                 memory_size, &draw_yoffset)) {
+      pixel_size == 0u || line_length / pixel_size < width ||
+      !display_back_page_yoffset(height, mode->yres_virtual, mode->yoffset,
+                                 line_length, memory_size, &draw_yoffset)) {
     return 0;
   }
   memset(&s_display, 0, sizeof(s_display));
   s_display.config.width = width;
   s_display.config.height = height;
-  s_display.native_rgb565 = 1;
+  s_display.native_rgb565 = pixel_size == sizeof(uint16_t);
   s_display.fd = 0;
   s_display.memory = memory;
   s_display.memory_size = memory_size;
@@ -1390,11 +1415,7 @@ int h2_linux_display_test_use_framebuffer(uint8_t* memory, size_t memory_size,
   s_display.double_buffered = 1;
   s_display.fixed.line_length = line_length;
   s_display.fixed.smem_len = memory_size;
-  s_display.variable.xres = width;
-  s_display.variable.xres_virtual = width;
-  s_display.variable.yres = height;
-  s_display.variable.yres_virtual = height * 2u;
-  s_display.variable.bits_per_pixel = 16u;
+  s_display.variable = *mode;
   return 1;
 }
 #endif
@@ -1430,35 +1451,11 @@ static int display_open(void* user) {
     display->fd = -1;
     return H2_PAL_ERR_IO;
   }
-  display->native_rgb565 = display->variable.bits_per_pixel == 16u &&
-                           display->variable.red.offset == 11u &&
-                           display->variable.red.length == 5u &&
-                           display->variable.red.msb_right == 0u &&
-                           display->variable.green.offset == 5u &&
-                           display->variable.green.length == 6u &&
-                           display->variable.green.msb_right == 0u &&
-                           display->variable.blue.offset == 0u &&
-                           display->variable.blue.length == 5u &&
-                           display->variable.blue.msb_right == 0u &&
-                           display->variable.transp.length == 0u;
-  display->native_argb8888 = display->variable.bits_per_pixel == 32u &&
-                             display->variable.red.offset == 16u &&
-                             display->variable.red.length == 8u &&
-                             display->variable.red.msb_right == 0u &&
-                             display->variable.green.offset == 8u &&
-                             display->variable.green.length == 8u &&
-                             display->variable.green.msb_right == 0u &&
-                             display->variable.blue.offset == 0u &&
-                             display->variable.blue.length == 8u &&
-                             display->variable.blue.msb_right == 0u &&
-                             display->variable.transp.offset == 24u &&
-                             display->variable.transp.length == 8u &&
-                             display->variable.transp.msb_right == 0u;
-  const size_t native_pixel_size = display->variable.bits_per_pixel / 8u;
+  const size_t native_pixel_size =
+      display_native_pixel_size(&display->variable);
   if (display->fixed.type != FB_TYPE_PACKED_PIXELS ||
       display->fixed.visual != FB_VISUAL_TRUECOLOR ||
-      display->variable.nonstd != 0u ||
-      (!display->native_rgb565 && !display->native_argb8888) ||
+      display->variable.nonstd != 0u || native_pixel_size == 0u ||
       display->variable.xres < display->config.width ||
       display->variable.yres < display->config.height ||
       display->variable.xoffset != 0u ||
@@ -1471,6 +1468,7 @@ static int display_open(void* user) {
     display->fd = -1;
     return H2_PAL_ERR_FORMAT;
   }
+  display->native_rgb565 = native_pixel_size == sizeof(uint16_t);
   display->draw_yoffset = display->variable.yoffset;
   display->double_buffered = display_back_page_yoffset(
       display->variable.yres, display->variable.yres_virtual,
@@ -1490,6 +1488,7 @@ static int display_open(void* user) {
 #endif
 }
 
+/* XRGB8888 uses the same RGB bits and ignores the opaque high byte. */
 static uint32_t display_rgb565_to_argb8888(uint16_t pixel) {
   const uint32_t red = (uint32_t)((pixel >> 11u) & 0x1fu);
   const uint32_t green = (uint32_t)((pixel >> 5u) & 0x3fu);

@@ -1,6 +1,7 @@
 #include "h2_linux_platform.h"
 
 #include <assert.h>
+#include <linux/fb.h>
 #include <net/if.h>
 #include <pthread.h>
 #include "h2_atomic.h"
@@ -18,7 +19,7 @@ int h2_linux_display_test_copy_page(uint8_t* memory, size_t memory_size,
                                     uint32_t source_yoffset,
                                     uint32_t destination_yoffset);
 int h2_linux_display_test_use_framebuffer(uint8_t* memory, size_t memory_size,
-                                          uint32_t width, uint32_t height,
+                                          const struct fb_var_screeninfo* mode,
                                           uint32_t line_length);
 
 typedef struct task_fixture {
@@ -129,7 +130,58 @@ static const char* existing_interface_name(void) {
 }
 #endif
 
+static void test_32bit_framebuffer(void) {
+  uint32_t framebuffer[2][5];
+  struct fb_var_screeninfo mode = {
+      .bits_per_pixel = 32u,
+      .red = {.offset = 16u, .length = 8u},
+      .green = {.offset = 8u, .length = 8u},
+      .blue = {.offset = 0u, .length = 8u},
+      .xres = 4u,
+      .yres = 1u,
+      .yres_virtual = 2u,
+  };
+  const h2_display_rect_t rect = {.x = 1, .width = 3, .height = 1};
+  const uint16_t source[] = {0xf800u, 0x07e0u, 0x001fu};
+  const uint32_t expected[] = {
+      UINT32_C(0xff111111), UINT32_C(0xffff0000), UINT32_C(0xff00ff00),
+      UINT32_C(0xff0000ff), UINT32_C(0xff222222),
+  };
+  const h2_pal_display_api_t* display = h2_linux_display_api();
+  // XRGB accepts the kernel's absent alpha field. ARGB keeps its opaque byte.
+  for (unsigned alpha = 0u; alpha <= 8u; alpha += 8u) {
+    mode.transp.offset = alpha == 0u ? 0u : 24u;
+    mode.transp.length = alpha;
+    memset(framebuffer, 0, sizeof(framebuffer));
+    framebuffer[0][0] = expected[0];
+    framebuffer[0][4] = expected[4];
+    assert(h2_linux_display_test_use_framebuffer((uint8_t*)framebuffer,
+                                                 sizeof(framebuffer), &mode,
+                                                 sizeof(framebuffer[0])) == 1);
+    assert(h2_pal_display_draw_bitmap(display, &rect, source, sizeof(source),
+                                      H2_DISPLAY_PIXEL_RGB565) == H2_PAL_OK);
+    assert(h2_pal_display_present(display) == H2_PAL_OK);
+    assert(memcmp(framebuffer[1], expected, sizeof(expected)) == 0);
+  }
+  mode.transp.offset = 23u;
+  assert(h2_linux_display_test_use_framebuffer((uint8_t*)framebuffer,
+                                               sizeof(framebuffer), &mode,
+                                               sizeof(framebuffer[0])) == 0);
+  mode.transp.offset = 24u;
+  mode.transp.length = 1u;
+  assert(h2_linux_display_test_use_framebuffer((uint8_t*)framebuffer,
+                                               sizeof(framebuffer), &mode,
+                                               sizeof(framebuffer[0])) == 0);
+  mode.transp.length = 0u;
+  mode.red.offset = 0u;
+  mode.blue.offset = 16u;
+  assert(h2_linux_display_test_use_framebuffer((uint8_t*)framebuffer,
+                                               sizeof(framebuffer), &mode,
+                                               sizeof(framebuffer[0])) == 0);
+}
+
 int main(void) {
+  test_32bit_framebuffer();
   assert(h2_linux_display_test_rgb565_to_argb8888(0xffffu) ==
          UINT32_C(0xffffffff));
   assert(h2_linux_display_test_rgb565_to_argb8888(0xf800u) ==
@@ -191,9 +243,18 @@ int main(void) {
       .width = 1,
       .height = 1,
   };
+  const struct fb_var_screeninfo rgb565 = {
+      .bits_per_pixel = 16u,
+      .red = {.offset = 11u, .length = 5u},
+      .green = {.offset = 5u, .length = 6u},
+      .blue = {.offset = 0u, .length = 5u},
+      .xres = 2u,
+      .yres = 2u,
+      .yres_virtual = 4u,
+  };
   assert(h2_linux_display_test_use_framebuffer(
-             (uint8_t*)lifecycle_framebuffer, sizeof(lifecycle_framebuffer), 2u,
-             2u, 2u * sizeof(uint16_t)) == 1);
+             (uint8_t*)lifecycle_framebuffer, sizeof(lifecycle_framebuffer),
+             &rgb565, 2u * sizeof(uint16_t)) == 1);
   const h2_pal_display_api_t* display = h2_linux_display_api();
   assert(display->vtable->draw_bitmap(display->user, &partial_rect,
                                       &partial_pixel, sizeof(partial_pixel),
