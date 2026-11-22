@@ -36,7 +36,8 @@ typedef struct fake_display {
 typedef struct fake_touch {
   h2_pal_touch_info_t info;
   int opened, open_calls, close_calls;
-  h2_pal_result_t poll_error; /* Nonzero: every poll fails with it. */
+  h2_pal_result_t poll_error;
+  unsigned poll_error_interval, failed_polls;
   /* Scripted events delivered one per frame from touch_from_frame on. */
   h2_pal_touch_event_t script[SCRIPT_MAX];
   size_t script_count, script_next;
@@ -153,7 +154,12 @@ static h2_pal_result_t touch_info(void* user, h2_pal_touch_info_t* out) {
 static h2_pal_result_t touch_poll(void* user, h2_pal_touch_event_t* out) {
   fake_touch_t* t = user;
   CHECK(t->opened);
-  if (t->poll_error != H2_PAL_OK) return t->poll_error;
+  if (t->poll_error != H2_PAL_OK &&
+      (t->poll_error_interval == 0u ||
+       fx.frames % t->poll_error_interval == 1u)) {
+    ++t->failed_polls;
+    return t->poll_error;
+  }
   /* One event per frame keeps gestures spread over game time. */
   if (fx.frames < fx.touch_from_frame || t->last_frame == fx.frames ||
       t->script_next == t->script_count)
@@ -237,9 +243,11 @@ static bool should_exit(void* user) {
 static h2_pal_result_t ready(void* user) {
   fixture_t* f = user;
   ++f->ready_calls;
-  /* The first frame is complete and visible before readiness. */
+  /* The entire first frame was submitted before readiness. */
   CHECK(f->display.presents == 1u);
   CHECK(f->display.rows_drawn == (size_t)f->display.info.height);
+  CHECK(f->display.pixels_drawn ==
+        (size_t)f->display.info.width * (size_t)f->display.info.height);
   return f->ready_result;
 }
 
@@ -439,6 +447,17 @@ static void test_unsupported_display(void) {
   CHECK(fx.display.close_calls == 1 && fx.touch.close_calls == 1);
 }
 
+static void test_idle_touch_recovers_after_transient_errors(void) {
+  reset(100u, 368, 448);
+  /* 34 scattered I/O failures with healthy empty polls between them. */
+  fx.touch.poll_error = H2_PAL_ERR_IO;
+  fx.touch.poll_error_interval = 3u;
+  CHECK(run() == H2_PAL_OK);
+  CHECK(fx.touch.failed_polls == 34u);
+  CHECK(fx.ready_calls == 1u && fx.display.full_frames == 1u);
+  CHECK(fx.display.presents == 1u);
+}
+
 static void test_persistent_touch_failure(void) {
   reset(1000u, WIDTH, HEIGHT);
   fx.touch.poll_error = H2_PAL_ERR_IO;
@@ -463,6 +482,7 @@ int main(void) {
   test_portrait_display();
   test_display_open_failure();
   test_unsupported_display();
+  test_idle_touch_recovers_after_transient_errors();
   test_persistent_touch_failure();
   test_ready_failure_stops();
   puts("garden guard app tests passed");

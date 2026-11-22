@@ -236,8 +236,7 @@ static h2_pal_result_t poll_touch(session_t* s) {
     h2_pal_touch_event_t event = {0};
     const h2_pal_result_t rc =
         h2_pal_touch_poll_event(s->runtime->touch, &event);
-    if (rc == H2_PAL_ERR_WOULD_BLOCK) return H2_PAL_OK;
-    s->touch_activity = true;
+    if (rc != H2_PAL_ERR_WOULD_BLOCK) s->touch_activity = true;
     if (rc == H2_PAL_ERR_IO || rc == H2_PAL_ERR_TIMEOUT) {
       if (s->touch_failures++ == 0u) {
         char message[64];
@@ -250,11 +249,13 @@ static h2_pal_result_t poll_touch(session_t* s) {
                                    0.0f, 0.0f);
       return s->touch_failures >= TOUCH_FAILURE_LIMIT ? rc : H2_PAL_OK;
     }
-    if (rc != H2_PAL_OK) return rc;
+    if (rc != H2_PAL_OK && rc != H2_PAL_ERR_WOULD_BLOCK) return rc;
+    /* A healthy poll with no event also breaks an error streak. */
     if (s->touch_failures != 0u) {
       s->touch_failures = 0u;
       log_line(s, H2_PAL_LOG_INFO, "H2_GARDEN_GUARD_TOUCH_RECOVERED");
     }
+    if (rc == H2_PAL_ERR_WOULD_BLOCK) return H2_PAL_OK;
     h2_garden_guard_pointer_t kind;
     switch (event.kind) {
       case H2_PAL_TOUCH_EVENT_DOWN:
@@ -615,11 +616,12 @@ static h2_pal_result_t on_first_frame(session_t* s) {
       log_line(s, H2_PAL_LOG_WARN, message);
     }
   }
-  char message[96];
+  char message[112];
   (void)snprintf(message, sizeof(message),
-                 "H2_GARDEN_GUARD_READY width=%d height=%d portrait=%u",
+                 "H2_GARDEN_GUARD_READY width=%d height=%d portrait=%u "
+                 "pixels_submitted=%u",
                  s->display.width, s->display.height,
-                 s->game.layout.portrait ? 1u : 0u);
+                 s->game.layout.portrait ? 1u : 0u, (unsigned)s->pixels_pushed);
   log_line(s, H2_PAL_LOG_INFO, message);
   return s->config.ready != NULL ? s->config.ready(s->config.user) : H2_PAL_OK;
 }
