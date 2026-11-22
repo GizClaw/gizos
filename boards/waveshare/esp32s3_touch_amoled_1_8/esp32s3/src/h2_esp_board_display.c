@@ -20,8 +20,7 @@
 #include <string.h>
 
 #define LCD_HOST SPI2_HOST
-#define LCD_WIDTH 368
-#define LCD_HEIGHT 448
+#define LCD_WIDTH H2_AMOLED_NATIVE_WIDTH
 #define LCD_CS_GPIO GPIO_NUM_12
 #define LCD_PCLK_GPIO GPIO_NUM_11
 #define LCD_DATA0_GPIO GPIO_NUM_4
@@ -94,22 +93,8 @@ static const sh8601_lcd_init_cmd_t s_amoled_init_cmds[] = {
     {SH8601_CMD_DISPLAY_BRIGHTNESS, (uint8_t[]){0x00}, 1, 10},
 };
 
-static uint16_t rgb888_to_rgb565(const uint8_t* pixel) {
-  return (uint16_t)((((uint16_t)pixel[0] & 0xf8u) << 8) |
-                    (((uint16_t)pixel[1] & 0xfcu) << 3) |
-                    (((uint16_t)pixel[2]) >> 3));
-}
-
-static uint16_t rgb444_to_rgb565(uint16_t pixel) {
-  uint16_t r = (uint16_t)((pixel >> 8) & 0x0fu);
-  uint16_t g = (uint16_t)((pixel >> 4) & 0x0fu);
-  uint16_t b = (uint16_t)(pixel & 0x0fu);
-  return (uint16_t)((((r << 1) | (r >> 3)) << 11) |
-                    (((g << 2) | (g >> 2)) << 5) | (b << 1) | (b >> 3));
-}
-
-static uint16_t rgb565_to_panel(uint16_t pixel) {
-  return (uint16_t)((pixel << 8) | (pixel >> 8));
+h2_esp_board_display_orientation_t h2_esp_board_display_orientation(void) {
+  return s_display_config.orientation;
 }
 
 static int esp_result(esp_err_t err) {
@@ -314,11 +299,13 @@ static int clip_rect(const h2_display_rect_t* rect,
   if (y1 < 0) {
     y1 = 0;
   }
-  if (x2 > LCD_WIDTH) {
-    x2 = LCD_WIDTH;
+  int32_t width, height;
+  h2_esp_board_display_extent(s_display_config.orientation, &width, &height);
+  if (x2 > width) {
+    x2 = width;
   }
-  if (y2 > LCD_HEIGHT) {
-    y2 = LCD_HEIGHT;
+  if (y2 > height) {
+    y2 = height;
   }
   if (x1 >= x2 || y1 >= y2) {
     return H2_DISPLAY_ERR_INVALID_ARG;
@@ -368,47 +355,16 @@ static int validate_source_bitmap(const h2_display_rect_t* src_rect,
   return H2_DISPLAY_OK;
 }
 
-static void convert_chunk_to_rgb565(const h2_display_rect_t* src_rect,
-                                    const h2_display_rect_t* chunk,
-                                    const void* pixels, size_t stride_bytes,
-                                    h2_display_pixel_format_t format,
-                                    size_t src_pixel_size, uint16_t* out) {
-  const uint8_t* src = (const uint8_t*)pixels;
-  src += (size_t)((int64_t)chunk->y - src_rect->y) * stride_bytes;
-  src += (size_t)((int64_t)chunk->x - src_rect->x) * src_pixel_size;
-
-  for (int row = 0; row < chunk->height; ++row) {
-    uint16_t* dst = out + (size_t)row * (size_t)chunk->width;
-    const uint8_t* src_row = src + (size_t)row * stride_bytes;
-    if (format == H2_DISPLAY_PIXEL_RGB565) {
-      for (int col = 0; col < chunk->width; ++col) {
-        uint16_t pixel;
-        memcpy(&pixel, src_row + (size_t)col * 2u, 2u);
-        dst[col] = rgb565_to_panel(pixel);
-      }
-    } else if (format == H2_DISPLAY_PIXEL_RGB888) {
-      for (int col = 0; col < chunk->width; ++col) {
-        dst[col] =
-            rgb565_to_panel(rgb888_to_rgb565(src_row + (size_t)col * 3u));
-      }
-    } else {
-      for (int col = 0; col < chunk->width; ++col) {
-        uint16_t pixel;
-        memcpy(&pixel, src_row + (size_t)col * 2u, 2u);
-        dst[col] = rgb565_to_panel(rgb444_to_rgb565(pixel));
-      }
-    }
-  }
-}
-
 static int amoled_get_info(void* user, h2_display_info_t* info) {
   h2_esp_amoled_display_state_t* state = (h2_esp_amoled_display_state_t*)user;
   if (!state->opened) {
     return H2_DISPLAY_ERR_INVALID_STATE;
   }
 
-  info->width = LCD_WIDTH;
-  info->height = LCD_HEIGHT;
+  int32_t width, height;
+  h2_esp_board_display_extent(s_display_config.orientation, &width, &height);
+  info->width = width;
+  info->height = height;
   info->native_format = H2_DISPLAY_PIXEL_RGB565;
   return H2_DISPLAY_OK;
 }
@@ -454,11 +410,12 @@ static int amoled_draw_bitmap(void* user, const h2_display_rect_t* rect,
       chunk.height = max_chunk_rows;
     }
 
-    convert_chunk_to_rgb565(rect, &chunk, pixels, stride_bytes, format,
-                            src_pixel_size, state->dma_buffer);
+    const h2_display_rect_t native = h2_esp_board_display_pack(
+        s_display_config.orientation, rect, &chunk, pixels, stride_bytes,
+        format, src_pixel_size, state->dma_buffer);
     esp_err_t err = esp_lcd_panel_draw_bitmap(
-        state->panel, chunk.x, chunk.y, chunk.x + chunk.width,
-        chunk.y + chunk.height, state->dma_buffer);
+        state->panel, native.x, native.y, native.x + native.width,
+        native.y + native.height, state->dma_buffer);
     if (err != ESP_OK) {
       return esp_result(err);
     }
@@ -467,7 +424,7 @@ static int amoled_draw_bitmap(void* user, const h2_display_rect_t* rect,
       return rc;
     }
     if (s_transfer_capture != NULL)
-      s_transfer_capture(s_transfer_user, &chunk, state->dma_buffer);
+      s_transfer_capture(s_transfer_user, &native, state->dma_buffer);
     y += chunk.height;
   }
   return H2_DISPLAY_OK;

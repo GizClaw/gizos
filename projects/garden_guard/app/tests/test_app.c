@@ -6,6 +6,7 @@
 #include "h2_garden_guard_render.h"
 #include "h2_pal_unsupported.h"
 
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -36,7 +37,8 @@ typedef struct fake_display {
 typedef struct fake_touch {
   h2_pal_touch_info_t info;
   int opened, open_calls, close_calls;
-  h2_pal_result_t poll_error; /* Nonzero: every poll fails with it. */
+  h2_pal_result_t poll_error;
+  unsigned poll_error_interval, failed_polls;
   /* Scripted events delivered one per frame from touch_from_frame on. */
   h2_pal_touch_event_t script[SCRIPT_MAX];
   size_t script_count, script_next;
@@ -71,6 +73,11 @@ typedef struct fixture {
   unsigned frames, exit_after, ready_calls;
   h2_pal_result_t ready_result;
   unsigned touch_from_frame;
+  uint32_t touch_poll_interval_ms;
+  bool short_tap, transient_error;
+  int32_t tap_x, tap_y;
+  atomic_uint pulse, observed;
+  unsigned pulse_last;
   probe_t probes[2];
 } fixture_t;
 
@@ -117,6 +124,18 @@ static int display_present(void* user) {
   fake_display_t* d = user;
   CHECK(d->opened);
   ++d->presents;
+  if (fx.short_tap && d->presents == 1u) {
+    /* The controller reports a complete contact while the frame is blocked. */
+    const unsigned last = fx.transient_error ? 4u : 2u;
+    for (unsigned sample = 1u; sample <= last; ++sample) {
+      atomic_store(&fx.pulse, sample);
+      for (unsigned wait = 0; wait < 50u && atomic_load(&fx.observed) < sample;
+           ++wait)
+        CHECK(h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 2u) ==
+              H2_PAL_OK);
+    }
+    atomic_store(&fx.pulse, 0u);
+  }
   return H2_PAL_OK;
 }
 static int display_brightness(void* user, uint32_t percent) {
@@ -153,7 +172,31 @@ static h2_pal_result_t touch_info(void* user, h2_pal_touch_info_t* out) {
 static h2_pal_result_t touch_poll(void* user, h2_pal_touch_event_t* out) {
   fake_touch_t* t = user;
   CHECK(t->opened);
-  if (t->poll_error != H2_PAL_OK) return t->poll_error;
+  if (fx.short_tap) {
+    const unsigned pulse = atomic_load(&fx.pulse);
+    if (pulse == 0u || pulse == fx.pulse_last) return H2_PAL_ERR_WOULD_BLOCK;
+    fx.pulse_last = pulse;
+    atomic_store(&fx.observed, pulse);
+    if (fx.transient_error && pulse == 1u) return H2_PAL_ERR_IO;
+    if (fx.transient_error && pulse == 2u) {
+      *out = (h2_pal_touch_event_t){.kind = H2_PAL_TOUCH_EVENT_CANCEL,
+                                    .pointer_id = H2_PAL_TOUCH_ALL_POINTERS};
+      return H2_PAL_OK;
+    }
+    *out = (h2_pal_touch_event_t){
+        .kind =
+            pulse % 2u == 1u ? H2_PAL_TOUCH_EVENT_DOWN : H2_PAL_TOUCH_EVENT_UP,
+        .x = fx.tap_x,
+        .y = fx.tap_y,
+    };
+    return H2_PAL_OK;
+  }
+  if (t->poll_error != H2_PAL_OK &&
+      (t->poll_error_interval == 0u ||
+       fx.frames % t->poll_error_interval == 1u)) {
+    ++t->failed_polls;
+    return t->poll_error;
+  }
   /* One event per frame keeps gestures spread over game time. */
   if (fx.frames < fx.touch_from_frame || t->last_frame == fx.frames ||
       t->script_next == t->script_count)
@@ -168,10 +211,19 @@ static h2_pal_result_t touch_close(void* user) {
   t->opened = 0;
   return H2_PAL_OK;
 }
-static const h2_pal_touch_vtable_t touch_vtable = {.open = touch_open,
-                                                   .get_info = touch_info,
-                                                   .poll_event = touch_poll,
-                                                   .close = touch_close};
+static h2_pal_result_t touch_open_pointer(void* user, bool* needs_close) {
+  *needs_close = true;
+  return touch_open(user);
+}
+
+static const h2_pal_touch_vtable_t touch_vtable = {
+    .open = touch_open,
+    .get_info = touch_info,
+    .poll_event = touch_poll,
+    .close = touch_close,
+    .open_pointer = touch_open_pointer,
+    .close_pointer = touch_close,
+};
 
 static int pref_close(h2_pal_pref_namespace_t* ns) {
   (void)ns;
@@ -237,14 +289,18 @@ static bool should_exit(void* user) {
 static h2_pal_result_t ready(void* user) {
   fixture_t* f = user;
   ++f->ready_calls;
-  /* The first frame is complete and visible before readiness. */
+  /* The entire first frame was submitted before readiness. */
   CHECK(f->display.presents == 1u);
   CHECK(f->display.rows_drawn == (size_t)f->display.info.height);
+  CHECK(f->display.pixels_drawn ==
+        (size_t)f->display.info.width * (size_t)f->display.info.height);
   return f->ready_result;
 }
 
 static void reset(unsigned exit_after, int32_t width, int32_t height) {
   memset(&fx, 0, sizeof(fx));
+  atomic_init(&fx.pulse, 0u);
+  atomic_init(&fx.observed, 0u);
   fx.display.info = (h2_display_info_t){width, height, H2_DISPLAY_PIXEL_RGB565};
   fx.touch.info = (h2_pal_touch_info_t){(uint32_t)width, (uint32_t)height};
   fx.touch.last_frame = UINT32_MAX;
@@ -306,13 +362,15 @@ static h2_pal_result_t run(void) {
   config.video_decoder = h2_pal_unsupported_video_decoder_api();
   h2_runtime_t* runtime = NULL;
   CHECK(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
-  const h2_garden_guard_config_t game = {.seed = 42u,
-                                         .brightness_percent = 80u,
-                                         .frame_period_ms = 10u,
-                                         .cache_plants = fx.cache_plants,
-                                         .ready = ready,
-                                         .should_exit = should_exit,
-                                         .user = &fx};
+  const h2_garden_guard_config_t game = {
+      .seed = 42u,
+      .brightness_percent = 80u,
+      .frame_period_ms = 10u,
+      .touch_poll_interval_ms = fx.touch_poll_interval_ms,
+      .cache_plants = fx.cache_plants,
+      .ready = ready,
+      .should_exit = should_exit,
+      .user = &fx};
   const h2_pal_result_t rc = h2_garden_guard_run(runtime, &game);
   CHECK(h2_runtime_destroy(&runtime) == H2_PAL_OK);
   CHECK(fx.allocations == fx.frees);
@@ -355,13 +413,14 @@ static void script_action(const h2_garden_guard_layout_t* l,
   script_tap(r.x + r.w * 0.5f, r.y + r.h * 0.5f);
 }
 
-static void test_touch_starts_and_plants(void) {
-  reset(24u, WIDTH, HEIGHT);
+static void test_touch_starts_and_plants(int32_t width, int32_t height) {
+  reset(24u, width, height);
   /* Touch reports half the display resolution. */
-  fx.touch.info = (h2_pal_touch_info_t){WIDTH / 2, HEIGHT / 2};
+  fx.touch.info =
+      (h2_pal_touch_info_t){(uint32_t)(width / 2), (uint32_t)(height / 2)};
   fx.touch_from_frame = 5u;
   h2_garden_guard_game_t layout_game;
-  h2_garden_guard_game_init(&layout_game, WIDTH, HEIGHT, 1u, 0u);
+  h2_garden_guard_game_init(&layout_game, width, height, 1u, 0u);
   const h2_garden_guard_layout_t* l = &layout_game.layout;
   float cell_x, cell_y;
   h2_garden_guard_field_point(l, 0u, 1.5f, &cell_x, &cell_y);
@@ -381,6 +440,26 @@ static void test_touch_starts_and_plants(void) {
   CHECK(shadow_at(cell_x, cell_y) != fx.probes[1].value);
   /* The cover and the switch to the lawn each present a full frame. */
   CHECK(fx.display.full_frames == 2u);
+}
+
+static void test_touch_between_frames(bool sample_between_frames,
+                                      bool transient_error) {
+  reset(8u, 448, 368);
+  fx.touch_poll_interval_ms = sample_between_frames ? 8u : 0u;
+  fx.short_tap = true;
+  fx.transient_error = transient_error;
+  h2_garden_guard_game_t game;
+  h2_garden_guard_game_init(&game, 448, 368, 42u, 0u);
+  const h2_garden_guard_rect_t start =
+      h2_garden_guard_action_rect(&game.layout, H2_GARDEN_GUARD_ACTION_START);
+  fx.tap_x = (int32_t)(start.x + 0.5f * start.w);
+  fx.tap_y = (int32_t)(start.y + 0.5f * start.h);
+  CHECK(run() == H2_PAL_OK);
+  const unsigned expected =
+      sample_between_frames ? (transient_error ? 4u : 2u) : 0u;
+  CHECK(atomic_load(&fx.observed) == expected);
+  CHECK(fx.display.full_frames == (sample_between_frames ? 2u : 1u));
+  CHECK(fx.touch.open_calls == 1 && fx.touch.close_calls == 1);
 }
 
 static void test_shovel_restores_raised_figure(bool deny_plant_cache) {
@@ -439,6 +518,17 @@ static void test_unsupported_display(void) {
   CHECK(fx.display.close_calls == 1 && fx.touch.close_calls == 1);
 }
 
+static void test_idle_touch_recovers_after_transient_errors(void) {
+  reset(100u, 368, 448);
+  /* 34 scattered I/O failures with healthy empty polls between them. */
+  fx.touch.poll_error = H2_PAL_ERR_IO;
+  fx.touch.poll_error_interval = 3u;
+  CHECK(run() == H2_PAL_OK);
+  CHECK(fx.touch.failed_polls == 34u);
+  CHECK(fx.ready_calls == 1u && fx.display.full_frames == 1u);
+  CHECK(fx.display.presents == 1u);
+}
+
 static void test_persistent_touch_failure(void) {
   reset(1000u, WIDTH, HEIGHT);
   fx.touch.poll_error = H2_PAL_ERR_IO;
@@ -457,12 +547,17 @@ static void test_ready_failure_stops(void) {
 int main(void) {
   CHECK(h2_garden_guard_run(NULL, NULL) == H2_PAL_ERR_INVALID_ARG);
   test_idle_title_pushes_once();
-  test_touch_starts_and_plants();
+  test_touch_starts_and_plants(WIDTH, HEIGHT);
+  test_touch_starts_and_plants(448, 368);
+  test_touch_between_frames(false, false);
+  test_touch_between_frames(true, false);
+  test_touch_between_frames(true, true);
   test_shovel_restores_raised_figure(false);
   test_shovel_restores_raised_figure(true);
   test_portrait_display();
   test_display_open_failure();
   test_unsupported_display();
+  test_idle_touch_recovers_after_transient_errors();
   test_persistent_touch_failure();
   test_ready_failure_stops();
   puts("garden guard app tests passed");

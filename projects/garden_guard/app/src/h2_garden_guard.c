@@ -218,6 +218,34 @@ static void save_language(session_t* s) {
   notify_language(s);
 }
 
+static void dispatch_pointer(session_t* s, const h2_runtime_event_t* event) {
+  if (event->kind != H2_RUNTIME_EVENT_TOUCH_POINTER ||
+      event->payload_size != sizeof(h2_runtime_touch_pointer_event_t))
+    return;
+  h2_runtime_touch_pointer_event_t pointer;
+  memcpy(&pointer, event->payload, sizeof(pointer));
+  h2_garden_guard_pointer_t kind;
+  switch (pointer.phase) {
+    case H2_RUNTIME_POINTER_DOWN:
+      kind = H2_GARDEN_GUARD_POINTER_DOWN;
+      break;
+    case H2_RUNTIME_POINTER_MOVE:
+      kind = H2_GARDEN_GUARD_POINTER_MOVE;
+      break;
+    case H2_RUNTIME_POINTER_UP:
+      kind = H2_GARDEN_GUARD_POINTER_UP;
+      break;
+    case H2_RUNTIME_POINTER_CANCEL:
+      kind = H2_GARDEN_GUARD_POINTER_CANCEL;
+      break;
+    default:
+      return;
+  }
+  s->touch_activity = true;
+  h2_garden_guard_game_pointer(&s->game, kind, pointer.x * s->touch_scale_x,
+                               pointer.y * s->touch_scale_y);
+}
+
 static h2_pal_result_t drain_events(session_t* s) {
   for (unsigned i = 0; i < EVENTS_PER_DRAIN; ++i) {
     h2_runtime_event_t event = {.payload = s->event_payload,
@@ -226,6 +254,7 @@ static h2_pal_result_t drain_events(session_t* s) {
     if (rc == H2_PAL_ERR_WOULD_BLOCK || rc == H2_PAL_ERR_TIMEOUT)
       return H2_PAL_OK;
     if (rc != H2_PAL_OK) return rc;
+    if (s->config.touch_poll_interval_ms != 0u) dispatch_pointer(s, &event);
   }
   /* Bounded: the remainder is drained after the next frame's wait. */
   return H2_PAL_OK;
@@ -236,8 +265,7 @@ static h2_pal_result_t poll_touch(session_t* s) {
     h2_pal_touch_event_t event = {0};
     const h2_pal_result_t rc =
         h2_pal_touch_poll_event(s->runtime->touch, &event);
-    if (rc == H2_PAL_ERR_WOULD_BLOCK) return H2_PAL_OK;
-    s->touch_activity = true;
+    if (rc != H2_PAL_ERR_WOULD_BLOCK) s->touch_activity = true;
     if (rc == H2_PAL_ERR_IO || rc == H2_PAL_ERR_TIMEOUT) {
       if (s->touch_failures++ == 0u) {
         char message[64];
@@ -250,11 +278,13 @@ static h2_pal_result_t poll_touch(session_t* s) {
                                    0.0f, 0.0f);
       return s->touch_failures >= TOUCH_FAILURE_LIMIT ? rc : H2_PAL_OK;
     }
-    if (rc != H2_PAL_OK) return rc;
+    if (rc != H2_PAL_OK && rc != H2_PAL_ERR_WOULD_BLOCK) return rc;
+    /* A healthy poll with no event also breaks an error streak. */
     if (s->touch_failures != 0u) {
       s->touch_failures = 0u;
       log_line(s, H2_PAL_LOG_INFO, "H2_GARDEN_GUARD_TOUCH_RECOVERED");
     }
+    if (rc == H2_PAL_ERR_WOULD_BLOCK) return H2_PAL_OK;
     h2_garden_guard_pointer_t kind;
     switch (event.kind) {
       case H2_PAL_TOUCH_EVENT_DOWN:
@@ -556,6 +586,16 @@ static h2_pal_result_t render_frame(session_t* s) {
 
 /* Wait at least once, until the frame deadline, draining Runtime events. */
 static h2_pal_result_t wait_frame(session_t* s, uint64_t deadline_ms) {
+  /* Runtime's Touch worker collects edges independently. Apply them at the
+   * next frame boundary so a DOWN and UP can share one game/audio update. */
+  if (s->config.touch_poll_interval_ms != 0u) {
+    uint64_t now;
+    const h2_pal_result_t rc =
+        h2_pal_time_get_monotonic_ms(s->runtime->time, &now);
+    if (rc != H2_PAL_OK || now >= deadline_ms) return rc;
+    return h2_pal_time_sleep_ms(s->runtime->time,
+                                (uint32_t)(deadline_ms - now));
+  }
   bool waited = false;
   for (;;) {
     uint64_t now = 0;
@@ -615,11 +655,12 @@ static h2_pal_result_t on_first_frame(session_t* s) {
       log_line(s, H2_PAL_LOG_WARN, message);
     }
   }
-  char message[96];
+  char message[112];
   (void)snprintf(message, sizeof(message),
-                 "H2_GARDEN_GUARD_READY width=%d height=%d portrait=%u",
+                 "H2_GARDEN_GUARD_READY width=%d height=%d portrait=%u "
+                 "pixels_submitted=%u",
                  s->display.width, s->display.height,
-                 s->game.layout.portrait ? 1u : 0u);
+                 s->game.layout.portrait ? 1u : 0u, (unsigned)s->pixels_pushed);
   log_line(s, H2_PAL_LOG_INFO, message);
   return s->config.ready != NULL ? s->config.ready(s->config.user) : H2_PAL_OK;
 }
@@ -712,7 +753,8 @@ static h2_pal_result_t play(session_t* s) {
     const bool was_paused = h2_garden_guard_paused(&s->game);
     s->game.sounds = 0;
     s->touch_activity = false;
-    rc = poll_touch(s);
+    rc = s->config.touch_poll_interval_ms != 0u ? drain_events(s)
+                                                : poll_touch(s);
     if (rc != H2_PAL_OK) return rc;
     cover_input(s);
     if (s->config.back_pressed != NULL &&
@@ -842,20 +884,37 @@ h2_pal_result_t h2_garden_guard_run(h2_runtime_t* runtime,
   s->allocator = allocator;
   if (config != NULL) s->config = *config;
 
-  bool display_open = false, touch_open = false;
+  bool display_open = false, touch_open = false, owns_input = false;
   h2_pal_result_t rc = h2_pal_display_open(runtime->display);
   if (rc == H2_PAL_OK) {
     display_open = true;
-    rc = h2_pal_touch_open(runtime->touch);
+    if (s->config.touch_poll_interval_ms != 0u) {
+      h2_runtime_input_status_t status;
+      rc = h2_runtime_input_status(runtime, &status);
+      if (rc == H2_PAL_OK && status.phase != H2_RUNTIME_INPUT_PHASE_STOPPED)
+        rc = H2_PAL_ERR_BUSY;
+      if (rc == H2_PAL_OK) {
+        owns_input = true;
+        rc = h2_runtime_input_start_with_touch(
+            runtime, NULL, s->config.touch_poll_interval_ms);
+      }
+    } else {
+      rc = h2_pal_touch_open(runtime->touch);
+      touch_open = rc == H2_PAL_OK;
+    }
   }
-  if (rc == H2_PAL_OK) {
-    touch_open = true;
-    rc = prepare(s);
-  }
+  if (rc == H2_PAL_OK) rc = prepare(s);
   if (rc == H2_PAL_OK) {
     if (s->config.enable_audio) s->audio = gg_audio_start(runtime);
     s->game.sound_control = s->audio != NULL;
     rc = play(s);
+  }
+  if (owns_input) {
+    int stopped;
+    while ((stopped = h2_runtime_input_stop(runtime)) != H2_PAL_OK) {
+      if (rc == H2_PAL_OK) rc = stopped;
+      (void)h2_pal_time_sleep_ms(runtime->time, 20u);
+    }
   }
   int joined;
   while ((joined = gg_audio_join(s->audio)) != H2_PAL_OK) {

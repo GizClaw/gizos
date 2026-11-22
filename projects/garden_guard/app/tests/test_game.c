@@ -350,6 +350,25 @@ static void test_suns(void) {
   CHECK(game.sun == 150u);
 }
 
+static void test_visible_falling_sun_edge(void) {
+  start(&game, 448, 368, 9u);
+  freeze_spawns(&game);
+  const float top = ceilf(game.layout.bar_h);
+  const float radius = h2_garden_guard_sun_radius(&game.layout);
+  const float x = 0.7f * game.layout.width;
+  h2_garden_guard_sun_t* sun = &game.suns[0];
+  *sun = (h2_garden_guard_sun_t){
+      .active = true, .x = x, .y = top - 0.5f * radius, .rest_y = top + 60.0f};
+  const uint32_t initial = game.sun;
+  tap(&game, x, top - 1.0f);
+  tap(&game, x + 2.0f * radius, top + 1.0f);
+  CHECK(!sun->collecting && game.sun == initial);
+  tap(&game, x, top + 1.0f);
+  CHECK(sun->collecting && game.sun == initial + H2_GARDEN_GUARD_SUN_VALUE);
+  tap(&game, x, top + 1.0f);
+  CHECK(game.sun == initial + H2_GARDEN_GUARD_SUN_VALUE);
+}
+
 static void test_shooter_defeats_pests(void) {
   start(&game, 480, 320, 11u);
   freeze_spawns(&game);
@@ -764,6 +783,7 @@ int main(void) {
   test_perspective_gestures();
   test_title_starts_and_plants();
   test_suns();
+  test_visible_falling_sun_edge();
   test_shooter_defeats_pests();
   test_combat_poses_follow_events();
   test_pests_chew_and_pumpkin_blocks();

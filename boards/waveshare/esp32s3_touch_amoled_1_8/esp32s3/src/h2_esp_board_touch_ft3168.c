@@ -1,4 +1,5 @@
 #include "h2_esp_board_private.h"
+#include "h2_esp_board_display_config_internal.h"
 #include "h2_esp_board_internal.h"
 
 #include "driver/gpio.h"
@@ -16,13 +17,12 @@
 #define H2_FT3168_I2C_ADDRESS 0x38u
 #define H2_FT3168_I2C_SPEED_HZ 400000u
 #define H2_FT3168_TIMEOUT_MS 20
+#define H2_FT3168_REOPEN_AFTER_ERRORS 4u
 #define H2_FT3168_REG_TOUCH_COUNT 0x02u
 #define H2_FT3168_REG_DEVICE_ID 0xa0u
 #define H2_FT3168_REG_POWER_MODE 0xa5u
 #define H2_FT3168_DEVICE_ID 0x03u
 #define H2_FT3168_POWER_ACTIVE 0x00u
-#define H2_FT3168_WIDTH 368
-#define H2_FT3168_HEIGHT 448
 #define H2_FT3168_INTERRUPT_GPIO GPIO_NUM_21
 #define H2_FT3168_RESET_MASK (1u << 2)
 
@@ -34,6 +34,8 @@ typedef struct h2_esp_ft3168_state {
   bool gpio_owned, reset_owned;
   bool contact_active;
   bool read_error_reported;
+  bool release_check;
+  unsigned read_failures;
 } h2_esp_ft3168_state_t;
 
 static const char* TAG = "h2_ft3168";
@@ -165,6 +167,8 @@ static h2_pal_result_t open_hardware(void) {
   s_touch.opened = true;
   s_touch.contact_active = false;
   s_touch.read_error_reported = false;
+  s_touch.read_failures = 0u;
+  s_touch.release_check = true;
   ESP_LOGI(TAG, "FT3168 ready address=0x38 id=0x%02x", device_id);
   return H2_PAL_OK;
 fail:
@@ -202,9 +206,12 @@ static h2_pal_result_t touch_get_info(void* user,
   if (!s_touch.opened) {
     return H2_PAL_ERR_INVALID_STATE;
   }
+  int32_t width, height;
+  h2_esp_board_display_extent(h2_esp_board_display_orientation(), &width,
+                              &height);
   *out_info = (h2_pal_touch_info_t){
-      .width = H2_FT3168_WIDTH,
-      .height = H2_FT3168_HEIGHT,
+      .width = (uint32_t)width,
+      .height = (uint32_t)height,
   };
   return H2_PAL_OK;
 }
@@ -219,9 +226,8 @@ static int32_t clamp_coordinate(int32_t coordinate, int32_t extent) {
   return coordinate;
 }
 
-static h2_pal_result_t touch_poll_event(void* user,
-                                        h2_pal_touch_event_t* out_event) {
-  (void)user;
+static h2_pal_result_t poll_touch(h2_pal_touch_event_t* out_event,
+                                  bool loss_aware) {
   if (out_event == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -231,18 +237,33 @@ static h2_pal_result_t touch_poll_event(void* user,
 
   uint8_t data[5] = {0};
   esp_err_t err = read_registers(H2_FT3168_REG_TOUCH_COUNT, data, sizeof(data));
+  /* The exclusive worker can retry an isolated NACK without blocking the
+   * game thread or splitting a contact into an artificial release. */
+  if (loss_aware && err == ESP_ERR_INVALID_RESPONSE)
+    err = read_registers(H2_FT3168_REG_TOUCH_COUNT, data, sizeof(data));
   if (err != ESP_OK) {
     if (!s_touch.read_error_reported) {
       ESP_LOGW(TAG, "FT3168 touch read failed: %s", esp_err_to_name(err));
       s_touch.read_error_reported = true;
     }
+    if (s_touch.read_failures < H2_FT3168_REOPEN_AFTER_ERRORS)
+      ++s_touch.read_failures;
     return map_esp_err(err);
   }
+  const bool recovered = s_touch.read_error_reported || s_touch.release_check;
   s_touch.read_error_reported = false;
+  s_touch.read_failures = 0u;
   const uint8_t contact_count = data[0] & 0x0fu;
   if (contact_count == 0u) {
+    s_touch.release_check = false;
     if (!s_touch.contact_active) {
-      return H2_PAL_ERR_WOULD_BLOCK;
+      if (!loss_aware || !recovered) return H2_PAL_ERR_WOULD_BLOCK;
+      /* A verified empty report ends Runtime's loss recovery even when no
+       * previously delivered contact is available to release. */
+      *out_event =
+          (h2_pal_touch_event_t){.kind = H2_PAL_TOUCH_EVENT_CANCEL,
+                                 .pointer_id = H2_PAL_TOUCH_ALL_POINTERS};
+      return H2_PAL_OK;
     }
     s_touch.contact_active = false;
     *out_event = (h2_pal_touch_event_t){
@@ -253,10 +274,11 @@ static h2_pal_result_t touch_poll_event(void* user,
     return H2_PAL_OK;
   }
 
-  const int32_t x = clamp_coordinate(
-      ((int32_t)(data[1] & 0x0fu) << 8) | data[2], H2_FT3168_WIDTH);
-  const int32_t y = clamp_coordinate(
-      ((int32_t)(data[3] & 0x0fu) << 8) | data[4], H2_FT3168_HEIGHT);
+  int32_t x = clamp_coordinate(((int32_t)(data[1] & 0x0fu) << 8) | data[2],
+                               H2_AMOLED_NATIVE_WIDTH);
+  int32_t y = clamp_coordinate(((int32_t)(data[3] & 0x0fu) << 8) | data[4],
+                               H2_AMOLED_NATIVE_HEIGHT);
+  h2_esp_board_display_touch_point(h2_esp_board_display_orientation(), &x, &y);
   if (s_touch.contact_active && x == s_touch.last_x && y == s_touch.last_y) {
     return H2_PAL_ERR_WOULD_BLOCK;
   }
@@ -272,6 +294,27 @@ static h2_pal_result_t touch_poll_event(void* user,
       .y = y,
   };
   return H2_PAL_OK;
+}
+
+static h2_pal_result_t touch_poll_event(void* user,
+                                        h2_pal_touch_event_t* event) {
+  (void)user;
+  return poll_touch(event, false);
+}
+
+static h2_pal_result_t touch_poll_pointer(void* user,
+                                          h2_pal_touch_sample_t* sample) {
+  (void)user;
+  const h2_pal_result_t rc = poll_touch(&sample->event, true);
+  /* The controller can stop acknowledging while on a shared bus. Ask the
+   * exclusive owner to reset it through the normal close/open sequence. */
+  if ((rc == H2_PAL_ERR_IO || rc == H2_PAL_ERR_TIMEOUT) &&
+      s_touch.read_failures >= H2_FT3168_REOPEN_AFTER_ERRORS) {
+    ESP_LOGW(TAG, "FT3168 requesting reset after %u failed polls",
+             s_touch.read_failures);
+    sample->needs_reopen = true;
+  }
+  return rc;
 }
 
 static h2_pal_result_t close_touch(bool exclusive) {
@@ -298,6 +341,7 @@ const h2_pal_touch_api_t* h2_esp_board_touch_api(void) {
       .open = touch_open,
       .get_info = touch_get_info,
       .poll_event = touch_poll_event,
+      .poll_pointer = touch_poll_pointer,
       .close = touch_close,
       .open_pointer = touch_open_pointer,
       .close_pointer = touch_close_pointer,

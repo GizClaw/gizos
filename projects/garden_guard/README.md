@@ -6,7 +6,7 @@ A touch lane-defense garden game. Plants hold five lanes of a nine-cell lawn aga
 | --- | --- | --- |
 | [`targets/h2_loader_tar_zlib/espressif/mosaico`](targets/h2_loader_tar_zlib/espressif/mosaico/) | ESP-Mosaico, 480x480 | `--config=esp32s31 …:package` |
 | [`targets/h2_loader_tar_zlib/waveshare/esp32p4_wifi6_touch_lcd_4_3`](targets/h2_loader_tar_zlib/waveshare/esp32p4_wifi6_touch_lcd_4_3/) | Waveshare ESP32-P4 4.3", 480x800 | `--config=esp32p4 …:package` |
-| [`targets/h2_loader_tar_zlib/waveshare/esp32s3_touch_amoled_1_8`](targets/h2_loader_tar_zlib/waveshare/esp32s3_touch_amoled_1_8/) | Waveshare AMOLED 1.8", 368x448 | `--config=esp32s3 …:package` |
+| [`targets/h2_loader_tar_zlib/waveshare/esp32s3_touch_amoled_1_8`](targets/h2_loader_tar_zlib/waveshare/esp32s3_touch_amoled_1_8/) | Waveshare AMOLED 1.8", 448×368 landscape, USB-C edge up | `--config=esp32s3 …:package` |
 | [`targets/h2_loader_tar_zlib/jieli/jieli_ac791n_devkit`](targets/h2_loader_tar_zlib/jieli/jieli_ac791n_devkit/) | JieLi AC791N DevKit, 480x320 | `--config=ac791n …:package` |
 | [`targets/pkg_tar/web`](targets/pkg_tar/web/) | Browser (WebAssembly), 480x320 | `:garden_guard`, `:serve` |
 | [`targets/cc_binary/desktop`](targets/cc_binary/desktop/) | macOS/Linux SDL3 window | `:garden_guard` |

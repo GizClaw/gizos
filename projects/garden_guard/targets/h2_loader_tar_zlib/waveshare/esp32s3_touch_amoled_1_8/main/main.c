@@ -1,6 +1,6 @@
 /* Waveshare ESP32-S3 AMOLED 1.8" App image: Runtime lifetime, H2Loader App
- * commands over the board console, and the game task. The game confirms the
- * trial boot once its first frame is visible with Touch open. */
+ * commands, and the landscape game task. Confirm after submitting the first
+ * frame with Touch open. */
 #include "esp_app_desc.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -34,8 +34,10 @@ static h2_pal_result_t confirm(void* user) {
 
 static void game(void* user) {
   (void)user;
-  const h2_garden_guard_config_t config = {
-      .brightness_percent = 100u, .enable_audio = true, .ready = confirm};
+  const h2_garden_guard_config_t config = {.brightness_percent = 100u,
+                                           .touch_poll_interval_ms = 8u,
+                                           .enable_audio = true,
+                                           .ready = confirm};
   const int rc = h2_garden_guard_run(runtime, &config);
   /* The run only ends on failure; keep App commands up for recovery. */
   fail("game", rc);
@@ -44,6 +46,10 @@ static void game(void* user) {
 void app_main(void) {
   int rc = h2_esp_target_task_policy_install();
   if (rc) fail("task-policy", rc);
+  const h2_esp_board_display_config_t display = {
+      .orientation = H2_ESP_BOARD_DISPLAY_LANDSCAPE_CCW};
+  rc = h2_esp_board_display_configure(&display);
+  if (rc) fail("display-config", rc);
   h2_runtime_config_t config = {0};
   rc = h2_esp_board_runtime_config(&config);
   if (rc) fail("board", rc);
