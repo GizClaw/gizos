@@ -17,6 +17,7 @@
 #define H2_FT3168_I2C_ADDRESS 0x38u
 #define H2_FT3168_I2C_SPEED_HZ 400000u
 #define H2_FT3168_TIMEOUT_MS 20
+#define H2_FT3168_REOPEN_AFTER_ERRORS 4u
 #define H2_FT3168_REG_TOUCH_COUNT 0x02u
 #define H2_FT3168_REG_DEVICE_ID 0xa0u
 #define H2_FT3168_REG_POWER_MODE 0xa5u
@@ -33,6 +34,8 @@ typedef struct h2_esp_ft3168_state {
   bool gpio_owned, reset_owned;
   bool contact_active;
   bool read_error_reported;
+  bool release_check;
+  unsigned read_failures;
 } h2_esp_ft3168_state_t;
 
 static const char* TAG = "h2_ft3168";
@@ -164,6 +167,8 @@ static h2_pal_result_t open_hardware(void) {
   s_touch.opened = true;
   s_touch.contact_active = false;
   s_touch.read_error_reported = false;
+  s_touch.read_failures = 0u;
+  s_touch.release_check = true;
   ESP_LOGI(TAG, "FT3168 ready address=0x38 id=0x%02x", device_id);
   return H2_PAL_OK;
 fail:
@@ -241,12 +246,16 @@ static h2_pal_result_t poll_touch(h2_pal_touch_event_t* out_event,
       ESP_LOGW(TAG, "FT3168 touch read failed: %s", esp_err_to_name(err));
       s_touch.read_error_reported = true;
     }
+    if (s_touch.read_failures < H2_FT3168_REOPEN_AFTER_ERRORS)
+      ++s_touch.read_failures;
     return map_esp_err(err);
   }
-  const bool recovered = s_touch.read_error_reported;
+  const bool recovered = s_touch.read_error_reported || s_touch.release_check;
   s_touch.read_error_reported = false;
+  s_touch.read_failures = 0u;
   const uint8_t contact_count = data[0] & 0x0fu;
   if (contact_count == 0u) {
+    s_touch.release_check = false;
     if (!s_touch.contact_active) {
       if (!loss_aware || !recovered) return H2_PAL_ERR_WOULD_BLOCK;
       /* A verified empty report ends Runtime's loss recovery even when no
@@ -296,7 +305,16 @@ static h2_pal_result_t touch_poll_event(void* user,
 static h2_pal_result_t touch_poll_pointer(void* user,
                                           h2_pal_touch_sample_t* sample) {
   (void)user;
-  return poll_touch(&sample->event, true);
+  const h2_pal_result_t rc = poll_touch(&sample->event, true);
+  /* The controller can stop acknowledging while on a shared bus. Ask the
+   * exclusive owner to reset it through the normal close/open sequence. */
+  if ((rc == H2_PAL_ERR_IO || rc == H2_PAL_ERR_TIMEOUT) &&
+      s_touch.read_failures >= H2_FT3168_REOPEN_AFTER_ERRORS) {
+    ESP_LOGW(TAG, "FT3168 requesting reset after %u failed polls",
+             s_touch.read_failures);
+    sample->needs_reopen = true;
+  }
+  return rc;
 }
 
 static h2_pal_result_t close_touch(bool exclusive) {
