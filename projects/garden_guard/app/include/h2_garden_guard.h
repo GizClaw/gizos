@@ -52,6 +52,9 @@ typedef struct h2_garden_guard_config {
   uint32_t brightness_percent;
   /** Frame period in milliseconds; zero selects the default. */
   uint32_t frame_period_ms;
+  /** Optional Runtime touch sampling cadence. Nonzero uses the provider's
+   * exclusive pointer stream and keeps sampling during drawing. */
+  uint32_t touch_poll_interval_ms;
   /** Optional, called once on the run thread after the first frame was
    * presented with Touch open. A nonzero result ends the run with it. */
   h2_pal_result_t (*ready)(void* user);

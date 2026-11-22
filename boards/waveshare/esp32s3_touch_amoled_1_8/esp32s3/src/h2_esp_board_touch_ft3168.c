@@ -221,9 +221,8 @@ static int32_t clamp_coordinate(int32_t coordinate, int32_t extent) {
   return coordinate;
 }
 
-static h2_pal_result_t touch_poll_event(void* user,
-                                        h2_pal_touch_event_t* out_event) {
-  (void)user;
+static h2_pal_result_t poll_touch(h2_pal_touch_event_t* out_event,
+                                  bool loss_aware) {
   if (out_event == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -233,6 +232,10 @@ static h2_pal_result_t touch_poll_event(void* user,
 
   uint8_t data[5] = {0};
   esp_err_t err = read_registers(H2_FT3168_REG_TOUCH_COUNT, data, sizeof(data));
+  /* The exclusive worker can retry an isolated NACK without blocking the
+   * game thread or splitting a contact into an artificial release. */
+  if (loss_aware && err == ESP_ERR_INVALID_RESPONSE)
+    err = read_registers(H2_FT3168_REG_TOUCH_COUNT, data, sizeof(data));
   if (err != ESP_OK) {
     if (!s_touch.read_error_reported) {
       ESP_LOGW(TAG, "FT3168 touch read failed: %s", esp_err_to_name(err));
@@ -240,11 +243,18 @@ static h2_pal_result_t touch_poll_event(void* user,
     }
     return map_esp_err(err);
   }
+  const bool recovered = s_touch.read_error_reported;
   s_touch.read_error_reported = false;
   const uint8_t contact_count = data[0] & 0x0fu;
   if (contact_count == 0u) {
     if (!s_touch.contact_active) {
-      return H2_PAL_ERR_WOULD_BLOCK;
+      if (!loss_aware || !recovered) return H2_PAL_ERR_WOULD_BLOCK;
+      /* A verified empty report ends Runtime's loss recovery even when no
+       * previously delivered contact is available to release. */
+      *out_event =
+          (h2_pal_touch_event_t){.kind = H2_PAL_TOUCH_EVENT_CANCEL,
+                                 .pointer_id = H2_PAL_TOUCH_ALL_POINTERS};
+      return H2_PAL_OK;
     }
     s_touch.contact_active = false;
     *out_event = (h2_pal_touch_event_t){
@@ -277,6 +287,18 @@ static h2_pal_result_t touch_poll_event(void* user,
   return H2_PAL_OK;
 }
 
+static h2_pal_result_t touch_poll_event(void* user,
+                                        h2_pal_touch_event_t* event) {
+  (void)user;
+  return poll_touch(event, false);
+}
+
+static h2_pal_result_t touch_poll_pointer(void* user,
+                                          h2_pal_touch_sample_t* sample) {
+  (void)user;
+  return poll_touch(&sample->event, true);
+}
+
 static h2_pal_result_t close_touch(bool exclusive) {
   if (atomic_flag_test_and_set(&lifecycle)) return H2_PAL_ERR_BUSY;
   h2_pal_result_t rc = H2_PAL_ERR_BUSY;
@@ -301,6 +323,7 @@ const h2_pal_touch_api_t* h2_esp_board_touch_api(void) {
       .open = touch_open,
       .get_info = touch_get_info,
       .poll_event = touch_poll_event,
+      .poll_pointer = touch_poll_pointer,
       .close = touch_close,
       .open_pointer = touch_open_pointer,
       .close_pointer = touch_close_pointer,

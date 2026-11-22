@@ -540,15 +540,18 @@ static void add_sun(h2_garden_guard_game_t* game, float x, float y,
 
 /* Collect every uncollected sun under the point; true when one was taken. */
 static bool collect_suns_at(h2_garden_guard_game_t* game, float x, float y) {
-  const float reach = h2_garden_guard_sun_radius(&game->layout) * 1.6f;
+  const float field_top = ceilf(game->layout.bar_h);
+  if (y < field_top) return false;
+  const float radius = h2_garden_guard_sun_radius(&game->layout);
+  const float reach = radius * 1.6f;
   float counter_x, counter_y;
   h2_garden_guard_sun_counter_point(&game->layout, &counter_x, &counter_y);
   bool taken = false;
   for (unsigned i = 0; i < H2_GARDEN_GUARD_MAX_SUNS; ++i) {
     h2_garden_guard_sun_t* sun = &game->suns[i];
     if (!sun->active || sun->collecting) continue;
-    /* A sun still behind the toolbar must not steal a card tap. */
-    if (sun->y < game->layout.bar_h) continue;
+    /* Collect the visible edge of a falling sun below the toolbar. */
+    if (sun->y + radius * 1.45f <= field_top) continue;
     const float dx = sun->x - x, dy = sun->y - y;
     if (dx * dx + dy * dy > reach * reach) continue;
     sun->collecting = true;

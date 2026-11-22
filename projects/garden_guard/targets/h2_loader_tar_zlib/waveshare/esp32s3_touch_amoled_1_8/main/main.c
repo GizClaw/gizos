@@ -34,8 +34,10 @@ static h2_pal_result_t confirm(void* user) {
 
 static void game(void* user) {
   (void)user;
-  const h2_garden_guard_config_t config = {
-      .brightness_percent = 100u, .enable_audio = true, .ready = confirm};
+  const h2_garden_guard_config_t config = {.brightness_percent = 100u,
+                                           .touch_poll_interval_ms = 8u,
+                                           .enable_audio = true,
+                                           .ready = confirm};
   const int rc = h2_garden_guard_run(runtime, &config);
   /* The run only ends on failure; keep App commands up for recovery. */
   fail("game", rc);
