@@ -363,13 +363,14 @@ static void script_action(const h2_garden_guard_layout_t* l,
   script_tap(r.x + r.w * 0.5f, r.y + r.h * 0.5f);
 }
 
-static void test_touch_starts_and_plants(void) {
-  reset(24u, WIDTH, HEIGHT);
+static void test_touch_starts_and_plants(int32_t width, int32_t height) {
+  reset(24u, width, height);
   /* Touch reports half the display resolution. */
-  fx.touch.info = (h2_pal_touch_info_t){WIDTH / 2, HEIGHT / 2};
+  fx.touch.info =
+      (h2_pal_touch_info_t){(uint32_t)(width / 2), (uint32_t)(height / 2)};
   fx.touch_from_frame = 5u;
   h2_garden_guard_game_t layout_game;
-  h2_garden_guard_game_init(&layout_game, WIDTH, HEIGHT, 1u, 0u);
+  h2_garden_guard_game_init(&layout_game, width, height, 1u, 0u);
   const h2_garden_guard_layout_t* l = &layout_game.layout;
   float cell_x, cell_y;
   h2_garden_guard_field_point(l, 0u, 1.5f, &cell_x, &cell_y);
@@ -476,7 +477,8 @@ static void test_ready_failure_stops(void) {
 int main(void) {
   CHECK(h2_garden_guard_run(NULL, NULL) == H2_PAL_ERR_INVALID_ARG);
   test_idle_title_pushes_once();
-  test_touch_starts_and_plants();
+  test_touch_starts_and_plants(WIDTH, HEIGHT);
+  test_touch_starts_and_plants(448, 368);
   test_shovel_restores_raised_figure(false);
   test_shovel_restores_raised_figure(true);
   test_portrait_display();

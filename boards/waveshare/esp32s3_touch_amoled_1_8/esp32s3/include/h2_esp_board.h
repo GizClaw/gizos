@@ -11,10 +11,16 @@ extern "C" {
 
 typedef void (*h2_esp_board_entry_task_fn)(void* user);
 
+typedef enum h2_esp_board_display_orientation {
+  H2_ESP_BOARD_DISPLAY_PORTRAIT = 0,
+  /** Rotate the board counterclockwise from its native portrait position. */
+  H2_ESP_BOARD_DISPLAY_LANDSCAPE_CCW,
+} h2_esp_board_display_orientation_t;
+
 /**
- * Optional workload-specific display transport tuning. A zero pixel clock
- * keeps the SH8601 component default. Configure this before the first display
- * or panel power operation.
+ * Optional display transport tuning and logical orientation for Display and
+ * Touch. A zero pixel clock keeps the SH8601 component default. Configure
+ * this once before Runtime setup or any direct Display/Touch operation.
  */
 typedef struct h2_esp_board_display_config {
   uint32_t pclk_hz;
@@ -22,6 +28,7 @@ typedef struct h2_esp_board_display_config {
    * Smaller chunks leave internal SRAM available to Wi-Fi/lwIP.
    */
   uint32_t dma_buffer_rows;
+  h2_esp_board_display_orientation_t orientation;
 } h2_esp_board_display_config_t;
 
 h2_pal_result_t h2_esp_board_display_configure(

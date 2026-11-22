@@ -1,4 +1,5 @@
 #include "h2_esp_board_private.h"
+#include "h2_esp_board_display_config_internal.h"
 #include "h2_esp_board_internal.h"
 
 #include "driver/gpio.h"
@@ -21,8 +22,6 @@
 #define H2_FT3168_REG_POWER_MODE 0xa5u
 #define H2_FT3168_DEVICE_ID 0x03u
 #define H2_FT3168_POWER_ACTIVE 0x00u
-#define H2_FT3168_WIDTH 368
-#define H2_FT3168_HEIGHT 448
 #define H2_FT3168_INTERRUPT_GPIO GPIO_NUM_21
 #define H2_FT3168_RESET_MASK (1u << 2)
 
@@ -202,9 +201,12 @@ static h2_pal_result_t touch_get_info(void* user,
   if (!s_touch.opened) {
     return H2_PAL_ERR_INVALID_STATE;
   }
+  int32_t width, height;
+  h2_esp_board_display_extent(h2_esp_board_display_orientation(), &width,
+                              &height);
   *out_info = (h2_pal_touch_info_t){
-      .width = H2_FT3168_WIDTH,
-      .height = H2_FT3168_HEIGHT,
+      .width = (uint32_t)width,
+      .height = (uint32_t)height,
   };
   return H2_PAL_OK;
 }
@@ -253,10 +255,11 @@ static h2_pal_result_t touch_poll_event(void* user,
     return H2_PAL_OK;
   }
 
-  const int32_t x = clamp_coordinate(
-      ((int32_t)(data[1] & 0x0fu) << 8) | data[2], H2_FT3168_WIDTH);
-  const int32_t y = clamp_coordinate(
-      ((int32_t)(data[3] & 0x0fu) << 8) | data[4], H2_FT3168_HEIGHT);
+  int32_t x = clamp_coordinate(((int32_t)(data[1] & 0x0fu) << 8) | data[2],
+                               H2_AMOLED_NATIVE_WIDTH);
+  int32_t y = clamp_coordinate(((int32_t)(data[3] & 0x0fu) << 8) | data[4],
+                               H2_AMOLED_NATIVE_HEIGHT);
+  h2_esp_board_display_touch_point(h2_esp_board_display_orientation(), &x, &y);
   if (s_touch.contact_active && x == s_touch.last_x && y == s_touch.last_y) {
     return H2_PAL_ERR_WOULD_BLOCK;
   }
