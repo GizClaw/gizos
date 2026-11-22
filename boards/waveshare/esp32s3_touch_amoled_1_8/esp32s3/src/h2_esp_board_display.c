@@ -21,7 +21,6 @@
 
 #define LCD_HOST SPI2_HOST
 #define LCD_WIDTH H2_AMOLED_NATIVE_WIDTH
-#define LCD_HEIGHT H2_AMOLED_NATIVE_HEIGHT
 #define LCD_CS_GPIO GPIO_NUM_12
 #define LCD_PCLK_GPIO GPIO_NUM_11
 #define LCD_DATA0_GPIO GPIO_NUM_4
@@ -362,8 +361,10 @@ static int amoled_get_info(void* user, h2_display_info_t* info) {
     return H2_DISPLAY_ERR_INVALID_STATE;
   }
 
-  h2_esp_board_display_extent(s_display_config.orientation, &info->width,
-                              &info->height);
+  int32_t width, height;
+  h2_esp_board_display_extent(s_display_config.orientation, &width, &height);
+  info->width = width;
+  info->height = height;
   info->native_format = H2_DISPLAY_PIXEL_RGB565;
   return H2_DISPLAY_OK;
 }
