@@ -37,7 +37,7 @@ Fruit IDs 0–4 and bomb ID 5 remain stable; the four additions use IDs 6–9. T
 
 ## Language
 
-The UI defaults to Simplified Chinese on all targets, including AC791N's 480x320 display. Tap **EN** at the top left of the title screen to switch to English; tap **中文** to return. The selection lasts for the App session and does not change existing preference blobs. An embedding host can set `config.language = H2_FRUIT_SLICE_LANGUAGE_EN` to start in English. Titles, gameplay hints, tasks, weapons, cards, rarity and reveal prompts use the same App-owned translation table. See the [font source, OFL license and reproducible subset](app/fonts/README.md).
+The UI defaults to Simplified Chinese on all targets, including AC791N's 480x320 display. Tap **EN** at the top left of the title screen to switch to English; tap **中文** to return. The selection lasts for the App session and does not change existing preference blobs. An embedding host can set `config.language = H2_FRUIT_SLICE_LANGUAGE_EN` to start in English. Titles, gameplay hints, tasks, weapons, cards, rarity and reveal prompts use the same App-owned translation table. See the [font source, Apache license and reproducible bitmap generation](app/fonts/README.md).
 
 ## Coins and weapons
 

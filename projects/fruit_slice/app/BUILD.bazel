@@ -26,7 +26,7 @@ _LIBM = select({
     "//conditions:default": [],
 })
 
-_DROID_SANS_FALLBACK = "fonts/DroidSansFallback.ttf"
+_DROID_SANS_FALLBACK = "//libs/ui/fonts/droid_sans_fallback:DroidSansFallback.ttf"
 
 lvgl_font(
     name = "zh_compact_font",
