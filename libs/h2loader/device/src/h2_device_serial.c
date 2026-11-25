@@ -330,7 +330,13 @@ h2_pal_result_t h2_device_serial_init_with_config(
     h2_device_serial_t* self, const h2_device_serial_config_t* config) {
   if (self == NULL || config == NULL || config->allocator == NULL ||
       config->time == NULL || config->physical_io.read == NULL ||
-      config->physical_io.write == NULL)
+      config->physical_io.write == NULL ||
+      (config->rx_buffer_size != 0u &&
+       (config->rx_buffer_size < H2_IOSTREAMIKCP_DEFAULT_MTU ||
+        config->rx_buffer_size > 4096u)) ||
+      (config->receive_window != 0u &&
+       (config->receive_window < H2_IOSTREAMIKCP_MIN_RECEIVE_WINDOW ||
+        config->receive_window > H2_IOSTREAMIKCP_MAX_RECEIVE_WINDOW)))
     return H2_PAL_ERR_INVALID_ARG;
   uint64_t now;
   int rc = h2_pal_time_get_monotonic_ms(config->time, &now);
@@ -382,18 +388,27 @@ h2_pal_result_t h2_device_serial_activate_pending(h2_device_serial_t* self) {
       .time_user = self,
       .conv = conv,
       .mtu = H2_IOSTREAMIKCP_DEFAULT_MTU,
-      .rx_buffer_size = 4096u,
+      .rx_buffer_size = self->config.rx_buffer_size != 0u
+                            ? self->config.rx_buffer_size
+                            : 4096u,
       .receive_window = self->receive_window,
       .write_timeout_ms = H2_WRITE_TIMEOUT_MS,
   };
   int rc = h2_iostreamikcp_open(&config, &self->stream);
-  if (rc != H2_PAL_OK) return rc;
-  self->conv = conv;
-  self->last_frame_ms = h2_device_serial_now(self);
-  deadline_start(self, H2_WRITE_TIMEOUT_MS);
-  rc = send_control(self, H2_IOSTREAMIKCP_FRAME_FLAG_SESSION_ACK, conv);
-  self->io_deadline_active = 0;
-  if (rc != H2_PAL_OK) h2_device_serial_deactivate(self);
+  if (rc == H2_PAL_OK) {
+    self->conv = conv;
+    self->last_frame_ms = h2_device_serial_now(self);
+    deadline_start(self, H2_WRITE_TIMEOUT_MS);
+    rc = send_control(self, H2_IOSTREAMIKCP_FRAME_FLAG_SESSION_ACK, conv);
+    self->io_deadline_active = 0;
+  }
+  if (rc != H2_PAL_OK) {
+    /* Consume the failed OPEN and release its candidate. A retransmitted OPEN
+     * may retry after memory recovers; do not spin on the same pending input.
+     */
+    h2_device_serial_deactivate(self);
+    (void)h2_pal_time_sleep_ms(self->time, H2_PHYSICAL_POLL_MS);
+  }
   return rc;
 }
 int h2_device_serial_has_session(const h2_device_serial_t* self) {

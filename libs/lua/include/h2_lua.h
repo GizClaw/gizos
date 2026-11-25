@@ -162,6 +162,15 @@ typedef struct h2_lua_host_config {
    * NO_MEMORY from create with no Host or leaked allocations. This reserves
    * pixels only; it does not open the Display or create its worker. */
   size_t display_framebuffer_bytes;
+  /** Nonzero uses one RGB565 framebuffer and waits for transport completion in
+   * both submit and present. A fixed-size SHA-256 fingerprint of the last
+   * successful frame detects unchanged pixels, including draws reverted before
+   * submission. Retained unchanged frames send no pixels; changed frames use
+   * dirty bounds rather than a second pixel baseline. No send-frame userdata
+   * is allocated. The framebuffer uses the Host allocator outside VM quota;
+   * budget width * height * 2 bytes separately. Zero preserves asynchronous
+   * double buffering. Checked stop/join is required in both modes. */
+  int display_single_buffer;
 } h2_lua_host_config_t;
 
 /** Creates a stopped Host that borrows, but never consumes or destroys,
@@ -179,7 +188,9 @@ h2_pal_result_t h2_lua_host_stop(h2_lua_host_t* host);
  * Display shutdown may return BUSY while transport/close is pending,
  * or a latched backend/join error. Retry BUSY; retain the Host, Runtime and
  * Display lease on every failure. A faulted Display is quarantined and has
- * no automatic recovery. Runtime worker join and synchronous PAL calls may
+ * no automatic recovery. An enabled link also joins its session and retries
+ * retained server cleanup once per call; any failure retains its dependencies
+ * and prevents session reuse. Runtime worker join and synchronous PAL calls may
  * block; this API does not promise a bounded timeout. */
 h2_pal_result_t h2_lua_host_join(h2_lua_host_t* host);
 

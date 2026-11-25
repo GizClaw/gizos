@@ -54,6 +54,7 @@ typedef struct fake_runtime {
   h2_pal_result_t unregister_service_result;
   h2_atomic_int_t fail_next_register;
   h2_atomic_int_t fail_next_join;
+  h2_atomic_int_t join_result;
   h2_atomic_int_t drop_next_gatt_write;
   h2_atomic_int_t cond_broadcasts;
   /* Sleep gate: while armed, every sleep from a thread other than the test
@@ -224,6 +225,8 @@ static int fake_task_start(void* user, const h2_pal_task_options_t* options,
 
 static int fake_task_join(void* user, h2_pal_task_t* task) {
   fake_runtime_t* runtime = user;
+  int result = h2_atomic_load(&runtime->join_result);
+  if (result != H2_PAL_OK) return result;
   if (h2_atomic_exchange(&runtime->fail_next_join, 0) != 0) {
     return H2_PAL_ERR_TASK;
   }
@@ -512,6 +515,7 @@ static h2_pal_result_t fake_disconnect(void* user, uint16_t conn_handle) {
 static void fake_runtime_atomics_destroy(fake_runtime_t* runtime) {
   h2_atomic_destroy(&runtime->fail_next_register);
   h2_atomic_destroy(&runtime->fail_next_join);
+  h2_atomic_destroy(&runtime->join_result);
   h2_atomic_destroy(&runtime->drop_next_gatt_write);
   h2_atomic_destroy(&runtime->cond_broadcasts);
 }
@@ -520,6 +524,7 @@ static void fake_runtime_init(fake_runtime_t* runtime) {
   memset(runtime, 0, sizeof(*runtime));
   CHECK(h2_atomic_int_init(&runtime->fail_next_register, 0) == H2_ATOMIC_OK);
   CHECK(h2_atomic_int_init(&runtime->fail_next_join, 0) == H2_ATOMIC_OK);
+  CHECK(h2_atomic_int_init(&runtime->join_result, H2_PAL_OK) == H2_ATOMIC_OK);
   CHECK(h2_atomic_int_init(&runtime->drop_next_gatt_write, 0) == H2_ATOMIC_OK);
   CHECK(h2_atomic_int_init(&runtime->cond_broadcasts, 0) == H2_ATOMIC_OK);
   CHECK(pthread_mutex_init(&runtime->event_mutex, NULL) == 0);
@@ -1252,14 +1257,31 @@ int main(void) {
   h2_pal_ble_gatt_service_t management_service = {0};
   runtime.service = &management_service;
   runtime.service_count = 1u;
-  h2_atomic_store(&runtime.fail_next_register, 1);
-  h2_bleikcp_server_t* failed_server = NULL;
-  CHECK(h2_bleikcp_server_open(&api, &config, server_handler, &handler_state,
-                               &failed_server) == H2_PAL_ERR_NO_MEMORY);
-  CHECK(failed_server == NULL);
-  CHECK(runtime.service == &management_service);
-  CHECK(runtime.service_count == 1u);
-  CHECK(runtime.unregister_count == 0);
+  const int join_errors[] = {H2_PAL_OK, H2_PAL_ERR_TASK, H2_PAL_ERR_TIMEOUT,
+                             H2_PAL_ERR_UNSUPPORTED};
+  for (size_t i = 0u; i < sizeof(join_errors) / sizeof(join_errors[0]); ++i) {
+    h2_atomic_store(&runtime.fail_next_register, 1);
+    h2_atomic_store(&runtime.join_result, join_errors[i]);
+    h2_bleikcp_server_t* failed_server = NULL;
+    CHECK(
+        h2_bleikcp_server_open(&api, &config, server_handler, &handler_state,
+                               &failed_server) ==
+        (join_errors[i] == H2_PAL_OK ? H2_PAL_ERR_NO_MEMORY : join_errors[i]));
+    if (join_errors[i] == H2_PAL_OK) {
+      CHECK(failed_server == NULL && runtime.subscription_count == 0u);
+    } else {
+      CHECK(failed_server != NULL && runtime.subscription_count == 4u);
+      CHECK(h2_bleikcp_server_close(failed_server) == join_errors[i]);
+      CHECK(runtime.subscription_count == 4u);
+      CHECK(h2_bleikcp_global_ready());
+      h2_atomic_store(&runtime.join_result, H2_PAL_OK);
+      CHECK(h2_bleikcp_server_close(failed_server) == H2_PAL_OK);
+      CHECK(runtime.subscription_count == 0u);
+    }
+    CHECK(runtime.service == &management_service);
+    CHECK(runtime.service_count == 1u);
+    CHECK(runtime.unregister_count == 0);
+  }
 
   h2_bleikcp_server_t* server = NULL;
   CHECK(h2_bleikcp_server_open(&api, &config, server_handler, &handler_state,
@@ -1308,6 +1330,13 @@ int main(void) {
   CHECK(fake_post_payload(&runtime, H2_PAL_SYSTEM_EVENT_TYPE_BLE_MTU_CHANGED,
                           &mtu, sizeof(mtu)) == H2_PAL_OK);
 
+  /* A compact peer must retain complete transfers and retransmission when the
+   * other side keeps its default stream/window budgets. */
+  config.send_window = 8u;
+  config.recv_window = 8u;
+  config.tx_buffer_size = 2048u;
+  config.rx_buffer_size = 2048u;
+  config.input_frame_capacity = 8u;
   h2_atomic_store(&runtime.drop_next_gatt_write, 1);
   run_client_exchange(&api, &config, &runtime, &handler_state, &event_state, 7u,
                       1024u, true);

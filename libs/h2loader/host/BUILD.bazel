@@ -74,6 +74,7 @@ cc_library(
     ],
     target_compatible_with = select({
         "//tools/bazel/platforms:target_bk7258": ["@platforms//:incompatible"],
+        "//tools/bazel/platforms:target_esp32c3": ["@platforms//:incompatible"],
         "//tools/bazel/platforms:target_esp32p4": ["@platforms//:incompatible"],
         "//tools/bazel/platforms:target_esp32s3": ["@platforms//:incompatible"],
         "//conditions:default": [],

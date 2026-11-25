@@ -53,6 +53,13 @@
  *   copy-handoff wait failure freezes drawing and retains both buffers, since
  *   it cannot prove that the worker stopped reading A.
  *   Task/atomic/semaphore storage is platform-owned.
+ *   The Host's display_single_buffer option instead waits for transport before
+ *   returning A to Lua and allocates no B. Retained equality uses a fixed-size
+ *   SHA-256 fingerprint of the last successful frame; changed frames send dirty
+ *   bounds, and unchanged frames send no pixels. Dirty draws require a full
+ *   framebuffer scan. Equality assumes SHA-256 collision resistance instead of
+ *   exact pixel comparison. Faults invalidate the fingerprint. Only a fully
+ *   successful transport commits a new baseline.
  * - Faults stop further submissions; there is no automatic retry or backend
  *   recovery. deinit returns nil, BUSY/error until close and task join succeed;
  *   success keeps its existing no-values return. A faulted backend is not

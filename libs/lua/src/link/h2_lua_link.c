@@ -136,9 +136,12 @@ typedef struct h2_lua_link {
   int in_use;
   int task_done;
   /* The session queued its final DISCONNECTED or ERROR event; only
-   * bookkeeping remains before task_done. */
+   * bookkeeping remains before task_done. Failed cleanup remains owned here. */
   int ended;
   h2_pal_task_t* task;
+  /* A failed close, including a failed-open cleanup-only handle, pins this
+   * slot and every server borrow until checked Host join succeeds. */
+  h2_bleikcp_server_t* server;
   h2_lua_job_t* job;
   h2_lua_job_id_t job_id;
   uint32_t job_generation;
@@ -738,9 +741,24 @@ static void link_run_host(h2_lua_link_t* link) {
   }
   link_stop_advertising(link, &adv_set);
   if (server != NULL) {
-    (void)h2_bleikcp_server_close(server);
+    rc = h2_bleikcp_server_close(server);
+    if (rc != H2_PAL_OK) {
+      link_lock(link);
+      link->server = server;
+      link_unlock(link);
+      outcome = H2_LUA_LINK_OUTCOME_SETUP_FAILED;
+      result = rc;
+    }
   }
   link_post_outcome(link, outcome, result);
+  link_lock(link);
+  if (link->server != NULL) {
+    /* Keep the error event available to Lua, but stop outstanding callbacks
+     * from posting or waking the job while cleanup awaits checked Host join. */
+    link->closing = 1;
+    link_broadcast(link);
+  }
+  link_unlock(link);
 }
 
 static bool link_scan_result(void* user,
@@ -986,15 +1004,13 @@ static int link_reclaim_locked(h2_lua_link_t* link) {
   if (!link->in_use) {
     return 1;
   }
-  /* The final event is queued only after every BLE and KCP resource has been
-   * released; the task then just returns from link_post() and publishes
-   * task_done under this mutex, without waiting on anything. Waiting for it
-   * here is therefore bounded, and an app reacting to LINK_DISCONNECTED or
-   * LINK_ERROR with a new host()/join() never sees busy. */
+  /* After its final event the session only publishes bookkeeping, without
+   * blocking work. Normal cleanup lets a callback immediately host/join again;
+   * failed cleanup pins the slot until checked Host join, returning busy. */
   while (link->ended && !link->task_done) {
     link_wait(link, H2_LUA_LINK_SLICE_MS);
   }
-  if (!link->task_done) {
+  if (!link->task_done || link->server != NULL) {
     return 0;
   }
   if (h2_pal_task_join(link->runtime->task, link->task) != H2_PAL_OK) {
@@ -1041,7 +1057,7 @@ static int link_start(lua_State* state, h2_lua_link_role_t role) {
     return luaL_argerror(state, 1, "timeout_ms is out of range");
   }
   link_lock(link);
-  if (!link_reclaim_locked(link)) {
+  if (h2_atomic_load(&job->host->stopping) != 0 || !link_reclaim_locked(link)) {
     link_unlock(link);
     lua_pushnil(state);
     lua_pushliteral(state, "link: busy");
@@ -1489,17 +1505,34 @@ static void link_job_ended(void* user, h2_lua_job_id_t job_id,
   link_unlock(link);
 }
 
-static void link_destroy(void* user) {
+static h2_pal_result_t link_join(void* user) {
   h2_lua_link_t* link = user;
   h2_pal_task_t* task;
   link_lock(link);
   link->closing = 1;
   link_broadcast(link);
-  task = link->in_use ? link->task : NULL;
+  task = link->task;
   link_unlock(link);
+  /* Never join or close under the mutex: the session and server callbacks may
+   * still need it. VM workers have already joined, so no new session can start.
+   */
   if (task != NULL) {
-    (void)h2_pal_task_join(link->runtime->task, task);
+    h2_pal_result_t rc = h2_pal_task_join(link->runtime->task, task);
+    if (rc != H2_PAL_OK) return rc;
+    link->task = NULL;
   }
+  if (link->server != NULL) {
+    h2_pal_result_t rc = (h2_pal_result_t)h2_bleikcp_server_close(link->server);
+    if (rc != H2_PAL_OK) return rc;
+    link->server = NULL;
+  }
+  link->in_use = 0;
+  return H2_PAL_OK;
+}
+
+static void link_destroy(void* user) {
+  h2_lua_link_t* link = user;
+  /* Host destruction reaches this hook only after link_join succeeds. */
   (void)h2_pal_cond_destroy(link->runtime->sync, link->cond);
   (void)h2_pal_mutex_destroy(link->runtime->sync, link->mutex);
   h2_pal_mem_free(link->allocator, link);
@@ -1509,6 +1542,7 @@ static const h2_lua_link_hooks_t s_link_hooks = {
     .open_module = link_open_module,
     .deliver = link_deliver,
     .job_ended = link_job_ended,
+    .join = link_join,
     .destroy = link_destroy,
 };
 
