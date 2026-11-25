@@ -3,11 +3,13 @@
 #include "h2_pal_unsupported.h"
 
 #include <limits.h>
+#include <stdbool.h>
 #include <string.h>
 
 #include <wolfssl/wolfcrypt/aes.h>
 #include <wolfssl/wolfcrypt/chacha20_poly1305.h>
 #include <wolfssl/wolfcrypt/curve25519.h>
+#include <wolfssl/wolfcrypt/des3.h>
 #include <wolfssl/wolfcrypt/ecc.h>
 #include <wolfssl/wolfcrypt/error-crypt.h>
 #include <wolfssl/wolfcrypt/hmac.h>
@@ -16,6 +18,9 @@
 #include <wolfssl/wolfcrypt/random.h>
 #include <wolfssl/wolfcrypt/sha.h>
 #include <wolfssl/wolfcrypt/sha256.h>
+#ifdef WOLFSSL_SM2
+#include <wolfssl/wolfcrypt/sm2.h>
+#endif
 
 #define H2_WOLFCRYPT_AEAD_NONCE_SIZE 12u
 #define H2_WOLFCRYPT_AEAD_TAG_SIZE 16u
@@ -133,9 +138,11 @@ static h2_pal_result_t h2_wolfcrypt_x25519_public_key_from_private(
                                               H2_PAL_CRYPTO_X25519_KEY_SIZE,
                                               &key, EC25519_LITTLE_ENDIAN);
   }
+#ifdef WOLFSSL_CURVE25519_BLINDING
   if (wolf_rc == 0) {
     wolf_rc = wc_curve25519_set_rng(&key, &rng);
   }
+#endif
   if (wolf_rc == 0) {
     wolf_rc = wc_curve25519_export_public_ex(
         &key, out_public_key->bytes, &public_len, EC25519_LITTLE_ENDIAN);
@@ -229,9 +236,11 @@ static h2_pal_result_t h2_wolfcrypt_x25519_shared_secret(
       rc = H2_PAL_ERR_FORMAT;
     }
   }
+#ifdef WOLFSSL_CURVE25519_BLINDING
   if (wolf_rc == 0) {
     wolf_rc = wc_curve25519_set_rng(&private_key, &rng);
   }
+#endif
   if (wolf_rc == 0) {
     wolf_rc = wc_curve25519_shared_secret_ex(
         &private_key, &public_key, out_shared_secret->bytes, &shared_len,
@@ -509,6 +518,100 @@ static h2_pal_result_t h2_wolfcrypt_aes_ctr_xor(
   return H2_PAL_OK;
 }
 
+static h2_pal_result_t h2_wolfcrypt_aes_cbc(
+    void* user, h2_pal_crypto_cipher_direction_t direction, const uint8_t* key,
+    size_t key_len, const uint8_t iv[16], const uint8_t* input,
+    size_t input_len, h2_pal_crypto_buf_t* out) {
+  (void)user;
+  if (out == NULL) return H2_PAL_ERR_INVALID_ARG;
+  out->len = 0u;
+  if (key == NULL || iv == NULL ||
+      (key_len != 16u && key_len != 24u && key_len != 32u) ||
+      (direction != H2_PAL_CRYPTO_CIPHER_ENCRYPT &&
+       direction != H2_PAL_CRYPTO_CIPHER_DECRYPT) ||
+      (input == NULL && input_len != 0u) || input_len % 16u != 0u ||
+      input_len > UINT32_MAX || (out->data == NULL && out->cap != 0u) ||
+      h2_wolfcrypt_nonexact_overlap(input, input_len, out->data, input_len))
+    return H2_PAL_ERR_INVALID_ARG;
+  if (out->cap < input_len) return H2_PAL_ERR_NO_SPACE;
+  if (input_len == 0u) return H2_PAL_OK;
+  Aes aes;
+  int rc = wc_AesInit(&aes, NULL, INVALID_DEVID);
+  if (rc != 0) return H2_PAL_ERR_IO;
+  rc = wc_AesSetKey(&aes, key, (word32)key_len, iv,
+                    direction == H2_PAL_CRYPTO_CIPHER_ENCRYPT ? AES_ENCRYPTION
+                                                              : AES_DECRYPTION);
+  if (rc == 0)
+    rc = direction == H2_PAL_CRYPTO_CIPHER_ENCRYPT
+             ? wc_AesCbcEncrypt(&aes, out->data, input, (word32)input_len)
+             : wc_AesCbcDecrypt(&aes, out->data, input, (word32)input_len);
+  wc_AesFree(&aes);
+  h2_wolfcrypt_secure_zero(&aes, sizeof(aes));
+  if (rc != 0) {
+    h2_wolfcrypt_secure_zero(out->data, input_len);
+    return H2_PAL_ERR_IO;
+  }
+  out->len = input_len;
+  return H2_PAL_OK;
+}
+
+#ifndef NO_DES3
+static h2_pal_result_t h2_wolfcrypt_des_cbc(
+    void* user, h2_pal_crypto_cipher_direction_t direction, const uint8_t* key,
+    size_t key_length, const uint8_t iv[8], const uint8_t* input, size_t length,
+    h2_pal_crypto_buf_t* output) {
+  (void)user;
+  if (output == NULL) return H2_PAL_ERR_INVALID_ARG;
+  output->len = 0u;
+  if (key == NULL || iv == NULL ||
+      (key_length != 8u && key_length != 16u && key_length != 24u) ||
+      (direction != H2_PAL_CRYPTO_CIPHER_ENCRYPT &&
+       direction != H2_PAL_CRYPTO_CIPHER_DECRYPT) ||
+      (input == NULL && length != 0u) || length % 8u != 0u ||
+      length > UINT32_MAX || (output->data == NULL && output->cap != 0u) ||
+      h2_wolfcrypt_nonexact_overlap(input, length, output->data, length))
+    return H2_PAL_ERR_INVALID_ARG;
+  if (output->cap < length) return H2_PAL_ERR_NO_SPACE;
+  if (length == 0u) return H2_PAL_OK;
+  int rc;
+  int mode = direction == H2_PAL_CRYPTO_CIPHER_ENCRYPT ? DES_ENCRYPTION
+                                                       : DES_DECRYPTION;
+  if (key_length == 8u) {
+    Des des;
+    memset(&des, 0, sizeof(des));
+    rc = wc_Des_SetKey(&des, key, iv, mode);
+    if (rc == 0)
+      rc = direction == H2_PAL_CRYPTO_CIPHER_ENCRYPT
+               ? wc_Des_CbcEncrypt(&des, output->data, input, (word32)length)
+               : wc_Des_CbcDecrypt(&des, output->data, input, (word32)length);
+    h2_wolfcrypt_secure_zero(&des, sizeof(des));
+  } else {
+    uint8_t expanded[24];
+    memcpy(expanded, key, key_length);
+    if (key_length == 16u) memcpy(expanded + 16u, key, 8u);
+    Des3 des;
+    rc = wc_Des3Init(&des, NULL, INVALID_DEVID);
+    if (rc == 0) {
+      rc = wc_Des3_SetKey(&des, expanded, iv, mode);
+      if (rc == 0)
+        rc =
+            direction == H2_PAL_CRYPTO_CIPHER_ENCRYPT
+                ? wc_Des3_CbcEncrypt(&des, output->data, input, (word32)length)
+                : wc_Des3_CbcDecrypt(&des, output->data, input, (word32)length);
+      wc_Des3Free(&des);
+    }
+    h2_wolfcrypt_secure_zero(&des, sizeof(des));
+    h2_wolfcrypt_secure_zero(expanded, sizeof(expanded));
+  }
+  if (rc != 0) {
+    h2_wolfcrypt_secure_zero(output->data, length);
+    return H2_PAL_ERR_IO;
+  }
+  output->len = length;
+  return H2_PAL_OK;
+}
+#endif
+
 static h2_pal_result_t h2_wolfcrypt_md5(
     void* user, const uint8_t* input, size_t input_len,
     uint8_t out_digest[H2_PAL_CRYPTO_MD5_SIZE]) {
@@ -724,6 +827,67 @@ static h2_pal_result_t h2_wolfcrypt_p256_public_key_validate(
   return wolf_rc == 0 ? H2_PAL_OK : H2_PAL_ERR_FORMAT;
 }
 
+static h2_pal_result_t h2_wolfcrypt_p256_public_key_uncompress(
+    void* user, const h2_pal_p256_public_key_t* public_key,
+    uint8_t out[H2_PAL_CRYPTO_P256_UNCOMPRESSED_PUBLIC_KEY_SIZE]) {
+  if (public_key == NULL || out == NULL) return H2_PAL_ERR_INVALID_ARG;
+  memset(out, 0, H2_PAL_CRYPTO_P256_UNCOMPRESSED_PUBLIC_KEY_SIZE);
+  int rc = h2_wolfcrypt_p256_public_key_validate(user, public_key);
+  if (rc != H2_PAL_OK) return rc;
+  ecc_key key;
+  int wolf_rc = wc_ecc_init(&key);
+  if (wolf_rc != 0) return H2_PAL_ERR_IO;
+  wolf_rc = wc_ecc_import_x963_ex(public_key->bytes,
+                                  H2_PAL_CRYPTO_P256_PUBLIC_KEY_SIZE, &key,
+                                  ECC_SECP256R1);
+  word32 size = H2_PAL_CRYPTO_P256_UNCOMPRESSED_PUBLIC_KEY_SIZE;
+  if (wolf_rc == 0) wolf_rc = wc_ecc_export_x963_ex(&key, out, &size, 0);
+  wc_ecc_free(&key);
+  if (wolf_rc != 0 || size != H2_PAL_CRYPTO_P256_UNCOMPRESSED_PUBLIC_KEY_SIZE) {
+    memset(out, 0, H2_PAL_CRYPTO_P256_UNCOMPRESSED_PUBLIC_KEY_SIZE);
+    return H2_PAL_ERR_IO;
+  }
+  return H2_PAL_OK;
+}
+
+static h2_pal_result_t h2_wolfcrypt_p256_shared_secret(
+    void* user, const h2_pal_p256_private_key_t* private_key,
+    const h2_pal_p256_public_key_t* public_key, uint8_t out[32]) {
+  if (out == NULL) return H2_PAL_ERR_INVALID_ARG;
+  memset(out, 0, 32u);
+  if (private_key == NULL || public_key == NULL) return H2_PAL_ERR_INVALID_ARG;
+  if (!h2_p256_private_key_valid(private_key)) return H2_PAL_ERR_FORMAT;
+  int rc = h2_wolfcrypt_p256_public_key_validate(user, public_key);
+  if (rc != H2_PAL_OK) return rc;
+  ecc_key local, remote;
+  if (wc_ecc_init(&local) != 0) return H2_PAL_ERR_IO;
+  if (wc_ecc_init(&remote) != 0) {
+    wc_ecc_free(&local);
+    return H2_PAL_ERR_IO;
+  }
+  WC_RNG rng;
+  int wolf_rc = wc_InitRng(&rng);
+  bool rng_ready = wolf_rc == 0;
+  if (wolf_rc == 0)
+    wolf_rc = wc_ecc_import_private_key_ex(private_key->bytes, 32u, NULL, 0u,
+                                           &local, ECC_SECP256R1);
+  if (wolf_rc == 0) wolf_rc = wc_ecc_set_rng(&local, &rng);
+  if (wolf_rc == 0)
+    wolf_rc =
+        wc_ecc_import_x963_ex(public_key->bytes, 33u, &remote, ECC_SECP256R1);
+  word32 length = 32u;
+  if (wolf_rc == 0)
+    wolf_rc = wc_ecc_shared_secret(&local, &remote, out, &length);
+  wc_ecc_free(&remote);
+  wc_ecc_free(&local);
+  if (rng_ready) (void)wc_FreeRng(&rng);
+  if (wolf_rc != 0 || length != 32u) {
+    h2_wolfcrypt_secure_zero(out, 32u);
+    return H2_PAL_ERR_IO;
+  }
+  return H2_PAL_OK;
+}
+
 static int h2_wolfcrypt_sha256(const uint8_t* message, size_t message_len,
                                uint8_t hash[H2_WOLFCRYPT_SHA256_SIZE]) {
   wc_Sha256 sha;
@@ -755,11 +919,10 @@ static int h2_wolfcrypt_sha256(const uint8_t* message, size_t message_len,
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t h2_wolfcrypt_p256_sign(
-    void* user, const h2_pal_p256_private_key_t* private_key,
-    const uint8_t* message, size_t message_len,
-    h2_pal_p256_signature_t* out_signature) {
-  uint8_t hash[H2_WOLFCRYPT_SHA256_SIZE];
+static h2_pal_result_t h2_wolfcrypt_ecc_sign(
+    const uint8_t* private_key, word32 scalar_size, int curve,
+    const uint8_t* hash, word32 hash_size, uint8_t* signature,
+    int (*signer)(const byte*, word32, WC_RNG*, ecc_key*, mp_int*, mp_int*)) {
   ecc_key key;
   WC_RNG rng;
   mp_int r;
@@ -768,23 +931,6 @@ static h2_pal_result_t h2_wolfcrypt_p256_sign(
   int rng_ready = 0;
   int mp_ready = 0;
   int wolf_rc;
-  int rc;
-  (void)user;
-
-  if (out_signature == NULL) {
-    return H2_PAL_ERR_INVALID_ARG;
-  }
-  memset(out_signature, 0, sizeof(*out_signature));
-  if (private_key == NULL || (message == NULL && message_len != 0u)) {
-    return H2_PAL_ERR_INVALID_ARG;
-  }
-  if (!h2_p256_private_key_valid(private_key)) {
-    return H2_PAL_ERR_FORMAT;
-  }
-  rc = h2_wolfcrypt_sha256(message, message_len, hash);
-  if (rc != H2_PAL_OK) {
-    return rc;
-  }
   wolf_rc = wc_ecc_init(&key);
   if (wolf_rc == 0) {
     key_ready = 1;
@@ -796,21 +942,17 @@ static h2_pal_result_t h2_wolfcrypt_p256_sign(
   }
   if (wolf_rc == 0) {
     mp_ready = 1;
-    wolf_rc = wc_ecc_import_private_key_ex(private_key->bytes,
-                                           H2_PAL_CRYPTO_P256_PRIVATE_KEY_SIZE,
-                                           NULL, 0u, &key, ECC_SECP256R1);
+    wolf_rc = wc_ecc_import_private_key_ex(private_key, scalar_size, NULL, 0u,
+                                           &key, curve);
   }
   if (wolf_rc == 0) {
-    wolf_rc = wc_ecc_sign_hash_ex(hash, sizeof(hash), &rng, &key, &r, &s);
+    wolf_rc = signer(hash, hash_size, &rng, &key, &r, &s);
   }
   if (wolf_rc == 0) {
-    wolf_rc = mp_to_unsigned_bin_len(&r, out_signature->bytes,
-                                     H2_PAL_CRYPTO_P256_SIGNATURE_SIZE / 2u);
+    wolf_rc = mp_to_unsigned_bin_len(&r, signature, scalar_size);
   }
   if (wolf_rc == 0) {
-    wolf_rc = mp_to_unsigned_bin_len(
-        &s, out_signature->bytes + H2_PAL_CRYPTO_P256_SIGNATURE_SIZE / 2u,
-        H2_PAL_CRYPTO_P256_SIGNATURE_SIZE / 2u);
+    wolf_rc = mp_to_unsigned_bin_len(&s, signature + scalar_size, scalar_size);
   }
   if (mp_ready) {
     mp_clear(&r);
@@ -822,13 +964,121 @@ static h2_pal_result_t h2_wolfcrypt_p256_sign(
   if (key_ready) {
     wc_ecc_free(&key);
   }
-  h2_wolfcrypt_secure_zero(hash, sizeof(hash));
   if (wolf_rc != 0) {
-    h2_wolfcrypt_secure_zero(out_signature, sizeof(*out_signature));
+    h2_wolfcrypt_secure_zero(signature, 2u * scalar_size);
     return H2_PAL_ERR_IO;
   }
   return H2_PAL_OK;
 }
+
+static h2_pal_result_t h2_wolfcrypt_p256_sign(
+    void* user, const h2_pal_p256_private_key_t* private_key,
+    const uint8_t* message, size_t message_len,
+    h2_pal_p256_signature_t* out_signature) {
+  (void)user;
+  if (out_signature == NULL) return H2_PAL_ERR_INVALID_ARG;
+  memset(out_signature, 0, sizeof(*out_signature));
+  if (private_key == NULL || (message == NULL && message_len != 0u))
+    return H2_PAL_ERR_INVALID_ARG;
+  if (!h2_p256_private_key_valid(private_key)) return H2_PAL_ERR_FORMAT;
+  uint8_t hash[H2_WOLFCRYPT_SHA256_SIZE];
+  int result = h2_wolfcrypt_sha256(message, message_len, hash);
+  if (result == H2_PAL_OK)
+    result = h2_wolfcrypt_ecc_sign(private_key->bytes, 32u, ECC_SECP256R1, hash,
+                                   sizeof(hash), out_signature->bytes,
+                                   wc_ecc_sign_hash_ex);
+  h2_wolfcrypt_secure_zero(hash, sizeof(hash));
+  return result;
+}
+
+#ifdef HAVE_ECC_KOBLITZ
+static h2_pal_result_t h2_wolfcrypt_secp192k1_sign(
+    void* user, const h2_pal_secp192k1_private_key_t* private_key,
+    const uint8_t* message, size_t message_len,
+    h2_pal_secp192k1_signature_t* out_signature) {
+  (void)user;
+  if (out_signature == NULL) return H2_PAL_ERR_INVALID_ARG;
+  memset(out_signature, 0, sizeof(*out_signature));
+  if (private_key == NULL || (message == NULL && message_len != 0u) ||
+      message_len > UINT32_MAX)
+    return H2_PAL_ERR_INVALID_ARG;
+  static const uint8_t order[24] = {
+      0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xfe,
+      0x26, 0xf2, 0xfc, 0x17, 0x0f, 0x69, 0x46, 0x6a, 0x74, 0xde, 0xfd, 0x8d};
+  if (h2_all_zero(private_key->bytes, sizeof(private_key->bytes)) ||
+      memcmp(private_key->bytes, order, sizeof(order)) >= 0)
+    return H2_PAL_ERR_FORMAT;
+  uint8_t digest[20];
+  int result = wc_ShaHash(message, (word32)message_len, digest) == 0
+                   ? H2_PAL_OK
+                   : H2_PAL_ERR_IO;
+  if (result == H2_PAL_OK)
+    result = h2_wolfcrypt_ecc_sign(private_key->bytes, 24u, ECC_SECP192K1,
+                                   digest, sizeof(digest), out_signature->bytes,
+                                   wc_ecc_sign_hash_ex);
+  h2_wolfcrypt_secure_zero(digest, sizeof(digest));
+  return result;
+}
+#endif
+
+#ifdef WOLFSSL_SM2
+static bool h2_wolfcrypt_sm2_scalar_valid(const uint8_t bytes[32],
+                                          bool private_key) {
+  static const uint8_t order[32] = {
+      0xff, 0xff, 0xff, 0xfe, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+      0xff, 0xff, 0xff, 0xff, 0xff, 0x72, 0x03, 0xdf, 0x6b, 0x21, 0xc6,
+      0x05, 0x2b, 0x53, 0xbb, 0xf4, 0x09, 0x39, 0xd5, 0x41, 0x23};
+  return !h2_all_zero(bytes, 32u) && memcmp(bytes, order, sizeof(order)) < 0 &&
+         !(private_key && memcmp(bytes, order, 31u) == 0 && bytes[31] == 0x22u);
+}
+
+static h2_pal_result_t h2_wolfcrypt_sm2_public(
+    void* user, const h2_pal_sm2_private_key_t* private_key,
+    h2_pal_sm2_public_key_t* public_key) {
+  (void)user;
+  if (public_key == NULL) return H2_PAL_ERR_INVALID_ARG;
+  memset(public_key, 0, sizeof(*public_key));
+  if (private_key == NULL) return H2_PAL_ERR_INVALID_ARG;
+  if (!h2_wolfcrypt_sm2_scalar_valid(private_key->bytes, true))
+    return H2_PAL_ERR_FORMAT;
+  ecc_key key;
+  WC_RNG rng;
+  bool key_ready = false, rng_ready = false;
+  int rc = wc_ecc_init(&key);
+  key_ready = rc == 0;
+  if (rc == 0) {
+    rc = wc_InitRng(&rng);
+    rng_ready = rc == 0;
+  }
+  if (rc == 0)
+    rc = wc_ecc_import_private_key_ex(private_key->bytes, 32u, NULL, 0u, &key,
+                                      ECC_SM2P256V1);
+  if (rc == 0) rc = h2_wolfcrypt_ecc_make_public(&key, &rng);
+  word32 length = sizeof(public_key->bytes);
+  if (rc == 0) rc = wc_ecc_export_x963(&key, public_key->bytes, &length);
+  if (rng_ready) (void)wc_FreeRng(&rng);
+  if (key_ready) wc_ecc_free(&key);
+  if (rc != 0 || length != sizeof(public_key->bytes)) {
+    memset(public_key, 0, sizeof(*public_key));
+    return H2_PAL_ERR_IO;
+  }
+  return H2_PAL_OK;
+}
+
+static h2_pal_result_t h2_wolfcrypt_sm2_sign(
+    void* user, const h2_pal_sm2_private_key_t* private_key,
+    const uint8_t digest[32], h2_pal_sm2_signature_t* signature) {
+  (void)user;
+  if (signature == NULL) return H2_PAL_ERR_INVALID_ARG;
+  memset(signature, 0, sizeof(*signature));
+  if (private_key == NULL || digest == NULL) return H2_PAL_ERR_INVALID_ARG;
+  if (!h2_wolfcrypt_sm2_scalar_valid(private_key->bytes, true))
+    return H2_PAL_ERR_FORMAT;
+  return h2_wolfcrypt_ecc_sign(private_key->bytes, 32u, ECC_SM2P256V1, digest,
+                               32u, signature->bytes, wc_ecc_sm2_sign_hash_ex);
+}
+
+#endif
 
 static h2_pal_result_t h2_wolfcrypt_p256_verify(
     void* user, const h2_pal_p256_public_key_t* public_key,
@@ -917,6 +1167,19 @@ static const h2_pal_crypto_vtable_t h2_wolfcrypt_vtable = {
     .p256_public_key_validate = h2_wolfcrypt_p256_public_key_validate,
     .ecdsa_p256_sha256_sign = h2_wolfcrypt_p256_sign,
     .ecdsa_p256_sha256_verify = h2_wolfcrypt_p256_verify,
+    .p256_public_key_uncompress = h2_wolfcrypt_p256_public_key_uncompress,
+    .p256_shared_secret = h2_wolfcrypt_p256_shared_secret,
+    .aes_cbc = h2_wolfcrypt_aes_cbc,
+#ifndef NO_DES3
+    .des_cbc = h2_wolfcrypt_des_cbc,
+#endif
+#ifdef HAVE_ECC_KOBLITZ
+    .ecdsa_secp192k1_sha1_sign = h2_wolfcrypt_secp192k1_sign,
+#endif
+#ifdef WOLFSSL_SM2
+    .sm2_public_key_from_private = h2_wolfcrypt_sm2_public,
+    .sm2_sign_digest = h2_wolfcrypt_sm2_sign,
+#endif
 };
 
 static const h2_pal_crypto_api_t h2_wolfcrypt_api = {

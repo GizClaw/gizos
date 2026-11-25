@@ -291,6 +291,79 @@ static void test_aead(const h2_pal_crypto_api_t* api,
                                  &plain) == H2_PAL_ERR_FORMAT);
 }
 
+static void test_aes_cbc(const h2_pal_crypto_api_t* api) {
+  /* NIST SP 800-38A, F.2: first block for AES-128/192/256 CBC. */
+  static const uint8_t plaintext[16] = {0x6b, 0xc1, 0xbe, 0xe2, 0x2e, 0x40,
+                                        0x9f, 0x96, 0xe9, 0x3d, 0x7e, 0x11,
+                                        0x73, 0x93, 0x17, 0x2a};
+  static const uint8_t keys[3][32] = {
+      {0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6, 0xab, 0xf7, 0x15, 0x88,
+       0x09, 0xcf, 0x4f, 0x3c},
+      {0x8e, 0x73, 0xb0, 0xf7, 0xda, 0x0e, 0x64, 0x52, 0xc8, 0x10, 0xf3, 0x2b,
+       0x80, 0x90, 0x79, 0xe5, 0x62, 0xf8, 0xea, 0xd2, 0x52, 0x2c, 0x6b, 0x7b},
+      {0x60, 0x3d, 0xeb, 0x10, 0x15, 0xca, 0x71, 0xbe, 0x2b, 0x73, 0xae,
+       0xf0, 0x85, 0x7d, 0x77, 0x81, 0x1f, 0x35, 0x2c, 0x07, 0x3b, 0x61,
+       0x08, 0xd7, 0x2d, 0x98, 0x10, 0xa3, 0x09, 0x14, 0xdf, 0xf4}};
+  static const uint8_t ciphertext[3][16] = {
+      {0x76, 0x49, 0xab, 0xac, 0x81, 0x19, 0xb2, 0x46, 0xce, 0xe9, 0x8e, 0x9b,
+       0x12, 0xe9, 0x19, 0x7d},
+      {0x4f, 0x02, 0x1d, 0xb2, 0x43, 0xbc, 0x63, 0x3d, 0x71, 0x78, 0x18, 0x3a,
+       0x9f, 0xa0, 0x71, 0xe8},
+      {0xf5, 0x8c, 0x4c, 0x04, 0xd6, 0xe5, 0xf1, 0xba, 0x77, 0x9e, 0xab, 0xfb,
+       0x5f, 0x7b, 0xfb, 0xd6}};
+  const size_t key_lengths[] = {16u, 24u, 32u};
+  uint8_t iv[16], output[33], blocks[32];
+  for (unsigned i = 0u; i < 16u; ++i) iv[i] = (uint8_t)i;
+  for (unsigned i = 0u; i < 3u; ++i) {
+    memset(output, 0xa5, sizeof(output));
+    h2_pal_crypto_buf_t out = {.data = output, .cap = sizeof(output)};
+    assert(h2_pal_crypto_aes_cbc(api, H2_PAL_CRYPTO_CIPHER_ENCRYPT, keys[i],
+                                 key_lengths[i], iv, plaintext, 16u,
+                                 &out) == 0);
+    assert(out.len == 16u && memcmp(output, ciphertext[i], 16u) == 0 &&
+           output[16] == 0xa5);
+    assert(h2_pal_crypto_aes_cbc(api, H2_PAL_CRYPTO_CIPHER_DECRYPT, keys[i],
+                                 key_lengths[i], iv, output, 16u, &out) == 0);
+    assert(out.len == 16u && memcmp(output, plaintext, 16u) == 0);
+    for (unsigned j = 0u; j < 16u; ++j) assert(iv[j] == j);
+  }
+  memcpy(blocks, plaintext, 16u);
+  memcpy(blocks + 16u, plaintext, 16u);
+  h2_pal_crypto_buf_t out = {.data = output, .cap = sizeof(output)};
+  assert(h2_pal_crypto_aes_cbc(api, H2_PAL_CRYPTO_CIPHER_ENCRYPT, keys[0], 16u,
+                               iv, blocks, 32u, &out) == 0);
+  assert(memcmp(output, ciphertext[0], 16u) == 0);
+  assert(h2_pal_crypto_aes_cbc(api, H2_PAL_CRYPTO_CIPHER_DECRYPT, keys[0], 16u,
+                               iv, output, 32u, &out) == 0);
+  assert(out.len == 32u && memcmp(output, blocks, 32u) == 0);
+  out.data = output + 1u;
+  out.cap = 32u;
+  assert(h2_pal_crypto_aes_cbc(api, H2_PAL_CRYPTO_CIPHER_ENCRYPT, keys[0], 16u,
+                               iv, output, 32u,
+                               &out) == H2_PAL_ERR_INVALID_ARG &&
+         out.len == 0u);
+  out.data = output;
+  out.cap = 15u;
+  output[0] = 0xa5;
+  assert(h2_pal_crypto_aes_cbc(api, H2_PAL_CRYPTO_CIPHER_ENCRYPT, keys[0], 16u,
+                               iv, plaintext, 16u,
+                               &out) == H2_PAL_ERR_NO_SPACE);
+  assert(out.len == 0u && output[0] == 0xa5);
+  out.cap = sizeof(output);
+  assert(h2_pal_crypto_aes_cbc(api, H2_PAL_CRYPTO_CIPHER_ENCRYPT, keys[0], 16u,
+                               iv, plaintext, 15u,
+                               &out) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_pal_crypto_aes_cbc(api, (h2_pal_crypto_cipher_direction_t)42,
+                               keys[0], 16u, iv, plaintext, 16u,
+                               &out) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_pal_crypto_aes_cbc(api, H2_PAL_CRYPTO_CIPHER_ENCRYPT, keys[0], 15u,
+                               iv, plaintext, 16u,
+                               &out) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_pal_crypto_aes_cbc(api, H2_PAL_CRYPTO_CIPHER_ENCRYPT, keys[0], 16u,
+                               iv, NULL, 0u, &out) == 0 &&
+         out.len == 0u);
+}
+
 static void test_aes_ctr(const h2_pal_crypto_api_t* api) {
   static const uint8_t counter[16] = {
       0xf0, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7,
@@ -377,6 +450,42 @@ static void test_compatibility_hashes(const h2_pal_crypto_api_t* api) {
   assert(memcmp(digest, hmac_expected, sizeof(hmac_expected)) == 0);
 }
 
+static void test_p256_ecdh(const h2_pal_crypto_api_t* api) {
+  h2_pal_p256_private_key_t one = {{0}};
+  one.bytes[31] = 1u;
+  h2_pal_p256_keypair_t generator, generated;
+  assert(h2_pal_crypto_p256_keypair_from_private(api, &one, &generator) == 0);
+  uint8_t first[32], second[32];
+  assert(h2_pal_crypto_p256_shared_secret(api, &one, &generator.public_key,
+                                          first) == 0);
+  assert(memcmp(first, generator.public_key.bytes + 1u, 32u) == 0);
+  assert(h2_pal_crypto_p256_keypair_generate(api, &generated) == 0);
+  assert(h2_pal_crypto_p256_shared_secret(api, &one, &generated.public_key,
+                                          first) == 0);
+  assert(h2_pal_crypto_p256_shared_secret(api, &generated.private_key,
+                                          &generator.public_key, second) == 0);
+  assert(memcmp(first, second, 32u) == 0);
+  memset(&one, 0, sizeof(one));
+  memset(first, 0xa5, sizeof(first));
+  assert(h2_pal_crypto_p256_shared_secret(api, &one, &generated.public_key,
+                                          first) == H2_PAL_ERR_FORMAT);
+  assert(memcmp(first, (uint8_t[32]){0}, 32u) == 0);
+  one.bytes[31] = 1u;
+  generated.public_key.bytes[0] = 4u;
+  assert(h2_pal_crypto_p256_shared_secret(api, &one, &generated.public_key,
+                                          first) == H2_PAL_ERR_FORMAT);
+  memset(first, 0xa5, sizeof(first));
+  assert(h2_pal_crypto_p256_shared_secret(NULL, &one, &generator.public_key,
+                                          first) == H2_PAL_ERR_UNSUPPORTED);
+  assert(memcmp(first, (uint8_t[32]){0}, 32u) == 0);
+  assert(h2_pal_crypto_p256_shared_secret(api, NULL, &generator.public_key,
+                                          first) == H2_PAL_ERR_INVALID_ARG);
+  assert(api->vtable->p256_shared_secret(api->user, &one, NULL, first) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(api->vtable->p256_shared_secret(api->user, &one, &generator.public_key,
+                                         NULL) == H2_PAL_ERR_INVALID_ARG);
+}
+
 int main(void) {
   static const uint8_t aes128_empty_tag[16] = {
       0x58, 0xe2, 0xfc, 0xce, 0xfa, 0x7e, 0x30, 0x61,
@@ -434,6 +543,7 @@ int main(void) {
                                 random, 32u, random, 12u, random,
                                 (size_t)INT_MAX + 1u, NULL, 0u,
                                 &oversized_output) == H2_PAL_ERR_INVALID_ARG);
+  test_p256_ecdh(api);
   test_direct_vtable_null_arguments(api);
   test_x25519(api);
   test_hkdf(api);
@@ -442,6 +552,7 @@ int main(void) {
   test_aead(api, H2_PAL_CRYPTO_AEAD_AES_128_GCM, 16u);
   test_aead(api, H2_PAL_CRYPTO_AEAD_AES_256_GCM, 32u);
   test_aes_ctr(api);
+  test_aes_cbc(api);
   test_compatibility_hashes(api);
   test_aes_empty_kat(api, H2_PAL_CRYPTO_AEAD_AES_128_GCM, 16u,
                      aes128_empty_tag);
@@ -477,6 +588,23 @@ int main(void) {
                                                  &p256) == H2_PAL_OK);
   assert(memcmp(p256.public_key.bytes, p256_generator_compressed,
                 sizeof(p256_generator_compressed)) == 0);
+  uint8_t uncompressed[H2_PAL_CRYPTO_P256_UNCOMPRESSED_PUBLIC_KEY_SIZE];
+  static const uint8_t generator_y[32] = {
+      0x4f, 0xe3, 0x42, 0xe2, 0xfe, 0x1a, 0x7f, 0x9b, 0x8e, 0xe7, 0xeb,
+      0x4a, 0x7c, 0x0f, 0x9e, 0x16, 0x2b, 0xce, 0x33, 0x57, 0x6b, 0x31,
+      0x5e, 0xce, 0xcb, 0xb6, 0x40, 0x68, 0x37, 0xbf, 0x51, 0xf5,
+  };
+  assert(h2_pal_crypto_p256_public_key_uncompress(api, &p256.public_key,
+                                                  uncompressed) == H2_PAL_OK);
+  assert(uncompressed[0] == 0x04u);
+  assert(memcmp(uncompressed + 1u, p256_generator_compressed + 1u, 32u) == 0);
+  assert(memcmp(uncompressed + 33u, generator_y, 32u) == 0);
+  assert(h2_pal_crypto_p256_public_key_uncompress(
+             NULL, &p256.public_key, uncompressed) == H2_PAL_ERR_UNSUPPORTED);
+  assert(h2_pal_crypto_p256_public_key_uncompress(api, NULL, uncompressed) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(h2_pal_crypto_p256_public_key_uncompress(
+             api, &p256.public_key, NULL) == H2_PAL_ERR_INVALID_ARG);
   memcpy(signature.bytes, p256_signature_kat, sizeof(p256_signature_kat));
   assert(h2_pal_crypto_ecdsa_p256_sha256_verify(api, &p256.public_key, message,
                                                 sizeof(message),
@@ -526,6 +654,11 @@ int main(void) {
   invalid_public.bytes[0] = 0x04u;
   assert(h2_pal_crypto_p256_public_key_validate(api, &invalid_public) ==
          H2_PAL_ERR_FORMAT);
+  memset(uncompressed, 0xa5, sizeof(uncompressed));
+  assert(h2_pal_crypto_p256_public_key_uncompress(
+             api, &invalid_public, uncompressed) == H2_PAL_ERR_FORMAT);
+  assert(memcmp(uncompressed, (uint8_t[sizeof(uncompressed)]){0},
+                sizeof(uncompressed)) == 0);
   memset(&invalid_public, 0xff, sizeof(invalid_public));
   invalid_public.bytes[0] = 0x02u;
   assert(h2_pal_crypto_p256_public_key_validate(api, &invalid_public) ==

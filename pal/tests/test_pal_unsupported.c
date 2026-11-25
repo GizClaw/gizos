@@ -318,10 +318,19 @@ int main(void) {
   assert(crypto->vtable->x25519_public_key_from_private != NULL);
   assert(crypto->vtable->x25519_shared_secret != NULL);
   assert(crypto->vtable->aes_ctr_xor != NULL);
+  assert(crypto->vtable->aes_cbc != NULL);
+  uint8_t aes_bytes[16] = {0};
+  h2_pal_crypto_buf_t aes_out = {.data = aes_bytes, .cap = 16u, .len = 99u};
+  assert(h2_pal_crypto_aes_cbc(crypto, H2_PAL_CRYPTO_CIPHER_DECRYPT, aes_bytes,
+                               16u, aes_bytes, aes_bytes, 16u,
+                               &aes_out) == H2_PAL_ERR_UNSUPPORTED);
+  assert(aes_out.len == 0u);
+
   assert(crypto->vtable->md5 != NULL);
   assert(crypto->vtable->hmac_sha1 != NULL);
   assert(crypto->vtable->p256_keypair_from_private != NULL);
   assert(crypto->vtable->p256_keypair_generate != NULL);
+  assert(crypto->vtable->p256_shared_secret != NULL);
   assert(crypto->vtable->p256_public_key_validate != NULL);
   assert(crypto->vtable->ecdsa_p256_sha256_sign != NULL);
   assert(crypto->vtable->ecdsa_p256_sha256_verify != NULL);
@@ -329,6 +338,12 @@ int main(void) {
   h2_pal_p256_public_key_t p256_public = {0};
   h2_pal_p256_keypair_t p256_keypair = {0};
   h2_pal_p256_signature_t p256_signature = {0};
+  uint8_t p256_secret[32];
+  memset(p256_secret, 0xa5, sizeof(p256_secret));
+  assert(h2_pal_crypto_p256_shared_secret(crypto, &p256_private, &p256_public,
+                                          p256_secret) ==
+         H2_PAL_ERR_UNSUPPORTED);
+  assert(memcmp(p256_secret, (uint8_t[32]){0}, 32u) == 0);
   memset(&p256_keypair, 0xa5, sizeof(p256_keypair));
   assert(h2_pal_crypto_p256_keypair_from_private(
              crypto, &p256_private, &p256_keypair) == H2_PAL_ERR_UNSUPPORTED);

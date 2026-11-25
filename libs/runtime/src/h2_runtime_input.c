@@ -1693,6 +1693,7 @@ static void input_nfc_task_entry(void* ctx) {
       };
       h2_pal_result_t rc = h2_pal_nfc_scan_nfc_reader(
           runtime->nfc, mapping->periph_id, &result.scan);
+      if (rc == H2_PAL_ERR_BUSY) continue;
       if (rc != H2_PAL_OK) {
         memset(&result.scan, 0, sizeof(result.scan));
         result.scan.stage = H2_PAL_NFC_STAGE_ERROR;

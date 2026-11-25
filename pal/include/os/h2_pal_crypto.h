@@ -14,11 +14,18 @@ extern "C" {
 #define H2_PAL_CRYPTO_AEAD_NONCE_SIZE 12u
 #define H2_PAL_CRYPTO_AEAD_TAG_SIZE 16u
 #define H2_PAL_CRYPTO_AES_BLOCK_SIZE 16u
+#define H2_PAL_CRYPTO_DES_BLOCK_SIZE 8u
 #define H2_PAL_CRYPTO_MD5_SIZE 16u
 #define H2_PAL_CRYPTO_SHA1_SIZE 20u
 #define H2_PAL_CRYPTO_P256_PRIVATE_KEY_SIZE 32u
 #define H2_PAL_CRYPTO_P256_PUBLIC_KEY_SIZE 33u
+#define H2_PAL_CRYPTO_P256_UNCOMPRESSED_PUBLIC_KEY_SIZE 65u
 #define H2_PAL_CRYPTO_P256_SIGNATURE_SIZE 64u
+#define H2_PAL_CRYPTO_SECP192K1_PRIVATE_KEY_SIZE 24u
+#define H2_PAL_CRYPTO_SECP192K1_SIGNATURE_SIZE 48u
+#define H2_PAL_CRYPTO_SM2_PRIVATE_KEY_SIZE 32u
+#define H2_PAL_CRYPTO_SM2_PUBLIC_KEY_SIZE 65u
+#define H2_PAL_CRYPTO_SM2_SIGNATURE_SIZE 64u
 
 /** Authenticated-encryption algorithms exposed by Crypto PAL. */
 typedef enum h2_pal_crypto_aead_algorithm {
@@ -26,6 +33,11 @@ typedef enum h2_pal_crypto_aead_algorithm {
   H2_PAL_CRYPTO_AEAD_AES_256_GCM = 2,
   H2_PAL_CRYPTO_AEAD_CHACHA20_POLY1305 = 3,
 } h2_pal_crypto_aead_algorithm_t;
+
+typedef enum h2_pal_crypto_cipher_direction {
+  H2_PAL_CRYPTO_CIPHER_ENCRYPT = 0,
+  H2_PAL_CRYPTO_CIPHER_DECRYPT = 1,
+} h2_pal_crypto_cipher_direction_t;
 
 /** RFC 7748 X25519 private scalar bytes in little-endian wire form. */
 typedef struct h2_pal_x25519_private_key {
@@ -68,6 +80,31 @@ typedef struct h2_pal_p256_keypair {
 typedef struct h2_pal_p256_signature {
   uint8_t bytes[H2_PAL_CRYPTO_P256_SIGNATURE_SIZE];
 } h2_pal_p256_signature_t;
+
+/** Legacy secp192k1 private scalar, unsigned big-endian in [1, n - 1]. */
+typedef struct h2_pal_secp192k1_private_key {
+  uint8_t bytes[H2_PAL_CRYPTO_SECP192K1_PRIVATE_KEY_SIZE];
+} h2_pal_secp192k1_private_key_t;
+
+/** Legacy secp192k1 ECDSA signature, fixed-width big-endian r || s. */
+typedef struct h2_pal_secp192k1_signature {
+  uint8_t bytes[H2_PAL_CRYPTO_SECP192K1_SIGNATURE_SIZE];
+} h2_pal_secp192k1_signature_t;
+
+/** SM2 curve private scalar, unsigned big-endian in [1, n - 2]. */
+typedef struct h2_pal_sm2_private_key {
+  uint8_t bytes[H2_PAL_CRYPTO_SM2_PRIVATE_KEY_SIZE];
+} h2_pal_sm2_private_key_t;
+
+/** Uncompressed SEC1 SM2 curve public point, prefix 0x04 followed by x,y. */
+typedef struct h2_pal_sm2_public_key {
+  uint8_t bytes[H2_PAL_CRYPTO_SM2_PUBLIC_KEY_SIZE];
+} h2_pal_sm2_public_key_t;
+
+/** Raw SM2 signature, fixed-width big-endian r || s. */
+typedef struct h2_pal_sm2_signature {
+  uint8_t bytes[H2_PAL_CRYPTO_SM2_SIGNATURE_SIZE];
+} h2_pal_sm2_signature_t;
 
 /** Caller-owned variable-length output storage. */
 typedef struct h2_pal_crypto_buf {
@@ -129,6 +166,33 @@ typedef struct h2_pal_crypto_vtable {
       void* user, const h2_pal_p256_public_key_t* public_key,
       const uint8_t* message, size_t message_len,
       const h2_pal_p256_signature_t* signature);
+  h2_pal_result_t (*p256_public_key_uncompress)(
+      void* user, const h2_pal_p256_public_key_t* public_key,
+      uint8_t out[H2_PAL_CRYPTO_P256_UNCOMPRESSED_PUBLIC_KEY_SIZE]);
+  h2_pal_result_t (*p256_shared_secret)(
+      void* user, const h2_pal_p256_private_key_t* private_key,
+      const h2_pal_p256_public_key_t* public_key, uint8_t out[32]);
+  h2_pal_result_t (*aes_cbc)(void* user,
+                             h2_pal_crypto_cipher_direction_t direction,
+                             const uint8_t* key, size_t key_len,
+                             const uint8_t iv[H2_PAL_CRYPTO_AES_BLOCK_SIZE],
+                             const uint8_t* input, size_t input_len,
+                             h2_pal_crypto_buf_t* out);
+  h2_pal_result_t (*ecdsa_secp192k1_sha1_sign)(
+      void* user, const h2_pal_secp192k1_private_key_t* private_key,
+      const uint8_t* message, size_t message_len,
+      h2_pal_secp192k1_signature_t* out_signature);
+  h2_pal_result_t (*sm2_public_key_from_private)(
+      void* user, const h2_pal_sm2_private_key_t* private_key,
+      h2_pal_sm2_public_key_t* public_key);
+  h2_pal_result_t (*sm2_sign_digest)(
+      void* user, const h2_pal_sm2_private_key_t* private_key,
+      const uint8_t digest[32], h2_pal_sm2_signature_t* signature);
+  h2_pal_result_t (*des_cbc)(void* user,
+                             h2_pal_crypto_cipher_direction_t direction,
+                             const uint8_t* key, size_t key_len,
+                             const uint8_t iv[8], const uint8_t* input,
+                             size_t input_len, h2_pal_crypto_buf_t* output);
 } h2_pal_crypto_vtable_t;
 
 typedef struct h2_pal_crypto_api {
@@ -261,6 +325,32 @@ static inline h2_pal_result_t h2_pal_crypto_aes_ctr_xor(
                                   input, input_len, out);
 }
 
+/** AES-CBC with no padding. key_len is 16, 24 or 32; input_len is a
+ * multiple of 16. The immutable IV is not updated. out is caller-owned and
+ * must have capacity for input_len; exact in-place operation is supported,
+ * partial overlap is invalid. len is zero on failure and input_len on success.
+ * Padding and its validation belong to the calling protocol. No output
+ * allocation or implicit authentication is performed. */
+static inline h2_pal_result_t h2_pal_crypto_aes_cbc(
+    const h2_pal_crypto_api_t* api, h2_pal_crypto_cipher_direction_t direction,
+    const uint8_t* key, size_t key_len,
+    const uint8_t iv[H2_PAL_CRYPTO_AES_BLOCK_SIZE], const uint8_t* input,
+    size_t input_len, h2_pal_crypto_buf_t* out) {
+  if (out == NULL) return H2_PAL_ERR_INVALID_ARG;
+  out->len = 0u;
+  if ((direction != H2_PAL_CRYPTO_CIPHER_ENCRYPT &&
+       direction != H2_PAL_CRYPTO_CIPHER_DECRYPT) ||
+      key == NULL || iv == NULL ||
+      (key_len != 16u && key_len != 24u && key_len != 32u) ||
+      (input_len != 0u && input == NULL) || input_len % 16u != 0u ||
+      (out->data == NULL && out->cap != 0u))
+    return H2_PAL_ERR_INVALID_ARG;
+  if (api == NULL || api->vtable == NULL || api->vtable->aes_cbc == NULL)
+    return H2_PAL_ERR_UNSUPPORTED;
+  return api->vtable->aes_cbc(api->user, direction, key, key_len, iv, input,
+                              input_len, out);
+}
+
 static inline h2_pal_result_t h2_pal_crypto_md5(
     const h2_pal_crypto_api_t* api, const uint8_t* input, size_t input_len,
     uint8_t out_digest[H2_PAL_CRYPTO_MD5_SIZE]) {
@@ -328,6 +418,43 @@ static inline h2_pal_result_t h2_pal_crypto_p256_public_key_validate(
   return api->vtable->p256_public_key_validate(api->user, public_key);
 }
 
+/** Validate a compressed P-256 point and export SEC1 0x04 || X || Y, with
+ * 32-byte big-endian coordinates. Output is valid only on success. Borrowed
+ * inputs and caller-owned output must not overlap. This synchronous operation
+ * performs no key generation; absent capability returns UNSUPPORTED. */
+static inline h2_pal_result_t h2_pal_crypto_p256_public_key_uncompress(
+    const h2_pal_crypto_api_t* api, const h2_pal_p256_public_key_t* public_key,
+    uint8_t out[H2_PAL_CRYPTO_P256_UNCOMPRESSED_PUBLIC_KEY_SIZE]) {
+  if (public_key == NULL || out == NULL) return H2_PAL_ERR_INVALID_ARG;
+  if (api == NULL || api->vtable == NULL ||
+      api->vtable->p256_public_key_uncompress == NULL)
+    return H2_PAL_ERR_UNSUPPORTED;
+  return api->vtable->p256_public_key_uncompress(api->user, public_key, out);
+}
+
+/** Raw P-256 ECDH: the 32-byte big-endian X coordinate, without a KDF.
+ * Synchronous; borrowed inputs and caller-owned output must not overlap.
+ * Providers validate scalar range and the remote point. Failure (including
+ * unavailable capability) clears all 32 output bytes; NULL out is INVALID_ARG.
+ * Callers must wipe successful secret bytes after use. */
+static inline h2_pal_result_t h2_pal_crypto_p256_shared_secret(
+    const h2_pal_crypto_api_t* api,
+    const h2_pal_p256_private_key_t* private_key,
+    const h2_pal_p256_public_key_t* public_key, uint8_t out[32]) {
+  if (out == NULL) return H2_PAL_ERR_INVALID_ARG;
+  volatile uint8_t* bytes = out;
+  for (size_t i = 0u; i < 32u; ++i) bytes[i] = 0u;
+  if (private_key == NULL || public_key == NULL) return H2_PAL_ERR_INVALID_ARG;
+  if (api == NULL || api->vtable == NULL ||
+      api->vtable->p256_shared_secret == NULL)
+    return H2_PAL_ERR_UNSUPPORTED;
+  h2_pal_result_t rc =
+      api->vtable->p256_shared_secret(api->user, private_key, public_key, out);
+  if (rc != H2_PAL_OK)
+    for (size_t i = 0u; i < 32u; ++i) bytes[i] = 0u;
+  return rc;
+}
+
 static inline h2_pal_result_t h2_pal_crypto_ecdsa_p256_sha256_sign(
     const h2_pal_crypto_api_t* api,
     const h2_pal_p256_private_key_t* private_key, const uint8_t* message,
@@ -358,6 +485,99 @@ static inline h2_pal_result_t h2_pal_crypto_ecdsa_p256_sha256_verify(
   }
   return api->vtable->ecdsa_p256_sha256_verify(api->user, public_key, message,
                                                message_len, signature);
+}
+
+/** Synchronously sign SHA-1(message) using the legacy secp192k1 curve.
+ * Use only for existing wire protocols. The provider owns nonce generation
+ * and validates the scalar. All inputs are borrowed for this call; output
+ * is zeroed on every failure. Missing operations return UNSUPPORTED. */
+static inline h2_pal_result_t h2_pal_crypto_ecdsa_secp192k1_sha1_sign(
+    const h2_pal_crypto_api_t* api,
+    const h2_pal_secp192k1_private_key_t* private_key, const uint8_t* message,
+    size_t message_len, h2_pal_secp192k1_signature_t* out_signature) {
+  if (out_signature == NULL) return H2_PAL_ERR_INVALID_ARG;
+  for (size_t index = 0u; index < sizeof(out_signature->bytes); ++index)
+    out_signature->bytes[index] = 0u;
+  if (private_key == NULL || (message == NULL && message_len != 0u))
+    return H2_PAL_ERR_INVALID_ARG;
+  if (api == NULL || api->vtable == NULL ||
+      api->vtable->ecdsa_secp192k1_sha1_sign == NULL)
+    return H2_PAL_ERR_UNSUPPORTED;
+  h2_pal_result_t result = api->vtable->ecdsa_secp192k1_sha1_sign(
+      api->user, private_key, message, message_len, out_signature);
+  if (result != H2_PAL_OK)
+    for (size_t index = 0u; index < sizeof(out_signature->bytes); ++index)
+      out_signature->bytes[index] = 0u;
+  return result;
+}
+
+/** Derive the public point on the standard SM2 curve. Synchronous and
+ * borrowed inputs; the provider validates the private scalar. Output is
+ * zeroed on failure, including a missing optional operation. */
+static inline h2_pal_result_t h2_pal_crypto_sm2_public_key_from_private(
+    const h2_pal_crypto_api_t* api, const h2_pal_sm2_private_key_t* private_key,
+    h2_pal_sm2_public_key_t* public_key) {
+  if (public_key == NULL) return H2_PAL_ERR_INVALID_ARG;
+  for (size_t index = 0u; index < sizeof(public_key->bytes); ++index)
+    public_key->bytes[index] = 0u;
+  if (private_key == NULL) return H2_PAL_ERR_INVALID_ARG;
+  if (api == NULL || api->vtable == NULL ||
+      api->vtable->sm2_public_key_from_private == NULL)
+    return H2_PAL_ERR_UNSUPPORTED;
+  h2_pal_result_t result = api->vtable->sm2_public_key_from_private(
+      api->user, private_key, public_key);
+  if (result != H2_PAL_OK)
+    for (size_t index = 0u; index < sizeof(public_key->bytes); ++index)
+      public_key->bytes[index] = 0u;
+  return result;
+}
+
+/** Sign a caller-computed 32-byte SM2 digest. The caller owns identity-bound
+ * digest composition; the provider owns scalar validation and fresh nonces.
+ * Inputs are borrowed through this synchronous call. Output is zeroed on
+ * every failure; unavailable operations return UNSUPPORTED. */
+static inline h2_pal_result_t h2_pal_crypto_sm2_sign_digest(
+    const h2_pal_crypto_api_t* api, const h2_pal_sm2_private_key_t* private_key,
+    const uint8_t digest[32], h2_pal_sm2_signature_t* signature) {
+  if (signature == NULL) return H2_PAL_ERR_INVALID_ARG;
+  for (size_t index = 0u; index < sizeof(signature->bytes); ++index)
+    signature->bytes[index] = 0u;
+  if (private_key == NULL || digest == NULL) return H2_PAL_ERR_INVALID_ARG;
+  if (api == NULL || api->vtable == NULL ||
+      api->vtable->sm2_sign_digest == NULL)
+    return H2_PAL_ERR_UNSUPPORTED;
+  h2_pal_result_t result =
+      api->vtable->sm2_sign_digest(api->user, private_key, digest, signature);
+  if (result != H2_PAL_OK)
+    for (size_t index = 0u; index < sizeof(signature->bytes); ++index)
+      signature->bytes[index] = 0u;
+  return result;
+}
+
+/** Synchronous legacy DES or triple-DES CBC without padding. Keys contain
+ * 8 (DES), 16 (EDE2) or 24 (EDE3) bytes. Input length is a multiple of 8.
+ * Inputs, IV and storage are borrowed through the call; IV is unchanged.
+ * Exact in-place input/output is allowed; other overlap is invalid.
+ * Output length resets to zero on failure; short capacity preserves bytes.
+ * Once processing starts, provider failure wipes the possible output range.
+ */
+static inline h2_pal_result_t h2_pal_crypto_des_cbc(
+    const h2_pal_crypto_api_t* api, h2_pal_crypto_cipher_direction_t direction,
+    const uint8_t* key, size_t key_len, const uint8_t iv[8],
+    const uint8_t* input, size_t input_len, h2_pal_crypto_buf_t* output) {
+  if (output == NULL) return H2_PAL_ERR_INVALID_ARG;
+  output->len = 0u;
+  if (key == NULL || iv == NULL ||
+      (key_len != 8u && key_len != 16u && key_len != 24u) ||
+      (direction != H2_PAL_CRYPTO_CIPHER_ENCRYPT &&
+       direction != H2_PAL_CRYPTO_CIPHER_DECRYPT) ||
+      (input == NULL && input_len != 0u) || input_len % 8u != 0u ||
+      (output->data == NULL && output->cap != 0u))
+    return H2_PAL_ERR_INVALID_ARG;
+  if (api == NULL || api->vtable == NULL || api->vtable->des_cbc == NULL)
+    return H2_PAL_ERR_UNSUPPORTED;
+  return api->vtable->des_cbc(api->user, direction, key, key_len, iv, input,
+                              input_len, output);
 }
 
 #ifdef __cplusplus

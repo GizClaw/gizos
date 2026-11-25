@@ -2,6 +2,21 @@
 #include <stddef.h>
 #include <string.h>
 
+static h2_pal_result_t unsupported_crypto_aes_cbc(
+    void* user, h2_pal_crypto_cipher_direction_t direction, const uint8_t* key,
+    size_t key_len, const uint8_t iv[16], const uint8_t* input,
+    size_t input_len, h2_pal_crypto_buf_t* out) {
+  (void)user;
+  (void)direction;
+  (void)key;
+  (void)key_len;
+  (void)iv;
+  (void)input;
+  (void)input_len;
+  if (out != NULL) out->len = 0u;
+  return H2_PAL_ERR_UNSUPPORTED;
+}
+
 static h2_pal_result_t unsupported_crypto_random(void* p0, uint8_t* p1,
                                                  size_t p2) {
   (void)p0;
@@ -183,8 +198,20 @@ static h2_pal_result_t unsupported_crypto_ecdsa_p256_sha256_verify(
   return H2_PAL_ERR_UNSUPPORTED;
 }
 
+static h2_pal_result_t unsupported_crypto_p256_shared_secret(
+    void* user, const h2_pal_p256_private_key_t* private_key,
+    const h2_pal_p256_public_key_t* public_key, uint8_t out[32]) {
+  (void)user;
+  (void)private_key;
+  (void)public_key;
+  if (out != NULL) memset(out, 0, 32u);
+  return H2_PAL_ERR_UNSUPPORTED;
+}
+
 static const h2_pal_crypto_vtable_t unsupported_crypto_vtable = {
     .random = unsupported_crypto_random,
+    .p256_shared_secret = unsupported_crypto_p256_shared_secret,
+    .aes_cbc = unsupported_crypto_aes_cbc,
     .x25519_keypair_generate = unsupported_crypto_x25519_keypair_generate,
     .x25519_public_key_from_private =
         unsupported_crypto_x25519_public_key_from_private,

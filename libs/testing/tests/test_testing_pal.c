@@ -307,6 +307,17 @@ static void test_pref(const h2_pal_mem_api_t* mem) {
   OK(r->get_blob(r, mem, "identity", &data, &size));
   assert(size == sizeof(bytes) && !memcmp(data, bytes, size));
   h2_pal_mem_free(mem, data);
+  uint8_t large[H2_APP_TEST_PREF_VALUE_MAX + 1u];
+  for (size_t index = 0u; index < sizeof(large); ++index)
+    large[index] = (uint8_t)(index * 17u);
+  OK(w->set_blob(w, "large", large, H2_APP_TEST_PREF_VALUE_MAX));
+  OK(w->commit(w));
+  assert(w->set_blob(w, "large", large, sizeof(large)) == H2_PAL_ERR_NO_SPACE);
+  data = NULL;
+  size = 0u;
+  OK(r->get_blob(r, mem, "large", &data, &size));
+  assert(size == H2_APP_TEST_PREF_VALUE_MAX && !memcmp(data, large, size));
+  h2_pal_mem_free(mem, data);
   int32_t offset = 0;
   OK(r->get_i32(r, "offset", &offset));
   assert(offset == -19);

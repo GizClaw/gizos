@@ -161,6 +161,8 @@ h2_pal_result_t h2_esp_nfc_fm175xx_spi_init(
   adapter->spi_config = *config;
   adapter->config.id = config->id;
   adapter->config.read_capacity = config->read_capacity;
+  adapter->config.time = config->time;
+  adapter->config.log = config->log;
   adapter->transport_kind = H2_ESP_NFC_FM175XX_TRANSPORT_SPI;
   adapter->api.user = adapter;
   adapter->api.vtable = &h2_esp_nfc_fm175xx_nfc_vtable;
