@@ -40,6 +40,22 @@ py_test(
 )
 
 py_library(
+    name = "internal_delivery",
+    srcs = ["internal_delivery.py"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [":firmware_artifacts"],
+)
+
+py_test(
+    name = "internal_delivery_test",
+    srcs = ["tests/test_internal_delivery.py"],
+    legacy_create_init = 0,
+    main = "tests/test_internal_delivery.py",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [":internal_delivery"],
+)
+
+py_library(
     name = "firmware_output",
     srcs = ["firmware_output.py"],
     target_compatible_with = HOST_TOOL_COMPATIBILITY,

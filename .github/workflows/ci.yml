@@ -12,6 +12,16 @@ on:
         description: Exact commit to build; defaults to the selected ref
         required: false
         type: string
+      jieli_delivery:
+        description: Build only the Fruit Slice AC791N package and deliver privately (not CI eligibility)
+        required: false
+        type: boolean
+        default: false
+      jieli_version:
+        description: Expected managed App version for private delivery
+        required: false
+        type: string
+        default: 0.2.0-ac791n-devkit.1
 
 permissions:
   actions: read
@@ -33,6 +43,7 @@ env:
 
 jobs:
   format:
+    if: ${{ !inputs.jieli_delivery }}
     name: format
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -99,6 +110,7 @@ jobs:
           done
 
   host:
+    if: ${{ !inputs.jieli_delivery }}
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: ${{ matrix.timeout }}
@@ -293,6 +305,7 @@ jobs:
           key: ${{ steps.bazel-repository-cache.outputs.cache-primary-key }}
 
   extended-platforms:
+    if: ${{ !inputs.jieli_delivery }}
     name: ${{ matrix.name }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: ${{ matrix.timeout }}
@@ -550,8 +563,8 @@ jobs:
 
   esp-compatible-graph:
     if: >-
-      github.event_name != 'pull_request' ||
-      github.event.pull_request.head.repo.full_name == github.repository
+      !inputs.jieli_delivery && (github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository)
     name: ${{ matrix.name }}
     needs: private-dependencies
     runs-on: ${{ matrix.runner }}
@@ -826,8 +839,8 @@ jobs:
 
   bk7258-compatible-graph:
     if: >-
-      github.event_name != 'pull_request' ||
-      github.event.pull_request.head.repo.full_name == github.repository
+      !inputs.jieli_delivery && (github.event_name != 'pull_request' ||
+      github.event.pull_request.head.repo.full_name == github.repository)
     name: BK7258 / Build
     needs: private-dependencies
     runs-on: ${{ vars.FIRMWARE_LINUX_8CORE_RUNNER }}
@@ -1027,20 +1040,26 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - name: JieLi AC695N / Build
-            config: ac695n
-            repository: h2vivi/AC695N_Soundbox_SDK
-            sdk_commit: 76b95777a083818dd9a3a492d9c70ad81baa6b8a
-          - name: JieLi AC707N / Build
-            config: ac707n
-            repository: h2vivi/e_badge_707_sdk_200
-            sdk_commit: d0167685d032d745d88fe50233302edd46941622
-          - name: JieLi AC791N / Build
-            config: ac791n
-            repository: h2vivi/fw-AC791N_SDK
-            sdk_commit: eb04f1966cf2b7cbb72cbb54db906bcb293b5a4a
+        include: ${{ fromJSON(inputs.jieli_delivery && '[{"name":"JieLi AC791N / Private delivery","config":"ac791n","repository":"h2vivi/fw-AC791N_SDK","sdk_commit":"eb04f1966cf2b7cbb72cbb54db906bcb293b5a4a"}]' || '[{"name":"JieLi AC695N / Build","config":"ac695n","repository":"h2vivi/AC695N_Soundbox_SDK","sdk_commit":"76b95777a083818dd9a3a492d9c70ad81baa6b8a"},{"name":"JieLi AC707N / Build","config":"ac707n","repository":"h2vivi/e_badge_707_sdk_200","sdk_commit":"d0167685d032d745d88fe50233302edd46941622"},{"name":"JieLi AC791N / Build","config":"ac791n","repository":"h2vivi/fw-AC791N_SDK","sdk_commit":"eb04f1966cf2b7cbb72cbb54db906bcb293b5a4a"}]') }}
     steps:
+      - name: Check out delivery tooling
+        if: inputs.jieli_delivery
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: delivery-tools
+          sparse-checkout: tools/bazel/h2loader/internal_delivery.py
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Preserve trusted delivery tooling and validate source selector
+        if: inputs.jieli_delivery
+        env:
+          SOURCE_SHA: ${{ inputs.checkout_sha }}
+        run: |
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          cp delivery-tools/tools/bazel/h2loader/internal_delivery.py "$RUNNER_TEMP/internal_delivery.py"
+
       - name: Check out GizOS
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -1259,8 +1278,48 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Build legacy-chip compatible graph
+        if: ${{ !inputs.jieli_delivery }}
         shell: bash
         run: make bazel-build BAZEL_CONFIG=${{ matrix.config }}
+
+      - name: Build and materialize Fruit Slice package
+        if: inputs.jieli_delivery
+        env:
+          SOURCE_SHA: ${{ inputs.checkout_sha }}
+        shell: bash
+        run: |
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          git diff --quiet HEAD
+          python3 - <<'PY'
+          import os, subprocess
+          from scripts.common.bazel import cache_options, graph_options
+          target = '//projects/fruit_slice/targets/h2_loader_tar_zlib/jieli/jieli_ac791n_devkit:package'
+          options = ['--config=ac791n', '--lockfile_mode=off', *cache_options(), *graph_options()]
+          bazel = os.environ['BAZEL_BIN']
+          subprocess.run([bazel, 'build', *options, '--remote_download_outputs=all', target], check=True)
+          result = subprocess.check_output([bazel, 'cquery', *options, target, '--output=files'], text=True)
+          with open(os.environ['RUNNER_TEMP'] + '/delivery-outputs.txt', 'w') as output:
+              output.write(result)
+          PY
+
+      - name: Authenticate private delivery
+        if: inputs.jieli_delivery
+        id: jieli-delivery-auth
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          project_id: ${{ vars.BAZEL_CACHE_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.BAZEL_CACHE_WRITER_SERVICE_ACCOUNT }}
+          token_format: access_token
+
+      - name: Validate and deliver to private storage
+        if: inputs.jieli_delivery
+        env:
+          SOURCE_SHA: ${{ inputs.checkout_sha }}
+          EXPECTED_VERSION: ${{ inputs.jieli_version }}
+          DELIVERY_TOKEN: ${{ steps.jieli-delivery-auth.outputs.access_token }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: python3 "$RUNNER_TEMP/internal_delivery.py" --outputs "$RUNNER_TEMP/delivery-outputs.txt"
 
       - name: Save AC791N SDK LFS cache seed
         if: >-
@@ -1294,6 +1353,7 @@ jobs:
           key: ${{ steps.bazel-repository-cache.outputs.cache-primary-key }}
 
   windows-compatible-graph:
+    if: ${{ !inputs.jieli_delivery }}
     name: Windows x86_64 / Build + Test
     runs-on: ${{ vars.FIRMWARE_WINDOWS_RUNNER }}
     timeout-minutes: 120
@@ -1409,7 +1469,8 @@ jobs:
           key: ${{ steps.bazel-repository-cache.outputs.cache-primary-key }}
 
   ci-required:
-    if: always()
+    # A manual package delivery is not a complete CI run and cannot grant eligibility.
+    if: ${{ always() && !inputs.jieli_delivery }}
     name: CI required
     timeout-minutes: 5
     needs:
