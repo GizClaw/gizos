@@ -843,8 +843,10 @@ static void run(bool buttons, bool production, bool payer_only, int touch_rc,
   const h2_pal_display_vtable_t dvt = {
       open_display, display_info, draw, present, brightness, close_display};
   h2_pal_display_api_t display = {&f, &dvt};
-  const h2_pal_touch_vtable_t tvt = {touch_open, touch_info, touch_poll,
-                                     touch_close};
+  const h2_pal_touch_vtable_t tvt = {.open = touch_open,
+                                     .get_info = touch_info,
+                                     .poll_event = touch_poll,
+                                     .close = touch_close};
   const h2_pal_touch_api_t touch = {&f, &tvt};
   const h2_pal_ble_vtable_t bvt = {
       .start = host_start, .start_scan = scan_start, .stop_scan = scan_stop};

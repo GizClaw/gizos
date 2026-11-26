@@ -340,27 +340,15 @@ Host Tool and Artifact compatibility are the platform source of truth. `generate
 
 ## Full graph CI and native parallelism
 
-Same-repository pull requests, `main` pushes, and manual runs use the same complete static platform matrix and GCS Writer cache. Pull-request `opened` and `synchronize` events trigger CI directly, so each distinct pull-request head receives one matrix as normal checks; reopening an unchanged head does not rerun it. Ownership approval remains an independent merge gate and never delays or dispatches the build. Linux, macOS, Android, and Windows each run Build followed by Test on one runner so Test reuses the same Bazel server and output base. Android package validation switches the top-level target platform to Linux x86_64, so it creates a second configured graph, but compatible dependency actions still reuse content-addressed results from the preceding Android Build. iOS retains independent parallel Build and Test tasks. All complete Build tasks use minimal remote output downloads; focused validation explicitly materializes any artifact it reads. Target compatibility skips other platforms, Bazel's special `manual` tag keeps hand-run tests out of wildcard target patterns, and content-addressed action keys decide which completed outputs can be reused.
+CI uses the complete compatible platform matrix for same-repository pull requests, `main` pushes, and manual runs. Ownership approval remains an independent merge gate. Linux, macOS, Android, and Windows each run Build followed by Test on one runner so Test reuses the same Bazel server and output base. Android package validation switches the top-level target platform to Linux x86_64 and reuses compatible dependency actions from the preceding Android Build. iOS retains independent parallel Build and Test tasks. Target compatibility skips other platforms, and the `manual` tag keeps hand-run tests out of wildcard target patterns.
 
 ESP32-S3, ESP32-P4, and BK7258 configs automatically select all firmware endpoints for that platform. Each native firmware action declares 4 CPU and 4096 MiB to Bazel and passes a four-job limit to the underlying ESP-IDF or BK build. Bazel therefore schedules one action on a four-core runner and more independent launcher actions as a runner gains CPU and memory. Increasing a single runner size improves firmware throughput without creating one GitHub matrix entry per launcher.
 
-Repository variables select the provisioned organization Larger Runner for each
-execution class:
-
-- `FIRMWARE_LINUX_RUNNER`: 2-core Linux for ESP32-P4 and the CI required aggregator;
-- `FIRMWARE_LINUX_4CORE_RUNNER`: 4-core Linux for Android Build/Test, Test coverage;
-- `FIRMWARE_LINUX_8CORE_RUNNER`: 8-core Linux for Linux Build/Test, ESP32-S3, and BK7258;
-- `FIRMWARE_MACOS_RUNNER`: 5-core macOS 15 arm64 for macOS Build/Test;
-- `FIRMWARE_WINDOWS_RUNNER`: 8-core Windows Server 2025 for Windows Build/Test.
-
-The 4-core and 8-core Linux runner groups must each allow at least three
-concurrent jobs; the macOS and Windows groups each need one. Every variable
-must resolve to a Ready runner before the workflow is pushed. There is no
-standard-runner fallback.
+Linux CI on `main` and Linux Release jobs use `gizclaw-orbstack-amd64`. Its `BAZELRC` selects the persistent disk and repository caches under `/ci-cache/bazel`. Direct pull-request runs use GitHub-hosted runners. A caller invoking the trusted reusable CI workflow can opt same-repository pull requests in with `orbstack_pr`. The macOS and Windows jobs retain native platform runners.
 
 These native SDK actions remain unsandboxed and execute only on the current
 runner, while their declared repository inputs and firmware outputs participate
-in the local disk cache and authenticated GCS remote cache. SDK and toolchain
+in the local disk cache. SDK and toolchain
 paths are runtime locators, not stable external identities. ESP-IDF and both BK
 repositories verify SDK commits against action-input version files.
 `native_versions/bk_toolchain_archives.txt` binds each supported host URL to an
@@ -374,10 +362,9 @@ configuration, archives, and outputs retain normal Bazel cache semantics.
 ESP32-S3, ESP32-P4, and BK7258 native actions can use a second cache
 inside the SDK build. `H2_NATIVE_CCACHE_RUNTIME_ROOT` points a repository rule
 at one runtime directory containing `runtime.json`, the ccache/helper binaries,
-the cache directory, and an optional token file. CI and Release pin the
-ccache and HTTPS storage-helper downloads in
-`native_versions/native_ccache_tools.txt`; they do not use a runner package or
-GitHub Actions cache snapshot for compiler objects.
+the cache directory, and an optional token file. CI and Release verify the
+ccache download against `native_versions/native_ccache_tools.txt` and place
+the runtime under the runner's local `CCACHE_DIR` when available.
 
 GCS access is optional locally and complete-or-absent in `runtime.json`; none of
 its individual paths or token fields is an action environment variable. The

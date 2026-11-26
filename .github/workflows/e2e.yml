@@ -48,7 +48,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
   group: live-e2e-${{ github.ref }}
@@ -67,7 +66,7 @@ jobs:
       matrix:
         include:
           - name: Linux x86_64
-            runner: ${{ vars.FIRMWARE_LINUX_RUNNER }}
+            runner: gizclaw-orbstack-amd64
             bazel_config: linux_x86_64
             bazel_asset: linux-x86_64
             bazel_sha256: 7668a95db1250f12c40407251e4e203b4ec8bf39bc495d2f485b2d8c99048694
@@ -98,57 +97,8 @@ jobs:
         if: runner.os == 'macOS'
         run: sudo xcode-select --switch /Applications/Xcode_16.4.app/Contents/Developer
 
-      - name: Validate Bazel remote cache variables
-        env:
-          CACHE_PROJECT: ${{ vars.BAZEL_CACHE_PROJECT_ID }}
-          CACHE_URL: ${{ vars.BAZEL_REMOTE_CACHE_URL }}
-          CACHE_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          CACHE_WRITER: ${{ vars.BAZEL_CACHE_WRITER_SERVICE_ACCOUNT }}
-          NATIVE_CACHE_URL: ${{ vars.NATIVE_CCACHE_GCS_BASE_URL }}
-        shell: bash
-        run: |
-          configured=0
-          for value in "$CACHE_PROJECT" "$CACHE_URL" "$CACHE_PROVIDER" "$CACHE_WRITER"; do
-            if [ -n "$value" ]; then configured=$((configured + 1)); fi
-          done
-          if [ "$configured" -eq 0 ]; then
-            echo 'Bazel remote cache is not provisioned; using the job-local disk cache.'
-          elif [ "$configured" -ne 4 ]; then
-            echo 'Bazel remote cache repository variables are incomplete.' >&2
-            exit 1
-          elif [[ ! "$CACHE_URL" =~ ^https://storage\.googleapis\.com/[^/]+/gizos$ ]]; then
-            echo 'BAZEL_REMOTE_CACHE_URL must be https://storage.googleapis.com/<bucket>/gizos.' >&2
-            exit 1
-          fi
-          if [ -n "$NATIVE_CACHE_URL" ]; then
-            if [ "$configured" -ne 4 ]; then
-              echo 'Native ccache GCS requires the Bazel cache WIF variables.' >&2
-              exit 1
-            fi
-            if [[ ! "$NATIVE_CACHE_URL" =~ ^https://storage\.googleapis\.com/[^/]+/ccache$ ]]; then
-              echo 'NATIVE_CCACHE_GCS_BASE_URL must be https://storage.googleapis.com/<bucket>/ccache.' >&2
-              exit 1
-            fi
-            native_bucket=${NATIVE_CACHE_URL#https://storage.googleapis.com/}
-            native_bucket=${native_bucket%/ccache}
-            bazel_bucket=${CACHE_URL#https://storage.googleapis.com/}
-            bazel_bucket=${bazel_bucket%/gizos}
-            if [ "$native_bucket" != "$bazel_bucket" ]; then
-              echo 'Native ccache and Bazel remote cache must use isolated prefixes in the same bucket.' >&2
-              exit 1
-            fi
-          fi
-
-      - name: Authenticate Bazel remote cache
-        if: vars.BAZEL_REMOTE_CACHE_URL != ''
-        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
-        with:
-          project_id: ${{ vars.BAZEL_CACHE_PROJECT_ID }}
-          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.BAZEL_CACHE_WRITER_SERVICE_ACCOUNT }}
-          create_credentials_file: true
-
       - name: Restore Bazel repository cache
+        if: runner.environment == 'github-hosted'
         continue-on-error: true
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
@@ -162,20 +112,15 @@ jobs:
         run: |
           set -euo pipefail
           bazel_path="$RUNNER_TEMP/bazel"
-          curl --fail --location --silent --show-error "https://releases.bazel.build/$BAZEL_VERSION/release/bazel-$BAZEL_VERSION-${{ matrix.bazel_asset }}" --output "$bazel_path"
+          if [[ -x /opt/bazel/bin/bazel ]] && [[ "$(shasum -a 256 /opt/bazel/bin/bazel | awk '{print $1}')" == "${{ matrix.bazel_sha256 }}" ]]; then
+            cp /opt/bazel/bin/bazel "$bazel_path"
+            echo "Using pinned Bazel from the runner image"
+          else
+            curl --fail --location --silent --show-error --retry 3 --connect-timeout 30 "https://releases.bazel.build/$BAZEL_VERSION/release/bazel-$BAZEL_VERSION-${{ matrix.bazel_asset }}" --output "$bazel_path"
+          fi
           test "$(shasum -a 256 "$bazel_path" | awk '{print $1}')" = "${{ matrix.bazel_sha256 }}"
           chmod +x "$bazel_path"
           python3 -I tools/bazel/repositories/prefetch.py
-
-      - name: Configure Bazel remote cache
-        if: vars.BAZEL_REMOTE_CACHE_URL != ''
-        shell: bash
-        run: |
-          {
-            printf 'BAZEL_REMOTE_CACHE_URL=%s\n' '${{ vars.BAZEL_REMOTE_CACHE_URL }}'
-            printf 'BAZEL_REMOTE_CACHE_MODE=write\n'
-            printf 'BAZEL_DISK_CACHE_MODE=\n'
-          } >> "$GITHUB_ENV"
 
       - name: Run selected live E2E
         env:
@@ -208,18 +153,18 @@ jobs:
             pal) ;;
             *) echo 'unsupported live E2E scope' >&2; exit 2 ;;
           esac
-          cache_args=("--disk_cache=$RUNNER_TEMP/bazel-disk-cache")
-          if [ -n "${BAZEL_REMOTE_CACHE_URL:-}" ]; then
-            cache_args+=("--remote_cache=$BAZEL_REMOTE_CACHE_URL" --google_default_credentials --remote_upload_local_results=true)
+          bazel_disk_cache="$RUNNER_TEMP/bazel-disk-cache"
+          if [[ -d /ci-cache/bazel/disk && -w /ci-cache/bazel/disk ]]; then
+            bazel_disk_cache=/ci-cache/bazel/disk
           fi
           run_pal() {
             "$RUNNER_TEMP/bazel" test "--config=$H2_BAZEL_CONFIG" \
-              "${cache_args[@]}" --cache_test_results=no \
+              "--disk_cache=$bazel_disk_cache" --cache_test_results=no \
               //projects/testing/targets/cc_binary/pal-mqtt:public_broker_test
           }
           run_gizclaw_target() {
             "$RUNNER_TEMP/bazel" test "--config=$H2_BAZEL_CONFIG" \
-              "${cache_args[@]}" --cache_test_results=no \
+              "--disk_cache=$bazel_disk_cache" --cache_test_results=no \
               "--//projects/testing/integration/gizclaw:app_config_fixture_profile=$GIZCLAW_FIXTURE_PROFILE" \
               "--//projects/testing/integration/gizclaw:app_config_fixture_key=$GIZCLAW_FIXTURE_KEY" \
               "--//projects/testing/integration/gizclaw:app_config_fixture_value=$GIZCLAW_FIXTURE_VALUE" \
