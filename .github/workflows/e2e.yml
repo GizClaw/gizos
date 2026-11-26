@@ -112,7 +112,12 @@ jobs:
         run: |
           set -euo pipefail
           bazel_path="$RUNNER_TEMP/bazel"
-          curl --fail --location --silent --show-error "https://releases.bazel.build/$BAZEL_VERSION/release/bazel-$BAZEL_VERSION-${{ matrix.bazel_asset }}" --output "$bazel_path"
+          if [[ -x /opt/bazel/bin/bazel ]] && [[ "$(shasum -a 256 /opt/bazel/bin/bazel | awk '{print $1}')" == "${{ matrix.bazel_sha256 }}" ]]; then
+            cp /opt/bazel/bin/bazel "$bazel_path"
+            echo "Using pinned Bazel from the runner image"
+          else
+            curl --fail --location --silent --show-error --retry 3 --connect-timeout 30 "https://releases.bazel.build/$BAZEL_VERSION/release/bazel-$BAZEL_VERSION-${{ matrix.bazel_asset }}" --output "$bazel_path"
+          fi
           test "$(shasum -a 256 "$bazel_path" | awk '{print $1}')" = "${{ matrix.bazel_sha256 }}"
           chmod +x "$bazel_path"
           python3 -I tools/bazel/repositories/prefetch.py

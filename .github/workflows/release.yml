@@ -74,7 +74,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          curl --fail --location --silent --show-error "https://releases.bazel.build/$BAZEL_VERSION/release/bazel-$BAZEL_VERSION-linux-x86_64" --output "$RUNNER_TEMP/bazel"
+          if [[ -x /opt/bazel/bin/bazel ]] && [[ "$(shasum -a 256 /opt/bazel/bin/bazel | awk '{print $1}')" == "$BAZEL_LINUX_X86_64_SHA256" ]]; then
+            cp /opt/bazel/bin/bazel "$RUNNER_TEMP/bazel"
+            echo "Using pinned Bazel from the runner image"
+          else
+            curl --fail --location --silent --show-error --retry 3 --connect-timeout 30 "https://releases.bazel.build/$BAZEL_VERSION/release/bazel-$BAZEL_VERSION-linux-x86_64" --output "$RUNNER_TEMP/bazel"
+          fi
           printf '%s  %s\n' "$BAZEL_LINUX_X86_64_SHA256" "$RUNNER_TEMP/bazel" | sha256sum --check --strict
           chmod +x "$RUNNER_TEMP/bazel"
           python3 -I tools/bazel/repositories/prefetch.py
@@ -167,7 +172,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          curl --fail --location --silent --show-error "https://releases.bazel.build/$BAZEL_VERSION/release/bazel-$BAZEL_VERSION-linux-x86_64" --output "$RUNNER_TEMP/bazel"
+          if [[ -x /opt/bazel/bin/bazel ]] && [[ "$(shasum -a 256 /opt/bazel/bin/bazel | awk '{print $1}')" == "$BAZEL_LINUX_X86_64_SHA256" ]]; then
+            cp /opt/bazel/bin/bazel "$RUNNER_TEMP/bazel"
+            echo "Using pinned Bazel from the runner image"
+          else
+            curl --fail --location --silent --show-error --retry 3 --connect-timeout 30 "https://releases.bazel.build/$BAZEL_VERSION/release/bazel-$BAZEL_VERSION-linux-x86_64" --output "$RUNNER_TEMP/bazel"
+          fi
           printf '%s  %s\n' "$BAZEL_LINUX_X86_64_SHA256" "$RUNNER_TEMP/bazel" | sha256sum --check --strict
           chmod +x "$RUNNER_TEMP/bazel"
           python3 -I tools/bazel/repositories/prefetch.py
@@ -217,7 +227,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          curl --fail --location --silent --show-error "https://releases.bazel.build/$BAZEL_VERSION/release/bazel-$BAZEL_VERSION-linux-x86_64" --output "$RUNNER_TEMP/bazel"
+          if [[ -x /opt/bazel/bin/bazel ]] && [[ "$(shasum -a 256 /opt/bazel/bin/bazel | awk '{print $1}')" == "$BAZEL_LINUX_X86_64_SHA256" ]]; then
+            cp /opt/bazel/bin/bazel "$RUNNER_TEMP/bazel"
+            echo "Using pinned Bazel from the runner image"
+          else
+            curl --fail --location --silent --show-error --retry 3 --connect-timeout 30 "https://releases.bazel.build/$BAZEL_VERSION/release/bazel-$BAZEL_VERSION-linux-x86_64" --output "$RUNNER_TEMP/bazel"
+          fi
           printf '%s  %s\n' "$BAZEL_LINUX_X86_64_SHA256" "$RUNNER_TEMP/bazel" | sha256sum --check --strict
           chmod +x "$RUNNER_TEMP/bazel"
           python3 -I tools/bazel/repositories/prefetch.py
@@ -364,7 +379,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           test "$(git -C .bk-sdk rev-parse HEAD)" = "$BK7258_SDK_COMMIT"
-          curl --fail --location --silent --show-error "https://releases.bazel.build/$BAZEL_VERSION/release/bazel-$BAZEL_VERSION-linux-x86_64" --output "$RUNNER_TEMP/bazel"
+          if [[ -x /opt/bazel/bin/bazel ]] && [[ "$(shasum -a 256 /opt/bazel/bin/bazel | awk '{print $1}')" == "$BAZEL_LINUX_X86_64_SHA256" ]]; then
+            cp /opt/bazel/bin/bazel "$RUNNER_TEMP/bazel"
+            echo "Using pinned Bazel from the runner image"
+          else
+            curl --fail --location --silent --show-error --retry 3 --connect-timeout 30 "https://releases.bazel.build/$BAZEL_VERSION/release/bazel-$BAZEL_VERSION-linux-x86_64" --output "$RUNNER_TEMP/bazel"
+          fi
           printf '%s  %s\n' "$BAZEL_LINUX_X86_64_SHA256" "$RUNNER_TEMP/bazel" | sha256sum --check --strict
           chmod +x "$RUNNER_TEMP/bazel"
           python3 -I tools/bazel/repositories/prefetch.py
@@ -450,7 +470,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          curl --fail --location --silent --show-error "https://releases.bazel.build/$BAZEL_VERSION/release/bazel-$BAZEL_VERSION-linux-x86_64" --output "$RUNNER_TEMP/bazel"
+          if [[ -x /opt/bazel/bin/bazel ]] && [[ "$(shasum -a 256 /opt/bazel/bin/bazel | awk '{print $1}')" == "$BAZEL_LINUX_X86_64_SHA256" ]]; then
+            cp /opt/bazel/bin/bazel "$RUNNER_TEMP/bazel"
+            echo "Using pinned Bazel from the runner image"
+          else
+            curl --fail --location --silent --show-error --retry 3 --connect-timeout 30 "https://releases.bazel.build/$BAZEL_VERSION/release/bazel-$BAZEL_VERSION-linux-x86_64" --output "$RUNNER_TEMP/bazel"
+          fi
           printf '%s  %s\n' "$BAZEL_LINUX_X86_64_SHA256" "$RUNNER_TEMP/bazel" | sha256sum --check --strict
           chmod +x "$RUNNER_TEMP/bazel"
           python3 -I tools/bazel/repositories/prefetch.py

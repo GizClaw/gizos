@@ -187,9 +187,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           bazel_path="$RUNNER_TEMP/bazel"
-          curl --fail --location --silent --show-error \
-            "https://releases.bazel.build/$BAZEL_VERSION/release/bazel-$BAZEL_VERSION-${{ matrix.asset }}" \
-            --output "$bazel_path"
+          if [[ -x /opt/bazel/bin/bazel ]] && [[ "$(shasum -a 256 /opt/bazel/bin/bazel | awk '{print $1}')" == "${{ matrix.sha }}" ]]; then
+            cp /opt/bazel/bin/bazel "$bazel_path"
+            echo "Using pinned Bazel from the runner image"
+          else
+            curl --fail --location --silent --show-error --retry 3 --connect-timeout 30 \
+              "https://releases.bazel.build/$BAZEL_VERSION/release/bazel-$BAZEL_VERSION-${{ matrix.asset }}" \
+              --output "$bazel_path"
+          fi
           test "$(shasum -a 256 "$bazel_path" | awk '{print $1}')" = "${{ matrix.sha }}"
           chmod +x "$bazel_path"
           python3 -I tools/bazel/repositories/prefetch.py
@@ -331,8 +336,13 @@ jobs:
         if: matrix.config == 'android_arm64'
         shell: bash
         run: |
+          sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          if [[ ! -x "$sdkmanager" ]]; then
+            sdkmanager="$ANDROID_HOME/cmdline-tools/23.0/bin/sdkmanager"
+          fi
+          test -x "$sdkmanager"
           for attempt in 1 2 3; do
-            if "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+            if "$sdkmanager" \
               "build-tools;$ANDROID_BUILD_TOOLS_VERSION" \
               "ndk;$ANDROID_NDK_VERSION" \
               "platforms;android-$ANDROID_API_LEVEL"; then
@@ -363,9 +373,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           bazel_path="$RUNNER_TEMP/bazel"
-          curl --fail --location --silent --show-error \
-            "https://releases.bazel.build/$BAZEL_VERSION/release/bazel-$BAZEL_VERSION-${{ matrix.asset }}" \
-            --output "$bazel_path"
+          if [[ -x /opt/bazel/bin/bazel ]] && [[ "$(shasum -a 256 /opt/bazel/bin/bazel | awk '{print $1}')" == "${{ matrix.sha }}" ]]; then
+            cp /opt/bazel/bin/bazel "$bazel_path"
+            echo "Using pinned Bazel from the runner image"
+          else
+            curl --fail --location --silent --show-error --retry 3 --connect-timeout 30 \
+              "https://releases.bazel.build/$BAZEL_VERSION/release/bazel-$BAZEL_VERSION-${{ matrix.asset }}" \
+              --output "$bazel_path"
+          fi
           test "$(shasum -a 256 "$bazel_path" | awk '{print $1}')" = "${{ matrix.sha }}"
           chmod +x "$bazel_path"
           python3 -I tools/bazel/repositories/prefetch.py
@@ -522,9 +537,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           bazel_path="$RUNNER_TEMP/bazel"
-          curl --fail --location --silent --show-error \
-            "https://releases.bazel.build/$BAZEL_VERSION/release/bazel-$BAZEL_VERSION-linux-x86_64" \
-            --output "$bazel_path"
+          if [[ -x /opt/bazel/bin/bazel ]] && [[ "$(shasum -a 256 /opt/bazel/bin/bazel | awk '{print $1}')" == "$BAZEL_LINUX_X86_64_SHA256" ]]; then
+            cp /opt/bazel/bin/bazel "$bazel_path"
+            echo "Using pinned Bazel from the runner image"
+          else
+            curl --fail --location --silent --show-error --retry 3 --connect-timeout 30 \
+              "https://releases.bazel.build/$BAZEL_VERSION/release/bazel-$BAZEL_VERSION-linux-x86_64" \
+              --output "$bazel_path"
+          fi
           test "$(sha256sum "$bazel_path" | awk '{print $1}')" = "$BAZEL_LINUX_X86_64_SHA256"
           chmod +x "$bazel_path"
           python3 -I tools/bazel/repositories/prefetch.py
@@ -697,9 +717,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           bazel_path="$RUNNER_TEMP/bazel"
-          curl --fail --location --silent --show-error \
-            "https://releases.bazel.build/$BAZEL_VERSION/release/bazel-$BAZEL_VERSION-linux-x86_64" \
-            --output "$bazel_path"
+          if [[ -x /opt/bazel/bin/bazel ]] && [[ "$(shasum -a 256 /opt/bazel/bin/bazel | awk '{print $1}')" == "$BAZEL_LINUX_X86_64_SHA256" ]]; then
+            cp /opt/bazel/bin/bazel "$bazel_path"
+            echo "Using pinned Bazel from the runner image"
+          else
+            curl --fail --location --silent --show-error --retry 3 --connect-timeout 30 \
+              "https://releases.bazel.build/$BAZEL_VERSION/release/bazel-$BAZEL_VERSION-linux-x86_64" \
+              --output "$bazel_path"
+          fi
           test "$(sha256sum "$bazel_path" | awk '{print $1}')" = "$BAZEL_LINUX_X86_64_SHA256"
           chmod +x "$bazel_path"
           python3 -I tools/bazel/repositories/prefetch.py
@@ -906,9 +931,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           bazel_path="$RUNNER_TEMP/bazel"
-          curl --fail --location --silent --show-error \
-            "https://releases.bazel.build/$BAZEL_VERSION/release/bazel-$BAZEL_VERSION-linux-x86_64" \
-            --output "$bazel_path"
+          if [[ -x /opt/bazel/bin/bazel ]] && [[ "$(shasum -a 256 /opt/bazel/bin/bazel | awk '{print $1}')" == "$BAZEL_LINUX_X86_64_SHA256" ]]; then
+            cp /opt/bazel/bin/bazel "$bazel_path"
+            echo "Using pinned Bazel from the runner image"
+          else
+            curl --fail --location --silent --show-error --retry 3 --connect-timeout 30 \
+              "https://releases.bazel.build/$BAZEL_VERSION/release/bazel-$BAZEL_VERSION-linux-x86_64" \
+              --output "$bazel_path"
+          fi
           test "$(sha256sum "$bazel_path" | awk '{print $1}')" = "$BAZEL_LINUX_X86_64_SHA256"
           chmod +x "$bazel_path"
           python3 -I tools/bazel/repositories/prefetch.py
