@@ -25,7 +25,7 @@ jobs:
       startsWith(github.event.comment.body, '@codex') ||
       github.event_name == 'workflow_dispatch'
     name: Publish pending OpenAI eligibility
-    runs-on: ${{ vars.FIRMWARE_LINUX_RUNNER }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       contents: read
@@ -83,7 +83,7 @@ jobs:
     needs: [prepare, review]
     if: always() && needs.prepare.result == 'success'
     name: Publish final OpenAI eligibility
-    runs-on: ${{ vars.FIRMWARE_LINUX_RUNNER }}
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       actions: read

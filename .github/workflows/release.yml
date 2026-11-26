@@ -2,10 +2,14 @@ name: Release
 
 on:
   workflow_dispatch:
+    inputs:
+      build_only:
+        description: Build and upload the verified bundle as an Actions artifact
+        type: boolean
+        default: false
 
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
   group: firmware-release
@@ -16,19 +20,18 @@ env:
   BAZEL_LINUX_X86_64_SHA256: 7668a95db1250f12c40407251e4e203b4ec8bf39bc495d2f485b2d8c99048694
   BK7258_SDK_COMMIT: 6bbf62746a5e904a508dee056cac6b17675637f5
   BK7258_PYTHON_VERSION: "3.11"
-  BAZEL_REMOTE_CACHE_URL: ${{ vars.BAZEL_REMOTE_CACHE_URL }}
-  BAZEL_REMOTE_CACHE_MODE: write
 
 jobs:
   catalog:
     name: Release catalog
-    runs-on: ${{ vars.FIRMWARE_LINUX_RUNNER }}
+    runs-on: gizclaw-orbstack-amd64
     timeout-minutes: 60
     outputs:
       batch: ${{ steps.batch.outputs.value }}
       tag: ${{ steps.batch.outputs.tag }}
     steps:
       - name: Require default branch release ref
+        if: ${{ !inputs.build_only }}
         env:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
@@ -47,54 +50,16 @@ jobs:
       - name: Require exact release snapshot
         env:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          BUILD_ONLY: ${{ inputs.build_only }}
         run: |
-          python3 tools/bazel/release/release_workflow.py gate \
-            --ref "$GITHUB_REF" --default-branch "$DEFAULT_BRANCH" \
-            --commit "$GITHUB_SHA"
-
-      - name: Validate Bazel remote cache variables
-        env:
-          CACHE_PROJECT: ${{ vars.BAZEL_CACHE_PROJECT_ID }}
-          CACHE_URL: ${{ vars.BAZEL_REMOTE_CACHE_URL }}
-          CACHE_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          CACHE_WRITER: ${{ vars.BAZEL_CACHE_WRITER_SERVICE_ACCOUNT }}
-          NATIVE_CACHE_URL: ${{ vars.NATIVE_CCACHE_GCS_BASE_URL }}
-        run: |
-          configured=0
-          for value in "$CACHE_PROJECT" "$CACHE_URL" "$CACHE_PROVIDER" "$CACHE_WRITER"; do
-            if [ -n "$value" ]; then configured=$((configured + 1)); fi
-          done
-          if [ "$configured" -ne 0 ] && [ "$configured" -ne 4 ]; then
-            echo 'Bazel remote cache repository variables are incomplete.' >&2
-            exit 1
+          if [[ "$BUILD_ONLY" == true ]]; then
+            [[ "$GITHUB_REF" == refs/heads/* ]]
+            test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          else
+            python3 tools/bazel/release/release_workflow.py gate \
+              --ref "$GITHUB_REF" --default-branch "$DEFAULT_BRANCH" \
+              --commit "$GITHUB_SHA"
           fi
-          if [ -n "$NATIVE_CACHE_URL" ]; then
-            if [ "$configured" -ne 4 ]; then
-              echo 'Native ccache GCS requires the Bazel cache WIF variables.' >&2
-              exit 1
-            fi
-            if [[ ! "$NATIVE_CACHE_URL" =~ ^https://storage\.googleapis\.com/[^/]+/ccache$ ]]; then
-              echo 'NATIVE_CCACHE_GCS_BASE_URL must be https://storage.googleapis.com/<bucket>/ccache.' >&2
-              exit 1
-            fi
-            native_bucket=${NATIVE_CACHE_URL#https://storage.googleapis.com/}
-            native_bucket=${native_bucket%/ccache}
-            bazel_bucket=${CACHE_URL#https://storage.googleapis.com/}
-            bazel_bucket=${bazel_bucket%/gizos}
-            if [ "$native_bucket" != "$bazel_bucket" ]; then
-              echo 'Native ccache and Bazel remote cache must use isolated prefixes in the same bucket.' >&2
-              exit 1
-            fi
-          fi
-
-      - name: Authenticate read-write Bazel remote cache
-        if: vars.BAZEL_REMOTE_CACHE_URL != ''
-        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
-        with:
-          project_id: ${{ vars.BAZEL_CACHE_PROJECT_ID }}
-          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.BAZEL_CACHE_WRITER_SERVICE_ACCOUNT }}
-          create_credentials_file: true
 
       - name: Generate UTC release batch
         id: batch
@@ -187,7 +152,7 @@ jobs:
   npm-packages:
     name: Release npm packages
     needs: [catalog]
-    runs-on: ${{ vars.FIRMWARE_LINUX_RUNNER }}
+    runs-on: gizclaw-orbstack-amd64
     timeout-minutes: 30
     steps:
       - name: Check out GizOS
@@ -197,15 +162,6 @@ jobs:
           fetch-depth: 1
           submodules: false
           persist-credentials: false
-
-      - name: Authenticate read-write Bazel remote cache
-        if: vars.BAZEL_REMOTE_CACHE_URL != ''
-        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
-        with:
-          project_id: ${{ vars.BAZEL_CACHE_PROJECT_ID }}
-          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.BAZEL_CACHE_WRITER_SERVICE_ACCOUNT }}
-          create_credentials_file: true
 
       - name: Install Bazel
         env:
@@ -234,15 +190,14 @@ jobs:
     timeout-minutes: 180
     permissions:
       contents: read
-      id-token: write
     strategy:
       fail-fast: false
       matrix:
         include:
           - slice: esp32s3
-            runner: ${{ vars.FIRMWARE_LINUX_8CORE_RUNNER }}
+            runner: gizclaw-orbstack-amd64
           - slice: esp32p4
-            runner: ${{ vars.FIRMWARE_LINUX_RUNNER }}
+            runner: gizclaw-orbstack-amd64
     steps:
       - name: Check out GizOS
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -251,15 +206,6 @@ jobs:
           fetch-depth: 1
           submodules: false
           persist-credentials: false
-
-      - name: Authenticate read-write Bazel remote cache
-        if: vars.BAZEL_REMOTE_CACHE_URL != ''
-        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
-        with:
-          project_id: ${{ vars.BAZEL_CACHE_PROJECT_ID }}
-          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.BAZEL_CACHE_WRITER_SERVICE_ACCOUNT }}
-          create_credentials_file: true
 
       - name: Download catalog
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
@@ -317,44 +263,23 @@ jobs:
         run: |
           manifest=tools/bazel/native/versions/native_ccache_tools.txt
           read -r _ ccache_version ccache_sha256 ccache_url < <(awk '$1 == "ccache" { print; exit }' "$manifest")
-          read -r _ helper_version helper_sha256 helper_url < <(awk '$1 == "ccache-storage-http-go" { print; exit }' "$manifest")
           test "$ccache_version" = 4.13.6
-          test "$helper_version" = 0.8
-          runtime_root="$RUNNER_TEMP/native-ccache-runtime"
-          mkdir -p "$runtime_root/bin" "$runtime_root/cache" "$runtime_root/ccache" "$runtime_root/helper"
-          python3 -I tools/bazel/repositories/github_release.py "$ccache_url" "$ccache_sha256" "$runtime_root/ccache.tar.xz"
-          printf '%s  %s\n' "$ccache_sha256" "$runtime_root/ccache.tar.xz" | sha256sum --check --strict
-          tar --extract --xz --file "$runtime_root/ccache.tar.xz" --strip-components=1 --directory "$runtime_root/ccache"
-          python3 -I tools/bazel/repositories/github_release.py "$helper_url" "$helper_sha256" "$runtime_root/helper.tar.gz"
-          printf '%s  %s\n' "$helper_sha256" "$runtime_root/helper.tar.gz" | sha256sum --check --strict
-          tar --extract --gzip --file "$runtime_root/helper.tar.gz" --strip-components=1 --directory "$runtime_root/helper"
-          install -m 0755 "$runtime_root/ccache/ccache" "$runtime_root/bin/ccache"
-          install -m 0755 "$runtime_root/helper/ccache-storage-http" "$runtime_root/bin/ccache-storage-https"
-          printf '{"schema":"h2.native-ccache-runtime.v1","ccache":"bin/ccache","cache_root":"cache"}\n' > "$runtime_root/runtime.json"
+          runtime_root="${CCACHE_DIR:-$RUNNER_TEMP}/native-ccache-$ccache_version"
+          mkdir -p "$runtime_root/bin" "$runtime_root/cache"
+          if [ ! -x "$runtime_root/bin/ccache" ]; then
+            staging="$RUNNER_TEMP/native-ccache-install"
+            mkdir -p "$staging"
+            python3 -I tools/bazel/repositories/github_release.py "$ccache_url" "$ccache_sha256" "$staging/ccache.tar.xz"
+            printf '%s  %s\n' "$ccache_sha256" "$staging/ccache.tar.xz" | sha256sum --check --strict
+            tar --extract --xz --file "$staging/ccache.tar.xz" --strip-components=1 --directory "$staging"
+            ccache_tmp=$(mktemp "$runtime_root/bin/.ccache.XXXXXXXX")
+            install -m 0755 "$staging/ccache" "$ccache_tmp"
+            mv -f "$ccache_tmp" "$runtime_root/bin/ccache"
+          fi
+          runtime_tmp=$(mktemp "$runtime_root/.runtime.XXXXXXXX")
+          printf '{"schema":"h2.native-ccache-runtime.v1","ccache":"bin/ccache","cache_root":"cache"}\n' > "$runtime_tmp"
+          mv -f "$runtime_tmp" "$runtime_root/runtime.json"
           printf 'H2_NATIVE_CCACHE_RUNTIME_ROOT=%s\n' "$runtime_root" >> "$GITHUB_ENV"
-
-      - name: Refresh native compiler cache token
-        id: native-ccache-auth
-        if: vars.NATIVE_CCACHE_GCS_BASE_URL != ''
-        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
-        with:
-          project_id: ${{ vars.BAZEL_CACHE_PROJECT_ID }}
-          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.BAZEL_CACHE_WRITER_SERVICE_ACCOUNT }}
-          create_credentials_file: true
-          token_format: access_token
-          access_token_lifetime: 3600s
-
-      - name: Configure native compiler cache GCS access
-        if: vars.NATIVE_CCACHE_GCS_BASE_URL != ''
-        env:
-          NATIVE_CCACHE_ACCESS_TOKEN: ${{ steps.native-ccache-auth.outputs.access_token }}
-          NATIVE_CCACHE_GCS_BASE_URL: ${{ vars.NATIVE_CCACHE_GCS_BASE_URL }}
-        run: |
-          token_file="$H2_NATIVE_CCACHE_RUNTIME_ROOT/token"
-          install -m 0600 /dev/null "$token_file"
-          printf '%s' "$NATIVE_CCACHE_ACCESS_TOKEN" > "$token_file"
-          printf '{"schema":"h2.native-ccache-runtime.v1","ccache":"bin/ccache","cache_root":"cache","remote_base_url":"%s","storage_helper":"bin/ccache-storage-https","token_file":"token"}\n' "$NATIVE_CCACHE_GCS_BASE_URL" > "$H2_NATIVE_CCACHE_RUNTIME_ROOT/runtime.json"
 
       - name: Build firmware slice
         env:
@@ -392,11 +317,10 @@ jobs:
   bk7258:
     name: Release BK7258
     needs: catalog
-    runs-on: ${{ vars.FIRMWARE_LINUX_RUNNER }}
+    runs-on: gizclaw-orbstack-amd64
     timeout-minutes: 180
     permissions:
       contents: read
-      id-token: write
     steps:
       - name: Check out GizOS
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -405,15 +329,6 @@ jobs:
           fetch-depth: 1
           submodules: false
           persist-credentials: false
-
-      - name: Authenticate read-write Bazel remote cache
-        if: vars.BAZEL_REMOTE_CACHE_URL != ''
-        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
-        with:
-          project_id: ${{ vars.BAZEL_CACHE_PROJECT_ID }}
-          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.BAZEL_CACHE_WRITER_SERVICE_ACCOUNT }}
-          create_credentials_file: true
 
       - name: Download catalog
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
@@ -455,47 +370,26 @@ jobs:
           python3 -I tools/bazel/repositories/prefetch.py
           manifest=tools/bazel/native/versions/native_ccache_tools.txt
           read -r _ ccache_version ccache_sha256 ccache_url < <(awk '$1 == "ccache" { print; exit }' "$manifest")
-          read -r _ helper_version helper_sha256 helper_url < <(awk '$1 == "ccache-storage-http-go" { print; exit }' "$manifest")
           test "$ccache_version" = 4.13.6
-          test "$helper_version" = 0.8
-          runtime_root="$RUNNER_TEMP/native-ccache-runtime"
-          mkdir -p "$runtime_root/bin" "$runtime_root/cache" "$runtime_root/ccache" "$runtime_root/helper"
-          python3 -I tools/bazel/repositories/github_release.py "$ccache_url" "$ccache_sha256" "$runtime_root/ccache.tar.xz"
-          printf '%s  %s\n' "$ccache_sha256" "$runtime_root/ccache.tar.xz" | sha256sum --check --strict
-          tar --extract --xz --file "$runtime_root/ccache.tar.xz" --strip-components=1 --directory "$runtime_root/ccache"
-          python3 -I tools/bazel/repositories/github_release.py "$helper_url" "$helper_sha256" "$runtime_root/helper.tar.gz"
-          printf '%s  %s\n' "$helper_sha256" "$runtime_root/helper.tar.gz" | sha256sum --check --strict
-          tar --extract --gzip --file "$runtime_root/helper.tar.gz" --strip-components=1 --directory "$runtime_root/helper"
-          install -m 0755 "$runtime_root/ccache/ccache" "$runtime_root/bin/ccache"
-          install -m 0755 "$runtime_root/helper/ccache-storage-http" "$runtime_root/bin/ccache-storage-https"
-          printf '{"schema":"h2.native-ccache-runtime.v1","ccache":"bin/ccache","cache_root":"cache"}\n' > "$runtime_root/runtime.json"
+          runtime_root="${CCACHE_DIR:-$RUNNER_TEMP}/native-ccache-$ccache_version"
+          mkdir -p "$runtime_root/bin" "$runtime_root/cache"
+          if [ ! -x "$runtime_root/bin/ccache" ]; then
+            staging="$RUNNER_TEMP/native-ccache-install"
+            mkdir -p "$staging"
+            python3 -I tools/bazel/repositories/github_release.py "$ccache_url" "$ccache_sha256" "$staging/ccache.tar.xz"
+            printf '%s  %s\n' "$ccache_sha256" "$staging/ccache.tar.xz" | sha256sum --check --strict
+            tar --extract --xz --file "$staging/ccache.tar.xz" --strip-components=1 --directory "$staging"
+            ccache_tmp=$(mktemp "$runtime_root/bin/.ccache.XXXXXXXX")
+            install -m 0755 "$staging/ccache" "$ccache_tmp"
+            mv -f "$ccache_tmp" "$runtime_root/bin/ccache"
+          fi
+          runtime_tmp=$(mktemp "$runtime_root/.runtime.XXXXXXXX")
+          printf '{"schema":"h2.native-ccache-runtime.v1","ccache":"bin/ccache","cache_root":"cache"}\n' > "$runtime_tmp"
+          mv -f "$runtime_tmp" "$runtime_root/runtime.json"
           {
             printf 'BK7258_PATH=%s/.bk-sdk\n' "$GITHUB_WORKSPACE"
             printf 'H2_NATIVE_CCACHE_RUNTIME_ROOT=%s\n' "$runtime_root"
           } >> "$GITHUB_ENV"
-
-      - name: Refresh native compiler cache token
-        id: native-ccache-auth
-        if: vars.NATIVE_CCACHE_GCS_BASE_URL != ''
-        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
-        with:
-          project_id: ${{ vars.BAZEL_CACHE_PROJECT_ID }}
-          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.BAZEL_CACHE_WRITER_SERVICE_ACCOUNT }}
-          create_credentials_file: true
-          token_format: access_token
-          access_token_lifetime: 3600s
-
-      - name: Configure native compiler cache GCS access
-        if: vars.NATIVE_CCACHE_GCS_BASE_URL != ''
-        env:
-          NATIVE_CCACHE_ACCESS_TOKEN: ${{ steps.native-ccache-auth.outputs.access_token }}
-          NATIVE_CCACHE_GCS_BASE_URL: ${{ vars.NATIVE_CCACHE_GCS_BASE_URL }}
-        run: |
-          token_file="$H2_NATIVE_CCACHE_RUNTIME_ROOT/token"
-          install -m 0600 /dev/null "$token_file"
-          printf '%s' "$NATIVE_CCACHE_ACCESS_TOKEN" > "$token_file"
-          printf '{"schema":"h2.native-ccache-runtime.v1","ccache":"bin/ccache","cache_root":"cache","remote_base_url":"%s","storage_helper":"bin/ccache-storage-https","token_file":"token"}\n' "$NATIVE_CCACHE_GCS_BASE_URL" > "$H2_NATIVE_CCACHE_RUNTIME_ROOT/runtime.json"
 
       - name: Build BK7258 slice
         run: make bazel-release BAZEL_BIN="$RUNNER_TEMP/bazel" RELEASE_SLICE=bk7258 RELEASE_BATCH="${{ needs.catalog.outputs.batch }}" RELEASE_INPUT_DIR=build/release/input RELEASE_STAGING_DIR=build/release/bk7258
@@ -516,11 +410,10 @@ jobs:
   firmware-bundle:
     name: Release firmware bundle
     needs: [catalog, esp, bk7258]
-    runs-on: ${{ vars.FIRMWARE_LINUX_RUNNER }}
+    runs-on: gizclaw-orbstack-amd64
     timeout-minutes: 30
     permissions:
       contents: read
-      id-token: write
     steps:
       - name: Check out GizOS
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -529,17 +422,6 @@ jobs:
           submodules: false
           persist-credentials: false
 
-      - name: Authenticate read-write Bazel remote cache
-        if: vars.BAZEL_REMOTE_CACHE_URL != ''
-        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
-        with:
-          project_id: ${{ vars.BAZEL_CACHE_PROJECT_ID }}
-          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.BAZEL_CACHE_WRITER_SERVICE_ACCOUNT }}
-          create_credentials_file: true
-
-      # Download only firmware producers; release-npm-bundle belongs to the final job.
-      # Keep artifact directories separate so duplicate basenames fail validation.
       - name: Download catalog
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
@@ -587,7 +469,7 @@ jobs:
   package:
     name: Package firmware ZIP
     needs: [catalog, firmware-bundle]
-    runs-on: ${{ vars.FIRMWARE_LINUX_RUNNER }}
+    runs-on: gizclaw-orbstack-amd64
     timeout-minutes: 10
     steps:
       - name: Check out GizOS
@@ -616,26 +498,14 @@ jobs:
   release-bundle:
     name: Complete release bundle
     needs: [catalog, package, npm-packages]
-    runs-on: ${{ vars.FIRMWARE_LINUX_RUNNER }}
+    runs-on: gizclaw-orbstack-amd64
     timeout-minutes: 30
-    permissions:
-      contents: write
-      id-token: write
     steps:
       - name: Check out GizOS
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
-
-      - name: Authenticate read-write Bazel remote cache
-        if: vars.BAZEL_REMOTE_CACHE_URL != ''
-        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
-        with:
-          project_id: ${{ vars.BAZEL_CACHE_PROJECT_ID }}
-          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.BAZEL_CACHE_WRITER_SERVICE_ACCOUNT }}
-          create_credentials_file: true
 
       - name: Download packaged firmware
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
@@ -674,6 +544,27 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  publish:
+    name: Publish verified release bundle
+    if: ${{ !inputs.build_only }}
+    needs: [catalog, release-bundle]
+    runs-on: gizclaw-orbstack-amd64
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - name: Check out GizOS
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Download complete release bundle
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-bundle-${{ needs.catalog.outputs.batch }}
+          path: build/release/final/
+
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -683,6 +574,9 @@ jobs:
         run: |
           set -euo pipefail
           release_dir=build/release/final
+          python3 tools/bazel/release/release_workflow.py verify \
+            --directory "$release_dir" --repository "$GITHUB_REPOSITORY" \
+            --tag "$RELEASE_TAG" --commit "$GITHUB_SHA"
           release_state() {
             local result
             if result=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" --jq .draft 2>&1); then

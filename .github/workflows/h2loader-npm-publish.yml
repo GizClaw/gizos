@@ -26,7 +26,7 @@ env:
 jobs:
   publish:
     name: Publish missing version
-    runs-on: ${{ vars.FIRMWARE_LINUX_RUNNER }}
+    runs-on: gizclaw-orbstack-amd64
     timeout-minutes: 30
     steps:
       - name: Check out GizOS
