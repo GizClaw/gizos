@@ -346,6 +346,8 @@ ESP32-S3, ESP32-P4, and BK7258 configs automatically select all firmware endpoin
 
 Linux CI for `main` and same-repository pull requests, and Linux Release jobs, use `gizclaw-orbstack-amd64`. Its `BAZELRC` selects the persistent disk and repository caches under `/ci-cache/bazel`. Pull requests call the reusable CI workflow on `main` and report `CI required` after the full matrix. Fork pull requests run on GitHub-hosted runners. The macOS and Windows jobs use their respective native platform runners.
 
+OrbStack jobs reuse the catalog-pinned ESP-IDF checkout under `/ci-cache/esp-idf/sources` and the architecture-specific tools under `/ci-cache/esp-idf/tools`. Setup verifies the checkout and takes the same revision lock as Firmwares before installing tools.
+
 These native SDK actions remain unsandboxed and execute only on the current
 runner, while their declared repository inputs and firmware outputs participate
 in the local disk cache. SDK and toolchain

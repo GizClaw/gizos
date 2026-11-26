@@ -91,33 +91,10 @@ jobs:
           printf 'GIZOS_BIN=%s/tools/gizos/gizos.sh\n' "$(realpath bazel-bin)" >> "$GITHUB_ENV"
           printf 'GIZOS_DEVENV_HOME=%s/gizos-devenv\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
 
-      - name: Fetch catalog-pinned ESP-IDF sources
-        shell: bash
-        run: |
-          "$GIZOS_BIN" setup esp-idf 6.2 --sources-only
-          "$GIZOS_BIN" env esp-idf 6.2 --json > "$RUNNER_TEMP/devenv-idf.json"
-          python3 - <<'PYENV'
-          import json, os
-          item = json.load(open(os.path.join(os.environ["RUNNER_TEMP"], "devenv-idf.json")))["environments"][0]
-          with open(os.environ["GITHUB_ENV"], "a") as output:
-              output.write("H2_ESP_IDF_SDK_ROOT=" + item["sdk"] + "\n")
-              output.write("H2_ESP_IDF_TOOLS_ROOT=" + item["tools"] + "\n")
-          PYENV
-
-      - name: Restore ESP-IDF tool cache
-        id: esp-idf-cache
-        continue-on-error: true
-        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      - name: Set up catalog-pinned ESP-IDF on OrbStack
+        uses: ./.github/actions/orbstack-esp-idf
         with:
-          path: ${{ runner.temp }}/gizos-devenv/tools/idf
-          key: gizos-idf-shared-v1-${{ runner.os }}-${{ hashFiles('tools/gizos/src/catalog.json', 'tools/bazel/native/versions/esp_idf_tool_versions.txt') }}-esp32s3-esp32p4-esp32c5
-
-      - name: Install catalog-pinned ESP-IDF tools
-        shell: bash
-        env:
-          IDF_GITHUB_ASSETS: ""
-          IDF_MIRROR_PREFIX_MAP: 'https://github\.com/espressif/binutils-gdb/,https://dl.espressif.com/github_assets/espressif/binutils-gdb/'
-        run: '"$GIZOS_BIN" setup esp-idf 6.2 --targets esp32s3,esp32p4,esp32c5'
+          targets: esp32s3,esp32p4,esp32c5
 
       - name: Build catalog slice
         run: |
@@ -137,14 +114,6 @@ jobs:
           path: build/release/lua-runtime/
           if-no-files-found: error
           retention-days: 14
-
-      - name: Save ESP-IDF tool cache seed
-        if: steps.esp-idf-cache.outputs.cache-hit != 'true'
-        continue-on-error: true
-        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
-        with:
-          path: ${{ runner.temp }}/gizos-devenv/tools/idf
-          key: ${{ steps.esp-idf-cache.outputs.cache-primary-key }}
 
       - name: Upload catalog slice
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -244,33 +213,10 @@ jobs:
           printf 'GIZOS_BIN=%s/tools/gizos/gizos.sh\n' "$(realpath bazel-bin)" >> "$GITHUB_ENV"
           printf 'GIZOS_DEVENV_HOME=%s/gizos-devenv\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
 
-      - name: Fetch catalog-pinned ESP-IDF sources
-        shell: bash
-        run: |
-          "$GIZOS_BIN" setup esp-idf 6.2 --sources-only
-          "$GIZOS_BIN" env esp-idf 6.2 --json > "$RUNNER_TEMP/devenv-idf.json"
-          python3 - <<'PYENV'
-          import json, os
-          item = json.load(open(os.path.join(os.environ["RUNNER_TEMP"], "devenv-idf.json")))["environments"][0]
-          with open(os.environ["GITHUB_ENV"], "a") as output:
-              output.write("H2_ESP_IDF_SDK_ROOT=" + item["sdk"] + "\n")
-              output.write("H2_ESP_IDF_TOOLS_ROOT=" + item["tools"] + "\n")
-          PYENV
-
-      - name: Restore ESP-IDF tool cache
-        id: esp-idf-cache
-        continue-on-error: true
-        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+      - name: Set up catalog-pinned ESP-IDF on OrbStack
+        uses: ./.github/actions/orbstack-esp-idf
         with:
-          path: ${{ runner.temp }}/gizos-devenv/tools/idf
-          key: gizos-idf-shared-v1-${{ runner.os }}-${{ hashFiles('tools/gizos/src/catalog.json', 'tools/bazel/native/versions/esp_idf_tool_versions.txt') }}-esp32s3-esp32p4-esp32c5
-
-      - name: Install catalog-pinned ESP-IDF tools
-        shell: bash
-        env:
-          IDF_GITHUB_ASSETS: ""
-          IDF_MIRROR_PREFIX_MAP: 'https://github\.com/espressif/binutils-gdb/,https://dl.espressif.com/github_assets/espressif/binutils-gdb/'
-        run: '"$GIZOS_BIN" setup esp-idf 6.2 --targets esp32s3,esp32p4,esp32c5'
+          targets: esp32s3,esp32p4,esp32c5
 
       - name: Install native compiler cache
         env:
@@ -312,14 +258,6 @@ jobs:
         if: always()
         continue-on-error: true
         run: CCACHE_DIR="$H2_NATIVE_CCACHE_RUNTIME_ROOT/cache/${{ matrix.slice }}" "$H2_NATIVE_CCACHE_RUNTIME_ROOT/bin/ccache" --show-stats
-
-      - name: Save ESP-IDF tool cache seed
-        if: steps.esp-idf-cache.outputs.cache-hit != 'true'
-        continue-on-error: true
-        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
-        with:
-          path: ${{ runner.temp }}/gizos-devenv/tools/idf
-          key: ${{ steps.esp-idf-cache.outputs.cache-primary-key }}
 
       - name: Upload firmware slice
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
