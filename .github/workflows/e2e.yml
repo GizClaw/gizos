@@ -153,14 +153,18 @@ jobs:
             pal) ;;
             *) echo 'unsupported live E2E scope' >&2; exit 2 ;;
           esac
+          bazel_disk_cache="$RUNNER_TEMP/bazel-disk-cache"
+          if [[ -d /ci-cache/bazel/disk && -w /ci-cache/bazel/disk ]]; then
+            bazel_disk_cache=/ci-cache/bazel/disk
+          fi
           run_pal() {
             "$RUNNER_TEMP/bazel" test "--config=$H2_BAZEL_CONFIG" \
-              --cache_test_results=no \
+              "--disk_cache=$bazel_disk_cache" --cache_test_results=no \
               //projects/testing/targets/cc_binary/pal-mqtt:public_broker_test
           }
           run_gizclaw_target() {
             "$RUNNER_TEMP/bazel" test "--config=$H2_BAZEL_CONFIG" \
-              --cache_test_results=no \
+              "--disk_cache=$bazel_disk_cache" --cache_test_results=no \
               "--//projects/testing/integration/gizclaw:app_config_fixture_profile=$GIZCLAW_FIXTURE_PROFILE" \
               "--//projects/testing/integration/gizclaw:app_config_fixture_key=$GIZCLAW_FIXTURE_KEY" \
               "--//projects/testing/integration/gizclaw:app_config_fixture_value=$GIZCLAW_FIXTURE_VALUE" \
