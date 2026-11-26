@@ -1,0 +1,29 @@
+name: PR CI
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize]
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  build:
+    uses: GizClaw/gizos/.github/workflows/ci.yml@main
+    with:
+      orbstack_pr: true
+    secrets: inherit
+
+  ci-required:
+    name: CI required
+    if: always()
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Require the complete CI workflow
+        env:
+          CI_RESULT: ${{ needs.build.result }}
+        run: test "$CI_RESULT" = success
