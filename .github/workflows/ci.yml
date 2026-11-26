@@ -3,9 +3,6 @@ name: CI
 on:
   workflow_call:
     inputs:
-      checkout_sha:
-        type: string
-        default: ''
       orbstack_pr:
         type: boolean
         default: false
