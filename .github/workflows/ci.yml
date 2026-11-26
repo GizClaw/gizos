@@ -6,9 +6,6 @@ on:
       orbstack_pr:
         type: boolean
         default: false
-  pull_request:
-    branches: [main]
-    types: [opened, synchronize]
   push:
     branches: [main]
   workflow_dispatch:
