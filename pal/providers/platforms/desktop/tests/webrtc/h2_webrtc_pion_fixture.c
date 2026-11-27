@@ -3,6 +3,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
+#include <spawn.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -12,6 +13,8 @@
 #include <unistd.h>
 
 #include <arpa/inet.h>
+
+extern char** environ;
 
 static void h2_webrtc_fixture_sleep_ms(long milliseconds) {
   struct timespec delay = {
@@ -136,24 +139,35 @@ int h2_webrtc_pion_fixture_start(h2_webrtc_pion_fixture_t* fixture,
   if (pipe(ready_pipe) != 0) {
     return -1;
   }
-  pid_t child = fork();
-  if (child < 0) {
-    close(ready_pipe[0]);
-    close(ready_pipe[1]);
-    return -1;
-  }
-  if (child == 0) {
-    close(ready_pipe[0]);
-    if (dup2(ready_pipe[1], STDOUT_FILENO) < 0) {
-      _exit(127);
-    }
-    close(ready_pipe[1]);
-    execl(server_path, server_path, "--listen=127.0.0.1:0",
-          "--stun-listen=127.0.0.1:0", "--turn-listen=127.0.0.1:0",
-          "--candidate-ip=127.0.0.1", mode_flag, (char*)NULL);
-    _exit(127);
+  char* const arguments[] = {(char*)server_path,
+                             "--listen=127.0.0.1:0",
+                             "--stun-listen=127.0.0.1:0",
+                             "--turn-listen=127.0.0.1:0",
+                             "--candidate-ip=127.0.0.1",
+                             mode_flag,
+                             NULL};
+  pid_t child = 0;
+  posix_spawn_file_actions_t actions;
+  int launch_error = posix_spawn_file_actions_init(&actions);
+  if (launch_error == 0) {
+    launch_error = posix_spawn_file_actions_addclose(&actions, ready_pipe[0]);
+    if (launch_error == 0)
+      launch_error = posix_spawn_file_actions_adddup2(&actions, ready_pipe[1],
+                                                      STDOUT_FILENO);
+    if (launch_error == 0 && ready_pipe[1] != STDOUT_FILENO)
+      launch_error = posix_spawn_file_actions_addclose(&actions, ready_pipe[1]);
+    if (launch_error == 0)
+      launch_error =
+          posix_spawn(&child, server_path, &actions, NULL, arguments, environ);
+    (void)posix_spawn_file_actions_destroy(&actions);
   }
   close(ready_pipe[1]);
+  if (launch_error != 0) {
+    fprintf(stderr, "fixture: failed to launch %s: %s\n", server_path,
+            strerror(launch_error));
+    close(ready_pipe[0]);
+    return -1;
+  }
   fixture->pid = child;
   int flags = fcntl(ready_pipe[0], F_GETFL, 0);
   if (flags < 0 || fcntl(ready_pipe[0], F_SETFL, flags | O_NONBLOCK) != 0) {
@@ -194,19 +208,26 @@ int h2_webrtc_pion_fixture_start(h2_webrtc_pion_fixture_t* fixture,
                      : -1;
         }
       }
-    } else if (received == 0) {
-      break;
-    } else if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
+    } else if (received < 0 && errno != EAGAIN && errno != EWOULDBLOCK &&
+               errno != EINTR) {
       break;
     }
     int status = 0;
     if (waitpid(child, &status, WNOHANG) == child) {
+      if (WIFEXITED(status))
+        fprintf(stderr, "fixture: exited before ready with status %d\n",
+                WEXITSTATUS(status));
+      if (WIFSIGNALED(status))
+        fprintf(stderr, "fixture: killed before ready by signal %d\n",
+                WTERMSIG(status));
       fixture->pid = 0;
       close(ready_pipe[0]);
       return -1;
     }
     h2_webrtc_fixture_sleep_ms(50);
   }
+  fprintf(stderr, "fixture: no valid readiness line after %zu bytes\n",
+          ready_len);
   close(ready_pipe[0]);
   h2_webrtc_pion_fixture_stop(fixture);
   return -1;
