@@ -23,6 +23,15 @@ bazel_dep(name = "rules_pkg", version = "1.2.0")
 bazel_dep(name = "rules_python", version = "2.2.0")
 bazel_dep(name = "rules_shell", version = "0.6.1")
 
+# Use Google's Maven Central mirror to avoid rate limits on Central's primary hosts.
+# Pin the patch to 0.7.3 because rules_jvm_external also requests an older version.
+single_version_override(
+    module_name = "rules_android",
+    patch_strip = 1,
+    patches = ["//third_party/rules_android_patch:maven_central_endpoint.patch"],
+    version = "0.7.3",
+)
+
 bun_repository = use_repo_rule("//tools/gizos:bun_repository.bzl", "bun_repository")
 
 bun_repository(name = "gizos_bun")
