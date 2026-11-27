@@ -145,6 +145,17 @@ jobs:
         timeout-minutes: 15
         shell: bash
         run: |
+          packages=(
+            cmake lcov libasound2-dev libx11-dev libxext-dev
+            libxi-dev libxrandr-dev libxtst6 libssl-dev nasm ninja-build
+            pkg-config ripgrep unzip xauth xvfb
+          )
+          if [[ "$RUNNER_ENVIRONMENT" == self-hosted ]] &&
+              package_status="$(dpkg-query --show --showformat='${db:Status-Status}\n' "${packages[@]}")" &&
+              [[ "$package_status" == "$(printf 'installed\n%.0s' "${packages[@]}")" ]]; then
+            echo "Using Linux dependencies installed on the runner"
+            exit 0
+          fi
           # All declared packages come from Ubuntu, independently of runner-added repositories.
           apt_sources=/etc/apt/sources.list
           if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then
@@ -159,10 +170,7 @@ jobs:
             -o Acquire::https::Timeout=30
           )
           sudo apt-get "${apt_network_options[@]}" update
-          sudo apt-get "${apt_network_options[@]}" install --yes \
-            cmake lcov libasound2-dev libx11-dev libxext-dev \
-            libxi-dev libxrandr-dev libxtst6 libssl-dev nasm ninja-build \
-            pkg-config ripgrep unzip xauth xvfb
+          sudo apt-get "${apt_network_options[@]}" install --yes "${packages[@]}"
 
       - name: Install macOS dependencies and select Xcode
         if: runner.os == 'macOS'
@@ -293,6 +301,17 @@ jobs:
         timeout-minutes: 15
         shell: bash
         run: |
+          packages=(
+            cmake lcov libasound2-dev libx11-dev libxext-dev
+            libxi-dev libxrandr-dev libxtst6 libssl-dev nasm ninja-build
+            pkg-config ripgrep unzip xauth xvfb
+          )
+          if [[ "$RUNNER_ENVIRONMENT" == self-hosted ]] &&
+              package_status="$(dpkg-query --show --showformat='${db:Status-Status}\n' "${packages[@]}")" &&
+              [[ "$package_status" == "$(printf 'installed\n%.0s' "${packages[@]}")" ]]; then
+            echo "Using Linux dependencies installed on the runner"
+            exit 0
+          fi
           # All declared packages come from Ubuntu, independently of runner-added repositories.
           apt_sources=/etc/apt/sources.list
           if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then
@@ -307,10 +326,7 @@ jobs:
             -o Acquire::https::Timeout=30
           )
           sudo apt-get "${apt_network_options[@]}" update
-          sudo apt-get "${apt_network_options[@]}" install --yes \
-            cmake lcov libasound2-dev libx11-dev libxext-dev \
-            libxi-dev libxrandr-dev libxtst6 libssl-dev nasm ninja-build \
-            pkg-config ripgrep unzip xauth xvfb
+          sudo apt-get "${apt_network_options[@]}" install --yes "${packages[@]}"
 
       - name: Install macOS dependencies and select Xcode
         if: runner.os == 'macOS'
@@ -322,9 +338,11 @@ jobs:
 
       - name: Install coverage toolchain compatibility dependency
         if: matrix.config == 'test_coverage'
+        timeout-minutes: 7
         shell: bash
         run: |
           curl --fail --location --silent --show-error \
+            --retry 4 --retry-all-errors --connect-timeout 15 --max-time 60 \
             https://security.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.3-2ubuntu0.3_amd64.deb \
             --output "$RUNNER_TEMP/libtinfo5.deb"
           printf '%s  %s\n' \
