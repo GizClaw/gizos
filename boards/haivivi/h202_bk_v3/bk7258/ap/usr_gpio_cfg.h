@@ -1,0 +1,158 @@
+#ifndef H2_H202_AP_GPIO_CONFIG_H
+#define H2_H202_AP_GPIO_CONFIG_H
+
+/* The SDK requires every BSP-controlled pin in this table for map/unmap.
+ * Keep these pins undriven until the BSP configures their outputs. */
+#define GPIO_DEFAULT_DEV_CONFIG                                                \
+  {                                                                            \
+      {GPIO_0, GPIO_SECOND_FUNC_ENABLE, GPIO_DEV_UART1_TXD, GPIO_IO_DISABLE,   \
+       GPIO_PULL_UP_EN, GPIO_INT_DISABLE, GPIO_INT_TYPE_LOW_LEVEL,             \
+       GPIO_LOW_POWER_DISCARD_IO_STATUS, GPIO_DRIVER_CAPACITY_3,               \
+       GPIO_INIT_ENABLE, GPIO_TIME_SHARING_MULTIPLEX_DISABLE},                 \
+      {GPIO_1, GPIO_SECOND_FUNC_ENABLE, GPIO_DEV_UART1_RXD, GPIO_IO_DISABLE,   \
+       GPIO_PULL_UP_EN, GPIO_INT_DISABLE, GPIO_INT_TYPE_LOW_LEVEL,             \
+       GPIO_LOW_POWER_DISCARD_IO_STATUS, GPIO_DRIVER_CAPACITY_3,               \
+       GPIO_INIT_ENABLE, GPIO_TIME_SHARING_MULTIPLEX_DISABLE},                 \
+      {GPIO_4, GPIO_SECOND_FUNC_DISABLE, GPIO_DEV_INVALID, GPIO_IO_DISABLE,    \
+       GPIO_PULL_DISABLE, GPIO_INT_DISABLE, GPIO_INT_TYPE_LOW_LEVEL,           \
+       GPIO_LOW_POWER_DISCARD_IO_STATUS, GPIO_DRIVER_CAPACITY_0,               \
+       GPIO_INIT_ENABLE, GPIO_TIME_SHARING_MULTIPLEX_DISABLE},                 \
+      {GPIO_14, GPIO_SECOND_FUNC_ENABLE, GPIO_DEV_SDIO_HOST_CLK,               \
+       GPIO_IO_DISABLE, GPIO_PULL_UP_EN, GPIO_INT_DISABLE,                     \
+       GPIO_INT_TYPE_LOW_LEVEL, GPIO_LOW_POWER_DISCARD_IO_STATUS,              \
+       GPIO_DRIVER_CAPACITY_3, GPIO_INIT_ENABLE,                               \
+       GPIO_TIME_SHARING_MULTIPLEX_DISABLE},                                   \
+      {GPIO_15, GPIO_SECOND_FUNC_ENABLE, GPIO_DEV_SDIO_HOST_CMD,               \
+       GPIO_IO_DISABLE, GPIO_PULL_UP_EN, GPIO_INT_DISABLE,                     \
+       GPIO_INT_TYPE_LOW_LEVEL, GPIO_LOW_POWER_DISCARD_IO_STATUS,              \
+       GPIO_DRIVER_CAPACITY_3, GPIO_INIT_ENABLE,                               \
+       GPIO_TIME_SHARING_MULTIPLEX_DISABLE},                                   \
+      {GPIO_16, GPIO_SECOND_FUNC_ENABLE, GPIO_DEV_SDIO_HOST_DATA0,             \
+       GPIO_IO_DISABLE, GPIO_PULL_UP_EN, GPIO_INT_DISABLE,                     \
+       GPIO_INT_TYPE_LOW_LEVEL, GPIO_LOW_POWER_DISCARD_IO_STATUS,              \
+       GPIO_DRIVER_CAPACITY_3, GPIO_INIT_ENABLE,                               \
+       GPIO_TIME_SHARING_MULTIPLEX_DISABLE},                                   \
+      {GPIO_17, GPIO_SECOND_FUNC_ENABLE, GPIO_DEV_SDIO_HOST_DATA1,             \
+       GPIO_IO_DISABLE, GPIO_PULL_UP_EN, GPIO_INT_DISABLE,                     \
+       GPIO_INT_TYPE_LOW_LEVEL, GPIO_LOW_POWER_DISCARD_IO_STATUS,              \
+       GPIO_DRIVER_CAPACITY_3, GPIO_INIT_ENABLE,                               \
+       GPIO_TIME_SHARING_MULTIPLEX_DISABLE},                                   \
+      {GPIO_18, GPIO_SECOND_FUNC_ENABLE, GPIO_DEV_SDIO_HOST_DATA2,             \
+       GPIO_IO_DISABLE, GPIO_PULL_UP_EN, GPIO_INT_DISABLE,                     \
+       GPIO_INT_TYPE_LOW_LEVEL, GPIO_LOW_POWER_DISCARD_IO_STATUS,              \
+       GPIO_DRIVER_CAPACITY_3, GPIO_INIT_ENABLE,                               \
+       GPIO_TIME_SHARING_MULTIPLEX_DISABLE},                                   \
+      {GPIO_19, GPIO_SECOND_FUNC_ENABLE, GPIO_DEV_SDIO_HOST_DATA3,             \
+       GPIO_IO_DISABLE, GPIO_PULL_UP_EN, GPIO_INT_DISABLE,                     \
+       GPIO_INT_TYPE_LOW_LEVEL, GPIO_LOW_POWER_DISCARD_IO_STATUS,              \
+       GPIO_DRIVER_CAPACITY_3, GPIO_INIT_ENABLE,                               \
+       GPIO_TIME_SHARING_MULTIPLEX_DISABLE},                                   \
+      {GPIO_45, GPIO_SECOND_FUNC_DISABLE, GPIO_DEV_INVALID, GPIO_INPUT_ENABLE, \
+       GPIO_PULL_DISABLE, GPIO_INT_DISABLE, GPIO_INT_TYPE_LOW_LEVEL,           \
+       GPIO_LOW_POWER_DISCARD_IO_STATUS, GPIO_DRIVER_CAPACITY_0,               \
+       GPIO_INIT_ENABLE, GPIO_TIME_SHARING_MULTIPLEX_DISABLE},                 \
+      {GPIO_37, GPIO_SECOND_FUNC_DISABLE, GPIO_DEV_INVALID, GPIO_IO_DISABLE,   \
+       GPIO_PULL_DISABLE, GPIO_INT_DISABLE, GPIO_INT_TYPE_LOW_LEVEL,           \
+       GPIO_LOW_POWER_DISCARD_IO_STATUS, GPIO_DRIVER_CAPACITY_0,               \
+       GPIO_INIT_ENABLE, GPIO_TIME_SHARING_MULTIPLEX_DISABLE},                 \
+      {GPIO_53, GPIO_SECOND_FUNC_DISABLE, GPIO_DEV_INVALID, GPIO_IO_DISABLE,   \
+       GPIO_PULL_DISABLE, GPIO_INT_DISABLE, GPIO_INT_TYPE_LOW_LEVEL,           \
+       GPIO_LOW_POWER_DISCARD_IO_STATUS, GPIO_DRIVER_CAPACITY_0,               \
+       GPIO_INIT_ENABLE, GPIO_TIME_SHARING_MULTIPLEX_DISABLE},                 \
+      {GPIO_54, GPIO_SECOND_FUNC_DISABLE, GPIO_DEV_INVALID, GPIO_IO_DISABLE,   \
+       GPIO_PULL_DISABLE, GPIO_INT_DISABLE, GPIO_INT_TYPE_LOW_LEVEL,           \
+       GPIO_LOW_POWER_DISCARD_IO_STATUS, GPIO_DRIVER_CAPACITY_0,               \
+       GPIO_INIT_ENABLE, GPIO_TIME_SHARING_MULTIPLEX_DISABLE},                 \
+      {(gpio_id_t)2, GPIO_SECOND_FUNC_DISABLE, GPIO_DEV_INVALID,               \
+       GPIO_IO_DISABLE, GPIO_PULL_DISABLE, GPIO_INT_DISABLE,                   \
+       GPIO_INT_TYPE_LOW_LEVEL, GPIO_LOW_POWER_DISCARD_IO_STATUS,              \
+       GPIO_DRIVER_CAPACITY_0, GPIO_INIT_ENABLE,                               \
+       GPIO_TIME_SHARING_MULTIPLEX_DISABLE},                                   \
+      {(gpio_id_t)3, GPIO_SECOND_FUNC_DISABLE, GPIO_DEV_INVALID,               \
+       GPIO_IO_DISABLE, GPIO_PULL_DISABLE, GPIO_INT_DISABLE,                   \
+       GPIO_INT_TYPE_LOW_LEVEL, GPIO_LOW_POWER_DISCARD_IO_STATUS,              \
+       GPIO_DRIVER_CAPACITY_0, GPIO_INIT_ENABLE,                               \
+       GPIO_TIME_SHARING_MULTIPLEX_DISABLE},                                   \
+      {(gpio_id_t)5, GPIO_SECOND_FUNC_DISABLE, GPIO_DEV_INVALID,               \
+       GPIO_IO_DISABLE, GPIO_PULL_DISABLE, GPIO_INT_DISABLE,                   \
+       GPIO_INT_TYPE_LOW_LEVEL, GPIO_LOW_POWER_DISCARD_IO_STATUS,              \
+       GPIO_DRIVER_CAPACITY_0, GPIO_INIT_ENABLE,                               \
+       GPIO_TIME_SHARING_MULTIPLEX_DISABLE},                                   \
+      {(gpio_id_t)6, GPIO_SECOND_FUNC_DISABLE, GPIO_DEV_INVALID,               \
+       GPIO_IO_DISABLE, GPIO_PULL_DISABLE, GPIO_INT_DISABLE,                   \
+       GPIO_INT_TYPE_LOW_LEVEL, GPIO_LOW_POWER_DISCARD_IO_STATUS,              \
+       GPIO_DRIVER_CAPACITY_0, GPIO_INIT_ENABLE,                               \
+       GPIO_TIME_SHARING_MULTIPLEX_DISABLE},                                   \
+      {(gpio_id_t)8, GPIO_SECOND_FUNC_DISABLE, GPIO_DEV_INVALID,               \
+       GPIO_IO_DISABLE, GPIO_PULL_DISABLE, GPIO_INT_DISABLE,                   \
+       GPIO_INT_TYPE_LOW_LEVEL, GPIO_LOW_POWER_DISCARD_IO_STATUS,              \
+       GPIO_DRIVER_CAPACITY_0, GPIO_INIT_ENABLE,                               \
+       GPIO_TIME_SHARING_MULTIPLEX_DISABLE},                                   \
+      {(gpio_id_t)9, GPIO_SECOND_FUNC_DISABLE, GPIO_DEV_INVALID,               \
+       GPIO_IO_DISABLE, GPIO_PULL_DISABLE, GPIO_INT_DISABLE,                   \
+       GPIO_INT_TYPE_LOW_LEVEL, GPIO_LOW_POWER_DISCARD_IO_STATUS,              \
+       GPIO_DRIVER_CAPACITY_0, GPIO_INIT_ENABLE,                               \
+       GPIO_TIME_SHARING_MULTIPLEX_DISABLE},                                   \
+      {(gpio_id_t)12, GPIO_SECOND_FUNC_DISABLE, GPIO_DEV_INVALID,              \
+       GPIO_IO_DISABLE, GPIO_PULL_DISABLE, GPIO_INT_DISABLE,                   \
+       GPIO_INT_TYPE_LOW_LEVEL, GPIO_LOW_POWER_DISCARD_IO_STATUS,              \
+       GPIO_DRIVER_CAPACITY_0, GPIO_INIT_ENABLE,                               \
+       GPIO_TIME_SHARING_MULTIPLEX_DISABLE},                                   \
+      {(gpio_id_t)30, GPIO_SECOND_FUNC_DISABLE, GPIO_DEV_INVALID,              \
+       GPIO_IO_DISABLE, GPIO_PULL_DISABLE, GPIO_INT_DISABLE,                   \
+       GPIO_INT_TYPE_LOW_LEVEL, GPIO_LOW_POWER_DISCARD_IO_STATUS,              \
+       GPIO_DRIVER_CAPACITY_0, GPIO_INIT_ENABLE,                               \
+       GPIO_TIME_SHARING_MULTIPLEX_DISABLE},                                   \
+      {(gpio_id_t)31, GPIO_SECOND_FUNC_DISABLE, GPIO_DEV_INVALID,              \
+       GPIO_IO_DISABLE, GPIO_PULL_DISABLE, GPIO_INT_DISABLE,                   \
+       GPIO_INT_TYPE_LOW_LEVEL, GPIO_LOW_POWER_DISCARD_IO_STATUS,              \
+       GPIO_DRIVER_CAPACITY_0, GPIO_INIT_ENABLE,                               \
+       GPIO_TIME_SHARING_MULTIPLEX_DISABLE},                                   \
+      {(gpio_id_t)32, GPIO_SECOND_FUNC_DISABLE, GPIO_DEV_INVALID,              \
+       GPIO_IO_DISABLE, GPIO_PULL_DISABLE, GPIO_INT_DISABLE,                   \
+       GPIO_INT_TYPE_LOW_LEVEL, GPIO_LOW_POWER_DISCARD_IO_STATUS,              \
+       GPIO_DRIVER_CAPACITY_0, GPIO_INIT_ENABLE,                               \
+       GPIO_TIME_SHARING_MULTIPLEX_DISABLE},                                   \
+      {(gpio_id_t)33, GPIO_SECOND_FUNC_DISABLE, GPIO_DEV_INVALID,              \
+       GPIO_IO_DISABLE, GPIO_PULL_DISABLE, GPIO_INT_DISABLE,                   \
+       GPIO_INT_TYPE_LOW_LEVEL, GPIO_LOW_POWER_DISCARD_IO_STATUS,              \
+       GPIO_DRIVER_CAPACITY_0, GPIO_INIT_ENABLE,                               \
+       GPIO_TIME_SHARING_MULTIPLEX_DISABLE},                                   \
+      {(gpio_id_t)34, GPIO_SECOND_FUNC_DISABLE, GPIO_DEV_INVALID,              \
+       GPIO_IO_DISABLE, GPIO_PULL_DISABLE, GPIO_INT_DISABLE,                   \
+       GPIO_INT_TYPE_LOW_LEVEL, GPIO_LOW_POWER_DISCARD_IO_STATUS,              \
+       GPIO_DRIVER_CAPACITY_0, GPIO_INIT_ENABLE,                               \
+       GPIO_TIME_SHARING_MULTIPLEX_DISABLE},                                   \
+      {(gpio_id_t)35, GPIO_SECOND_FUNC_DISABLE, GPIO_DEV_INVALID,              \
+       GPIO_IO_DISABLE, GPIO_PULL_DISABLE, GPIO_INT_DISABLE,                   \
+       GPIO_INT_TYPE_LOW_LEVEL, GPIO_LOW_POWER_DISCARD_IO_STATUS,              \
+       GPIO_DRIVER_CAPACITY_0, GPIO_INIT_ENABLE,                               \
+       GPIO_TIME_SHARING_MULTIPLEX_DISABLE},                                   \
+      {(gpio_id_t)38, GPIO_SECOND_FUNC_DISABLE, GPIO_DEV_INVALID,              \
+       GPIO_IO_DISABLE, GPIO_PULL_DISABLE, GPIO_INT_DISABLE,                   \
+       GPIO_INT_TYPE_LOW_LEVEL, GPIO_LOW_POWER_DISCARD_IO_STATUS,              \
+       GPIO_DRIVER_CAPACITY_0, GPIO_INIT_ENABLE,                               \
+       GPIO_TIME_SHARING_MULTIPLEX_DISABLE},                                   \
+      {(gpio_id_t)39, GPIO_SECOND_FUNC_DISABLE, GPIO_DEV_INVALID,              \
+       GPIO_IO_DISABLE, GPIO_PULL_DISABLE, GPIO_INT_DISABLE,                   \
+       GPIO_INT_TYPE_LOW_LEVEL, GPIO_LOW_POWER_DISCARD_IO_STATUS,              \
+       GPIO_DRIVER_CAPACITY_0, GPIO_INIT_ENABLE,                               \
+       GPIO_TIME_SHARING_MULTIPLEX_DISABLE},                                   \
+      {(gpio_id_t)40, GPIO_SECOND_FUNC_DISABLE, GPIO_DEV_INVALID,              \
+       GPIO_IO_DISABLE, GPIO_PULL_DISABLE, GPIO_INT_DISABLE,                   \
+       GPIO_INT_TYPE_LOW_LEVEL, GPIO_LOW_POWER_DISCARD_IO_STATUS,              \
+       GPIO_DRIVER_CAPACITY_0, GPIO_INIT_ENABLE,                               \
+       GPIO_TIME_SHARING_MULTIPLEX_DISABLE},                                   \
+      {(gpio_id_t)41, GPIO_SECOND_FUNC_DISABLE, GPIO_DEV_INVALID,              \
+       GPIO_IO_DISABLE, GPIO_PULL_DISABLE, GPIO_INT_DISABLE,                   \
+       GPIO_INT_TYPE_LOW_LEVEL, GPIO_LOW_POWER_DISCARD_IO_STATUS,              \
+       GPIO_DRIVER_CAPACITY_0, GPIO_INIT_ENABLE,                               \
+       GPIO_TIME_SHARING_MULTIPLEX_DISABLE},                                   \
+      {(gpio_id_t)55, GPIO_SECOND_FUNC_DISABLE, GPIO_DEV_INVALID,              \
+       GPIO_IO_DISABLE, GPIO_PULL_DISABLE, GPIO_INT_DISABLE,                   \
+       GPIO_INT_TYPE_LOW_LEVEL, GPIO_LOW_POWER_DISCARD_IO_STATUS,              \
+       GPIO_DRIVER_CAPACITY_0, GPIO_INIT_ENABLE,                               \
+       GPIO_TIME_SHARING_MULTIPLEX_DISABLE},                                   \
+  }
+
+#endif

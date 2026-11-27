@@ -5,6 +5,8 @@ load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS
 
 package(default_visibility = ["//visibility:public"])
 
+exports_files(["include/h2_bk_platform_storage.h"])
+
 firmware_native_component(
     name = "h2_pal_storage",
     srcs = [

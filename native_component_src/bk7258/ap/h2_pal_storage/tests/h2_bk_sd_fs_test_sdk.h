@@ -3,6 +3,8 @@
 #include <stdlib.h>
 #include <stddef.h>
 typedef unsigned UINT;
+typedef uint64_t FSIZE_t;
+#define f_size(file) ((FSIZE_t)((file)->marker))
 typedef unsigned char BYTE;
 typedef int FRESULT;
 typedef int gpio_output_state_e;
@@ -29,6 +31,7 @@ enum {
   FR_NOT_ENOUGH_CORE,
   FR_TIMEOUT,
   FR_EXIST,
+  FR_NO_FILESYSTEM,
   FR_DISK_ERR
 };
 enum { FA_WRITE = 1, FA_CREATE_ALWAYS = 2, FA_READ = 4, AM_DIR = 0x10 };
@@ -55,6 +58,7 @@ FRESULT f_mkdir(const char*);
 FRESULT f_open(FIL*, const char*, BYTE);
 FRESULT f_read(FIL*, void*, UINT, UINT*);
 FRESULT f_write(FIL*, const void*, UINT, UINT*);
+FRESULT f_lseek(FIL*, FSIZE_t);
 FRESULT f_sync(FIL*);
 FRESULT f_close(FIL*);
 FRESULT f_stat(const char*, FILINFO*);
@@ -63,3 +67,7 @@ FRESULT f_rename(const char*, const char*);
 FRESULT f_opendir(DIR*, const char*);
 FRESULT f_readdir(DIR*, FILINFO*);
 FRESULT f_closedir(DIR*);
+
+#define FF_MAX_SS 4096u
+#define FM_ANY 7
+FRESULT f_mkfs(const char*, BYTE, uint32_t, void*, UINT);

@@ -1,0 +1,103 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel/firmware:tasks.bzl", "h2_tasks")
+load("//tools/bazel/platforms:compatibility.bzl", "PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY")
+load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+# Encoded to IMA ADPCM C arrays by the H202 MFG entry with ima_adpcm.py; the
+# package carries no prompt data and MFG opens no prompt path.
+filegroup(
+    name = "prompts",
+    srcs = [
+        "prompts/ima_adpcm.py",
+        "prompts/zh/aging.pcm",
+        "prompts/zh/aging_failed.pcm",
+        "prompts/zh/battery_failed.pcm",
+        "prompts/zh/boot.pcm",
+        "prompts/zh/charge_failed.pcm",
+        "prompts/zh/charge_insert.pcm",
+        "prompts/zh/charge_passed.pcm",
+        "prompts/zh/charge_remove.pcm",
+        "prompts/zh/incomplete.pcm",
+        "prompts/zh/listen.pcm",
+        "prompts/zh/mic_failed.pcm",
+        "prompts/zh/mic_left.pcm",
+        "prompts/zh/mic_right.pcm",
+        "prompts/zh/minus.pcm",
+        "prompts/zh/network.pcm",
+        "prompts/zh/nfc.pcm",
+        "prompts/zh/nfc_failed.pcm",
+        "prompts/zh/nfc_passed.pcm",
+        "prompts/zh/plus.pcm",
+        "prompts/zh/power.pcm",
+        "prompts/zh/poweroff_failed.pcm",
+        "prompts/zh/retry.pcm",
+        "prompts/zh/retry_poweroff.pcm",
+        "prompts/zh/sd_failed.pcm",
+        "prompts/zh/sd_insert.pcm",
+        "prompts/zh/sd_passed.pcm",
+        "prompts/zh/unsaved.pcm",
+        "prompts/zh/waiting.pcm",
+        "prompts/zh/wifi_failed.pcm",
+        "prompts/zh/wifi_passed.pcm",
+    ],
+)
+
+h2_tasks(
+    name = "tasks",
+    tasks = [
+        "h202/mfg",
+        "h202/mfg/audio",
+        "h202/mfg/sensor",
+        "h202/mfg/wifi",
+        "h202/mfg/power",
+    ],
+)
+
+# Private H202 controller and service. Loader MFG records come from the
+# native h2loader_bk component on device and from the library in host tests.
+cc_library(
+    name = "mfg",
+    srcs = ["src/h2_h202_mfg.c"],
+    hdrs = ["include/h2_h202_mfg.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    linkopts = select({
+        "//tools/bazel/platforms:host_linux_target_linux": ["-lm"],
+        "//conditions:default": [],
+    }),
+    target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
+    deps = [
+        ":tasks",
+        "//libs/h2loader/device:api",
+        "//libs/net/ntp",
+        "//libs/runtime",
+        "//pal",
+    ],
+)
+
+[
+    cc_test(
+        name = name,
+        srcs = [source],
+        conlyopts = H2_C11_OPTS,
+        copts = H2_WARNING_COPTS,
+        linkopts = ["-pthread"],
+        target_compatible_with = select({
+            "//tools/bazel/platforms:host_linux_target_linux": [],
+            "//tools/bazel/platforms:host_macos_target_macos": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+        deps = [
+            ":mfg",
+            "//libs/h2loader/device",
+            "//libs/sync/atomic/providers/c11",
+        ],
+    )
+    for name, source in [
+        ("mfg_test", "tests/test_mfg.c"),
+        ("service_test", "tests/test_mfg_service.c"),
+    ]
+]
