@@ -18,10 +18,13 @@ runs:
         sdk_version=6.2
         sdk_commit=$(jq -er --arg version "$sdk_version" '.sdks[] | select(.name == "esp-idf" and .version == $version) | .commit' tools/gizos/src/catalog.json)
         [[ "$sdk_commit" =~ ^[0-9a-f]{40}$ ]]
-        sdk_path="$sdk_root/sources/$sdk_commit"
+        source_cache="$sdk_root/sources/$sdk_commit"
+        sdk_path="$RUNNER_TEMP/gizos-esp-idf/$sdk_commit"
         tools_path="$sdk_root/tools/$RUNNER_ARCH/$sdk_commit"
-        mkdir -p "$sdk_root/sources" "$tools_path"
-        exec {sdk_lock}>"$sdk_path.lock"
+        mkdir -p "$sdk_root/sources" "${sdk_path%/*}" "$tools_path"
+        exec {sdk_lock}>"$source_cache.lock"
         flock --timeout 1200 "$sdk_lock"
+        "$GIZOS_BIN" setup esp-idf "$sdk_version" --sdk "$source_cache" --sources-only
+        cp -a "$source_cache" "$sdk_path"
         "$GIZOS_BIN" setup esp-idf "$sdk_version" --sdk "$sdk_path" --tools "$tools_path" --targets "$ESP_IDF_TARGETS"
         printf 'H2_ESP_IDF_SDK_ROOT=%s\nH2_ESP_IDF_TOOLS_ROOT=%s\n' "$sdk_path" "$tools_path" >> "$GITHUB_ENV"
