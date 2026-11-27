@@ -125,7 +125,7 @@ jobs:
             sha: 7668a95db1250f12c40407251e4e203b4ec8bf39bc495d2f485b2d8c99048694
             timeout: 120
           - name: macOS arm64 / Build + Test
-            runner: ${{ vars.FIRMWARE_MACOS_RUNNER }}
+            runner: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.FIRMWARE_MACOS_RUNNER || 'macos-15' }}
             config: macos_arm64
             task: build-test
             asset: darwin-arm64
@@ -1000,7 +1000,7 @@ jobs:
 
   windows-compatible-graph:
     name: Windows x86_64 / Build + Test
-    runs-on: ${{ vars.FIRMWARE_WINDOWS_RUNNER }}
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.FIRMWARE_WINDOWS_RUNNER || 'windows-2025' }}
     timeout-minutes: 120
     permissions:
       actions: read
