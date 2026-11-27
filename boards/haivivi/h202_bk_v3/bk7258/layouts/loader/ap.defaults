@@ -1,0 +1,30 @@
+# H202 1.0 Loader layout AP configuration.
+CONFIG_SHELL_TASK_STACK_SIZE=32768
+# CONFIG_LCD_QSPI_ST77903_H0165Y008T is not set
+
+# Loader keeps update/recovery and BLE; business services belong to App.
+# CONFIG_MEDIA_DISPLAY_SERVICE is not set
+# CONFIG_AUDIO_PLAY is not set
+# CONFIG_AUDIO_RECORD is not set
+# CONFIG_LCD is not set
+# CONFIG_LCD_QSPI is not set
+# CONFIG_LCD_SPI is not set
+# CONFIG_JPEGDEC_HW is not set
+# CONFIG_DMA2D is not set
+# CONFIG_HW_SCALE is not set
+# CONFIG_HW_ROTATE_PFC is not set
+# CONFIG_AUDIO is not set
+# CONFIG_AUDIO_ADC is not set
+# CONFIG_AUDIO_DAC is not set
+# CONFIG_AUDIO_DMIC is not set
+# CONFIG_MEDIA is not set
+# CONFIG_MEDIA_MAJOR is not set
+# CONFIG_LVGL is not set
+# CONFIG_DEMOS_IPERF is not set
+# CONFIG_IPERF_TEST is not set
+# CONFIG_LWIP_PPP_SUPPORT is not set
+# CONFIG_JPEG_DECODER is not set
+# CONFIG_JPEG_DECODER_HW is not set
+# CONFIG_JPEG_DECODER_SW is not set
+# CONFIG_VIDEO_PIPELINE is not set
+# CONFIG_MEDIA_PIPELINE is not set

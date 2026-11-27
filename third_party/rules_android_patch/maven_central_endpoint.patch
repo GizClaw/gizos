@@ -1,0 +1,21 @@
+diff --git a/MODULE.bazel b/MODULE.bazel
+--- a/MODULE.bazel
++++ b/MODULE.bazel
+@@ -78,7 +78,7 @@
+     ],
+     repositories = [
+         "https://maven.google.com",
+-        "https://repo1.maven.org/maven2",
++        "https://maven-central.storage-download.googleapis.com/maven2",
+     ],
+     use_starlark_android_rules = True,
+ )
+@@ -148,7 +148,7 @@
+         "https://repo1.maven.org/maven2",
+     ],
+     # To generate, run:
+     # REPIN=1 bazelisk run --enable_bzlmod @rules_android_maven//:pin
+-    # lock_file = "//:rules_android_maven_install.json",
++    lock_file = "//:rules_android_maven_install.json",
+     use_starlark_android_rules = True,
+ )

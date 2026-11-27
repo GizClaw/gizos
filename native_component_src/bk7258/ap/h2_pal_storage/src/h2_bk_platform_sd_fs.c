@@ -58,17 +58,24 @@ void h2_bk_platform_sd_fs_release(void) {
   s_mounted = 0;
 }
 
-void h2_bk_platform_sd_fs_prepare(void) {
+static int prepare_sd_storage(void) {
   h2_bk_platform_sd_fs_release();
   (void)bk_sd_card_deinit();
   (void)bk_sdio_host_driver_deinit();
   sd_power_set(GPIO_OUTPUT_STATE_LOW);
   rtos_delay_milliseconds(H2_BK_SD_POWER_OFF_MS);
-  sd_map_pins();
+  if (s_config.select_pins != NULL) {
+    int rc = s_config.select_pins();
+    if (rc != H2_PAL_OK) return rc;
+  } else {
+    sd_map_pins();
+  }
   sd_power_set(GPIO_OUTPUT_STATE_HIGH);
   rtos_delay_milliseconds(H2_BK_SD_POWER_ON_MS);
-  (void)bk_sdio_host_driver_init();
+  return bk_sdio_host_driver_init() == 0 ? H2_PAL_OK : H2_PAL_ERR_IO;
 }
+
+void h2_bk_platform_sd_fs_prepare(void) { (void)prepare_sd_storage(); }
 
 static int map_fresult(FRESULT fr) {
   switch (fr) {
@@ -212,6 +219,14 @@ static int fs_write(void* user, h2_pal_fs_file_t* file, const void* data,
   return H2_PAL_OK;
 }
 
+static int fs_seek(void* user, h2_pal_fs_file_t* file, uint64_t position) {
+  (void)user;
+  if (file == NULL || (uint64_t)(FSIZE_t)position != position ||
+      position > (uint64_t)f_size(&file->file))
+    return H2_PAL_ERR_INVALID_ARG;
+  return map_fresult(f_lseek(&file->file, (FSIZE_t)position));
+}
+
 static int fs_sync(void* user, h2_pal_fs_file_t* file) {
   (void)user;
   if (file == NULL) {
@@ -348,37 +363,68 @@ static int clear_dir_children(const char* dir_path) {
   return rc;
 }
 
-int h2_bk_platform_sd_fs_mount(void* user, const char* path) {
-  FRESULT fr;
-  int rc;
-
-  (void)user;
+static int mount_sd(const char* path, bool factory) {
   char mapped[H2_BK_FS_PATH_MAX];
-  rc = translate_path(path, mapped, sizeof(mapped));
+  int rc = translate_path(path, mapped, sizeof(mapped));
   if (rc != H2_PAL_OK || !s_config.drive) return H2_PAL_ERR_INVALID_ARG;
-  if (!s_mounted) {
-    for (uint32_t attempt = 0; attempt < H2_BK_SD_MOUNT_ATTEMPTS; ++attempt) {
-      h2_bk_platform_sd_fs_prepare();
+  if (factory && s_config.card_present == NULL) return H2_PAL_ERR_UNSUPPORTED;
+  if (s_config.card_present != NULL && !s_config.card_present()) {
+    if (s_mounted) h2_bk_platform_sd_fs_release();
+    return H2_PAL_ERR_UNAVAILABLE;
+  }
+  if (factory || !s_mounted) {
+    FRESULT fr = FR_DISK_ERR;
+    const unsigned limit = factory ? 1u : H2_BK_SD_MOUNT_ATTEMPTS;
+    for (unsigned attempt = 0; attempt < limit; ++attempt) {
+      rc = prepare_sd_storage();
+      if (rc != H2_PAL_OK) return rc;
+      if (s_config.card_present != NULL && !s_config.card_present())
+        return H2_PAL_ERR_UNAVAILABLE;
       fr = f_mount(&s_fs, s_config.drive, 1);
-      if (fr == FR_OK) {
-        break;
-      }
+      if (fr == FR_OK) break;
       os_printf("H2_BK_SD_MOUNT_RETRY attempt=%u fatfs=%d rc=%d\r\n",
-                (unsigned)(attempt + 1u), (int)fr, map_fresult(fr));
+                attempt + 1u, (int)fr, map_fresult(fr));
+    }
+    if (factory && fr == FR_NO_FILESYSTEM && s_config.card_present()) {
+      BYTE* work = os_malloc(FF_MAX_SS);
+      if (work == NULL) {
+        h2_bk_platform_sd_fs_release();
+        return H2_PAL_ERR_NO_MEMORY;
+      }
+      fr = f_mkfs(s_config.drive, FM_ANY, 0, work, FF_MAX_SS);
+      os_free(work);
+      os_printf("H2_BK_SD_FORMAT fatfs=%d\r\n", (int)fr);
+      if (fr == FR_OK && !s_config.card_present()) {
+        h2_bk_platform_sd_fs_release();
+        return H2_PAL_ERR_UNAVAILABLE;
+      }
+      if (fr == FR_OK) fr = f_mount(&s_fs, s_config.drive, 1);
     }
     if (fr != FR_OK) {
-      os_printf("H2_BK_SD_MOUNT_FAIL fatfs=%d rc=%d\r\n", (int)fr,
-                map_fresult(fr));
+      h2_bk_platform_sd_fs_release();
       return map_fresult(fr);
+    }
+    if (s_config.card_present != NULL && !s_config.card_present()) {
+      h2_bk_platform_sd_fs_release();
+      return H2_PAL_ERR_UNAVAILABLE;
     }
     rc = ensure_dir(s_config.root);
     if (rc != H2_PAL_OK) {
-      if (s_config.drive) (void)f_mount(NULL, s_config.drive, 0);
+      h2_bk_platform_sd_fs_release();
       return rc;
     }
     s_mounted = 1;
   }
   return ensure_dir(mapped);
+}
+
+int h2_bk_platform_sd_fs_mount(void* user, const char* path) {
+  (void)user;
+  return mount_sd(path, false);
+}
+
+int h2_bk_platform_sd_fs_factory_mount(const char* path) {
+  return mount_sd(path, true);
 }
 
 int h2_bk_platform_sd_fs_clear(void* user, const char* path) {
@@ -397,6 +443,7 @@ int h2_bk_platform_sd_fs_init(const h2_bk_sd_fs_config_t* config,
       .open = fs_open,
       .read = fs_read,
       .write = fs_write,
+      .seek = fs_seek,
       .sync = fs_sync,
       .close = fs_close,
       .stat = fs_stat,
@@ -439,6 +486,10 @@ int h2_bk_platform_sd_fs_init(const h2_bk_sd_fs_config_t* config,
 
 int h2_bk_platform_sd_fs_mount(void* user, const char* path) {
   (void)user;
+  return path == NULL ? H2_PAL_ERR_INVALID_ARG : H2_PAL_ERR_UNSUPPORTED;
+}
+
+int h2_bk_platform_sd_fs_factory_mount(const char* path) {
   return path == NULL ? H2_PAL_ERR_INVALID_ARG : H2_PAL_ERR_UNSUPPORTED;
 }
 

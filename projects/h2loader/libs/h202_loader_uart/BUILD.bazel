@@ -1,0 +1,18 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//tools/bazel/toolchains:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+
+cc_library(
+    name = "h202_loader_uart",
+    srcs = ["src/h2_h202_loader_uart.c"],
+    hdrs = ["include/h2_h202_loader_uart.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    visibility = ["//projects/h2loader/targets:__subpackages__"],
+    deps = [
+        "//libs/h2loader/device:api",
+        "//libs/net/iostreamikcp",
+        "//libs/runtime",
+        "//pal",
+    ],
+)

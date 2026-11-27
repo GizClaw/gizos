@@ -122,7 +122,7 @@ jobs:
             sha: 7668a95db1250f12c40407251e4e203b4ec8bf39bc495d2f485b2d8c99048694
             timeout: 120
           - name: macOS arm64 / Build + Test
-            runner: ${{ vars.FIRMWARE_MACOS_RUNNER }}
+            runner: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.FIRMWARE_MACOS_RUNNER || 'macos-15' }}
             config: macos_arm64
             task: build-test
             asset: darwin-arm64
@@ -142,6 +142,17 @@ jobs:
         timeout-minutes: 15
         shell: bash
         run: |
+          packages=(
+            cmake lcov libasound2-dev libx11-dev libxext-dev
+            libxi-dev libxrandr-dev libxtst6 libssl-dev nasm ninja-build
+            pkg-config ripgrep unzip xauth xvfb
+          )
+          if [[ "$RUNNER_ENVIRONMENT" == self-hosted ]] &&
+              package_status="$(dpkg-query --show --showformat='${db:Status-Status}\n' "${packages[@]}")" &&
+              [[ "$package_status" == "$(printf 'installed\n%.0s' "${packages[@]}")" ]]; then
+            echo "Using Linux dependencies installed on the runner"
+            exit 0
+          fi
           # All declared packages come from Ubuntu, independently of runner-added repositories.
           apt_sources=/etc/apt/sources.list
           if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then
@@ -156,10 +167,7 @@ jobs:
             -o Acquire::https::Timeout=30
           )
           sudo apt-get "${apt_network_options[@]}" update
-          sudo apt-get "${apt_network_options[@]}" install --yes \
-            cmake lcov libasound2-dev libx11-dev libxext-dev \
-            libxi-dev libxrandr-dev libxtst6 libssl-dev nasm ninja-build \
-            pkg-config ripgrep unzip xauth xvfb
+          sudo apt-get "${apt_network_options[@]}" install --yes "${packages[@]}"
 
       - name: Install macOS dependencies and select Xcode
         if: runner.os == 'macOS'
@@ -290,6 +298,17 @@ jobs:
         timeout-minutes: 15
         shell: bash
         run: |
+          packages=(
+            cmake lcov libasound2-dev libx11-dev libxext-dev
+            libxi-dev libxrandr-dev libxtst6 libssl-dev nasm ninja-build
+            pkg-config ripgrep unzip xauth xvfb
+          )
+          if [[ "$RUNNER_ENVIRONMENT" == self-hosted ]] &&
+              package_status="$(dpkg-query --show --showformat='${db:Status-Status}\n' "${packages[@]}")" &&
+              [[ "$package_status" == "$(printf 'installed\n%.0s' "${packages[@]}")" ]]; then
+            echo "Using Linux dependencies installed on the runner"
+            exit 0
+          fi
           # All declared packages come from Ubuntu, independently of runner-added repositories.
           apt_sources=/etc/apt/sources.list
           if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then
@@ -304,10 +323,7 @@ jobs:
             -o Acquire::https::Timeout=30
           )
           sudo apt-get "${apt_network_options[@]}" update
-          sudo apt-get "${apt_network_options[@]}" install --yes \
-            cmake lcov libasound2-dev libx11-dev libxext-dev \
-            libxi-dev libxrandr-dev libxtst6 libssl-dev nasm ninja-build \
-            pkg-config ripgrep unzip xauth xvfb
+          sudo apt-get "${apt_network_options[@]}" install --yes "${packages[@]}"
 
       - name: Install macOS dependencies and select Xcode
         if: runner.os == 'macOS'
@@ -319,9 +335,11 @@ jobs:
 
       - name: Install coverage toolchain compatibility dependency
         if: matrix.config == 'test_coverage'
+        timeout-minutes: 7
         shell: bash
         run: |
           curl --fail --location --silent --show-error \
+            --retry 4 --retry-all-errors --connect-timeout 15 --max-time 60 \
             https://security.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.3-2ubuntu0.3_amd64.deb \
             --output "$RUNNER_TEMP/libtinfo5.deb"
           printf '%s  %s\n' \
@@ -997,7 +1015,7 @@ jobs:
 
   windows-compatible-graph:
     name: Windows x86_64 / Build + Test
-    runs-on: ${{ vars.FIRMWARE_WINDOWS_RUNNER }}
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && vars.FIRMWARE_WINDOWS_RUNNER || 'windows-2025' }}
     timeout-minutes: 120
     permissions:
       actions: read

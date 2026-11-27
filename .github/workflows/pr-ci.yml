@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   build:
-    uses: GizClaw/gizos/.github/workflows/ci.yml@1a5de28b2e2b72e88dfa92b372304ccbc63850eb
+    uses: GizClaw/gizos/.github/workflows/ci.yml@main
     with:
       orbstack_pr: true
     secrets: inherit
