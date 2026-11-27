@@ -1104,11 +1104,28 @@ h2_pal_result_t h2_h202_mfg_play_adpcm8k(h2_pal_audio_track_t* track,
   return (h2_pal_result_t)h2_pal_audio_track_drain(track, 1000u);
 }
 
-h2_pal_result_t h2_h202_mfg_startup_feedback(h2_runtime_t* runtime,
+h2_pal_result_t h2_h202_mfg_startup_audio_release(
+    h2_h202_mfg_startup_audio_t* state) {
+  if (state == NULL) return H2_PAL_ERR_INVALID_ARG;
+  if (state->track != NULL) {
+    int rc = h2_pal_audio_track_close(state->track);
+    if (rc != H2_PAL_OK) return (h2_pal_result_t)rc;
+    state->track = NULL;
+  }
+  if (state->audio != NULL) {
+    int rc = h2_pal_audio_stop_speaker(state->audio);
+    if (rc != H2_PAL_OK) return (h2_pal_result_t)rc;
+    state->audio = NULL;
+  }
+  return H2_PAL_OK;
+}
+
+h2_pal_result_t h2_h202_mfg_startup_feedback(h2_h202_mfg_startup_audio_t* state,
+                                             h2_runtime_t* runtime,
                                              const h2_h202_mfg_profile_t* p,
                                              h2_h202_mfg_color_t color,
                                              h2_h202_mfg_prompt_t prompt) {
-  if (runtime == NULL || p == NULL ||
+  if (state == NULL || runtime == NULL || p == NULL ||
       (unsigned)color >= H2_H202_MFG_COLOR_COUNT ||
       (unsigned)prompt >= H2_H202_MFG_PROMPT_COUNT)
     return H2_PAL_ERR_INVALID_ARG;
@@ -1118,14 +1135,13 @@ h2_pal_result_t h2_h202_mfg_startup_feedback(h2_runtime_t* runtime,
   int light = h2_pal_led_set_frame(runtime->led, p->eyes, pixels, count);
   const h2_pal_audio_api_t* audio = runtime->audio;
   const h2_h202_mfg_adpcm_t* pcm = &p->prompts[prompt];
-  h2_pal_audio_track_t* track = NULL;
-  bool speaker = false;
-  int rc =
-      pcm->data == NULL || pcm->size == NULL
-          ? H2_PAL_ERR_NOT_FOUND
-          : h2_pal_audio_set_speaker_volume_percent(audio, p->volume_percent);
+  int rc = h2_h202_mfg_startup_audio_release(state);
+  if (rc != H2_PAL_OK) return (h2_pal_result_t)rc;
+  rc = pcm->data == NULL || pcm->size == NULL
+           ? H2_PAL_ERR_NOT_FOUND
+           : h2_pal_audio_set_speaker_volume_percent(audio, p->volume_percent);
   if (rc == H2_PAL_OK) {
-    speaker = true; /* Partial start is still owned. */
+    state->audio = audio; /* Partial start is still owned. */
     rc = h2_pal_audio_start_speaker(audio);
   }
   const h2_audio_track_config_t config = {
@@ -1137,29 +1153,19 @@ h2_pal_result_t h2_h202_mfg_startup_feedback(h2_runtime_t* runtime,
       .volume_factor_milli = 1000u,
       .buffer_frames = 4u,
       .allocator = runtime->mem};
-  if (rc == H2_PAL_OK) rc = h2_pal_audio_create_track(audio, &config, &track);
   if (rc == H2_PAL_OK)
-    rc = h2_h202_mfg_play_adpcm8k(track, pcm->data, *pcm->size, NULL, NULL);
-  if (track != NULL) {
-    int closed = h2_pal_audio_track_close(track);
-    if (rc == H2_PAL_OK) rc = closed;
-  }
-  if (speaker) {
-    int stopped = h2_pal_audio_stop_speaker(audio);
-    if (rc == H2_PAL_OK) rc = stopped;
-  }
+    rc = h2_pal_audio_create_track(audio, &config, &state->track);
+  if (rc == H2_PAL_OK)
+    rc = h2_h202_mfg_play_adpcm8k(state->track, pcm->data, *pcm->size, NULL,
+                                  NULL);
+  int cleanup = h2_h202_mfg_startup_audio_release(state);
+  if (rc == H2_PAL_OK) rc = cleanup;
   char line[80];
   (void)snprintf(line, sizeof(line),
                  "H202_MFG_STARTUP_FEEDBACK prompt=%d eyes=%d audio=%d",
                  (int)prompt, light, rc);
   (void)h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "h202/mfg", line);
   return (h2_pal_result_t)(light != H2_PAL_OK ? light : rc);
-}
-
-h2_pal_result_t h2_h202_mfg_boot_feedback(h2_runtime_t* runtime,
-                                          const h2_h202_mfg_profile_t* p) {
-  return h2_h202_mfg_startup_feedback(runtime, p, H2_H202_MFG_COLOR_WHITE,
-                                      H2_H202_MFG_PROMPT_BOOT);
 }
 
 h2_pal_result_t h2_h202_mfg_scale_init(
@@ -1268,7 +1274,6 @@ struct h2_h202_mfg_service {
   bool observer;
   int observer_error; /**< Protected by lock across capture/DAC callbacks. */
   h2_h202_mfg_aec_meter_t meter;
-  bool meter_active;
   int16_t capture[640];
   int16_t output[320];
   h2_h202_mfg_scale_t scale;
@@ -1480,7 +1485,7 @@ static unsigned read_keys(h2_h202_mfg_service_t* s, uint64_t now) {
 
 static void observe_capture(void* user, const h2_audio_aec_frame_t* frame) {
   h2_h202_mfg_service_t* s = user;
-  if (s->meter_active) h2_h202_mfg_aec_meter_capture(&s->meter, frame);
+  h2_h202_mfg_aec_meter_capture(&s->meter, frame);
 }
 
 static void observe_playback(void* user, const h2_audio_frame_t* frame) {
@@ -1522,12 +1527,6 @@ static int audio_release(h2_h202_mfg_service_t* s) {
     s->observer = false;
   }
   return H2_PAL_OK;
-}
-
-static int audio_close(h2_h202_mfg_service_t* s) {
-  int rc = audio_release(s);
-  if (rc == H2_PAL_OK) s->meter_active = false;
-  return rc;
 }
 
 /* The observer is registered while microphone and speaker are stopped. */
@@ -1609,7 +1608,7 @@ static int play_prompts(slot_t* slot, const h2_h202_mfg_prompt_t* prompts,
     if (rc == H2_PAL_OK && tail != H2_H202_MFG_PROMPT_NONE)
       rc = play_clip(slot, tail);
   }
-  int closed = audio_close(s);
+  int closed = audio_release(s);
   return rc == H2_PAL_OK ? closed : rc;
 }
 
@@ -1685,7 +1684,6 @@ static void run_mic(slot_t* slot) {
   if (rc == H2_PAL_OK)
     rc = h2_h202_mfg_aec_meter_init(&s->meter, &p->aec, lane);
   if (rc == H2_PAL_OK) {
-    s->meter_active = true;
     rc = audio_open(s, true, &observer);
     slog(s, "H202_MFG_TONE lane=%s on rc=%d", lane ? "right" : "left", rc);
   }
@@ -1706,17 +1704,18 @@ static void run_mic(slot_t* slot) {
     if (rc != H2_PAL_OK && !slot_canceled(slot) && restarts < 3u) {
       ++restarts;
       slog(s, "H202_MFG_MIC_RESTART lane=%u rc=%d", lane, rc);
-      rc = audio_close(s);
-      if (rc == H2_PAL_OK) {
-        s->meter_active = true;
-        rc = audio_open(s, true, &observer);
-      }
+      rc = audio_release(s);
+      if (rc == H2_PAL_OK) rc = audio_open(s, true, &observer);
     }
   }
-  s->meter_active = false;
-  int closed = audio_close(s);
+  int closed = audio_release(s);
   slog(s, "H202_MFG_TONE off rc=%d", closed);
   if (rc == H2_PAL_OK) rc = closed;
+  if (closed != H2_PAL_OK) {
+    post(slot, H2_H202_MFG_EVENT_DONE, rc, 0);
+    return;
+  }
+  /* Capture can write the meter until stop and observer cleanup succeed. */
   h2_h202_mfg_aec_result_t result;
   h2_h202_mfg_aec_verdict_t verdict =
       h2_h202_mfg_aec_meter_result(&s->meter, &result);
@@ -1801,7 +1800,7 @@ static void run_aging(slot_t* slot) {
     }
   }
   if (rc == H2_PAL_ERR_CLOSED && slot_canceled(slot)) rc = H2_PAL_OK;
-  int closed = audio_close(s);
+  int closed = audio_release(s);
   slog(s, "H202_MFG_TONE off rc=%d", closed);
   if (rc == H2_PAL_OK) rc = closed;
   slog(s, "H202_MFG_AGING rc=%d", rc);
@@ -2059,35 +2058,41 @@ static int progress_commit(h2_h202_mfg_service_t* s, const uint8_t* results) {
 
 /* Commit happens only here. A management reboot never reaches this job. */
 /* Every other job was canceled; wait for them to release audio/radios. */
-static void wait_jobs_released(h2_h202_mfg_service_t* s) {
+static int wait_jobs_released(slot_t* slot) {
+  h2_h202_mfg_service_t* s = slot->service;
   for (unsigned waited = 0; waited < 5000u; waited += WAIT_SLICE_MS) {
     bool busy = false;
     service_lock(s);
     for (unsigned op = 0; op < H2_H202_MFG_OP_POWER; ++op)
       busy = busy || s->slots[op].busy;
-    bool stopping = s->stopping;
     service_unlock(s);
-    if (!busy || stopping) break;
-    (void)h2_pal_time_sleep_ms(s->runtime->time, WAIT_SLICE_MS);
+    if (!busy) return slot_canceled(slot) ? H2_PAL_ERR_CLOSED : H2_PAL_OK;
+    int rc = slot_sleep(slot, WAIT_SLICE_MS);
+    if (rc != H2_PAL_OK) return rc;
   }
+  return H2_PAL_ERR_TIMEOUT;
 }
 
 static void run_shutdown(slot_t* slot) {
   h2_h202_mfg_service_t* s = slot->service;
-  int rc = h2_pal_mutex_lock(s->operation_sync, s->operation_mutex);
+  int rc = operation_lock(slot);
   if (rc != H2_PAL_OK) {
     post(slot, H2_H202_MFG_EVENT_COMMITTED, rc, 0);
     return;
   }
-  wait_jobs_released(s);
-  rc = progress_commit(s, slot->job.results);
+  rc = wait_jobs_released(slot);
+  if (rc == H2_PAL_OK && !slot_canceled(slot))
+    rc = progress_commit(s, slot->job.results);
+  else if (rc == H2_PAL_OK)
+    rc = H2_PAL_ERR_CLOSED;
   slog(s, "H202_MFG_COMMIT rc=%d", rc);
   post(slot, H2_H202_MFG_EVENT_COMMITTED, rc, 0);
   if (rc != H2_PAL_OK) {
     operation_unlock(s);
     return;
   }
-  rc = h2_pal_power_shutdown(s->runtime->power, 0u);
+  rc = slot_canceled(slot) ? H2_PAL_ERR_CLOSED
+                           : h2_pal_power_shutdown(s->runtime->power, 0u);
   if (rc == H2_PAL_OK) rc = H2_PAL_ERR_INVALID_STATE; /* Did not power off. */
   slog(s, "H202_MFG_POWEROFF rc=%d", rc);
   operation_unlock(s);
@@ -2097,9 +2102,10 @@ static void run_shutdown(slot_t* slot) {
 /* Save only; the worker keeps waiting for the next firmware. */
 static void run_accept(slot_t* slot) {
   h2_h202_mfg_service_t* s = slot->service;
-  int rc = h2_pal_mutex_lock(s->operation_sync, s->operation_mutex);
+  int rc = operation_lock(slot);
   if (rc == H2_PAL_OK) {
-    rc = progress_commit(s, slot->job.results);
+    rc = slot_canceled(slot) ? H2_PAL_ERR_CLOSED
+                             : progress_commit(s, slot->job.results);
     operation_unlock(s);
   }
   slog(s, "H202_MFG_ACCEPT rc=%d", rc);
@@ -2111,14 +2117,18 @@ static void run_accept(slot_t* slot) {
 /* Clear under the operation mutex, then reboot; returning means no reboot. */
 static void run_reset(slot_t* slot) {
   h2_h202_mfg_service_t* s = slot->service;
-  int rc = h2_pal_mutex_lock(s->operation_sync, s->operation_mutex);
+  int rc = operation_lock(slot);
   if (rc == H2_PAL_OK) {
-    wait_jobs_released(s);
-    rc = h2_h202_mfg_progress_clear(s->runtime->pref);
+    rc = wait_jobs_released(slot);
+    if (rc == H2_PAL_OK && !slot_canceled(slot))
+      rc = h2_h202_mfg_progress_clear(s->runtime->pref);
+    else if (rc == H2_PAL_OK)
+      rc = H2_PAL_ERR_CLOSED;
     if (rc == H2_PAL_OK) rc = progress_changed(s, NULL);
     slog(s, "H202_MFG_RESET clear rc=%d", rc);
     if (rc == H2_PAL_OK) {
-      rc = h2_pal_power_reboot(s->runtime->power, 0u);
+      rc = slot_canceled(slot) ? H2_PAL_ERR_CLOSED
+                               : h2_pal_power_reboot(s->runtime->power, 0u);
       if (rc == H2_PAL_OK) rc = H2_PAL_ERR_INVALID_STATE;
       slog(s, "H202_MFG_REBOOT rc=%d", rc);
     }
@@ -2405,7 +2415,7 @@ h2_pal_result_t h2_h202_mfg_service_start(
   }
   if (rc != H2_PAL_OK) {
     int cleanup = service_join(s);
-    if (cleanup == H2_PAL_OK) cleanup = audio_close(s);
+    if (cleanup == H2_PAL_OK) cleanup = audio_release(s);
     if (cleanup == H2_PAL_OK) {
       service_free(s);
     } else {
@@ -2433,7 +2443,7 @@ h2_pal_result_t h2_h202_mfg_service_stop(h2_h202_mfg_service_t** service) {
   h2_h202_mfg_service_t* s = *service;
   h2_pal_result_t rc = service_join(s);
   if (rc != H2_PAL_OK) return rc;
-  rc = (h2_pal_result_t)audio_close(s);
+  rc = (h2_pal_result_t)audio_release(s);
   if (rc != H2_PAL_OK) return rc;
   service_free(s);
   *service = NULL;

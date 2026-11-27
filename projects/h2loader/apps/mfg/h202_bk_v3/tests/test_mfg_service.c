@@ -267,6 +267,7 @@ struct h2_pal_task {
   pthread_t native;
   h2_pal_task_entry_t entry;
   void* user;
+  bool power_worker;
 };
 struct h2_pal_mutex {
   pthread_mutex_t native;
@@ -289,6 +290,8 @@ static atomic_bool shutdown_key_down;
 static atomic_uint shutdowns, wifi_connects, led_frames, mic_starts;
 static atomic_uint reboots, speaker_volume;
 static atomic_bool reboot_locked;
+static atomic_uint power_lock_waits;
+static _Thread_local bool is_power_worker;
 static atomic_int last_color; /* Packed RGB of pixel 3. */
 static h2_pal_mutex_t* operation;
 static h2_runtime_t runtime;
@@ -329,6 +332,7 @@ static const h2_pal_time_api_t time_api = {.vtable = &time_vtable};
 
 static void* task_main(void* user) {
   h2_pal_task_t* task = user;
+  is_power_worker = task->power_worker;
   task->entry(task->user);
   return NULL;
 }
@@ -343,6 +347,7 @@ static int task_start(void* user, const h2_pal_task_options_t* options,
   h2_pal_task_t* task = calloc(1, sizeof(*task));
   task->entry = entry;
   task->user = ctx;
+  task->power_worker = strcmp(options->name, "h202/mfg/power") == 0;
   atomic_fetch_add(&tasks, 1);
   assert(pthread_create(&task->native, NULL, task_main, task) == 0);
   *out = task;
@@ -384,8 +389,10 @@ static h2_pal_result_t mutex_lock(void* user, h2_pal_mutex_t* m) {
 }
 static h2_pal_result_t mutex_try(void* user, h2_pal_mutex_t* m) {
   (void)user;
-  return pthread_mutex_trylock(&m->native) == 0 ? H2_PAL_OK
-                                                : H2_PAL_ERR_WOULD_BLOCK;
+  if (pthread_mutex_trylock(&m->native) == 0) return H2_PAL_OK;
+  if (is_power_worker && m == operation)
+    atomic_fetch_add(&power_lock_waits, 1u);
+  return H2_PAL_ERR_WOULD_BLOCK;
 }
 static h2_pal_result_t mutex_unlock(void* user, h2_pal_mutex_t* m) {
   (void)user;
@@ -1222,12 +1229,47 @@ static void test_reset(void) {
   puts("service reset gesture ok");
 }
 
+static void test_cancel_power_wait(void) {
+  for (unsigned reset = 0; reset < 2; ++reset) {
+    unsigned wait_count = atomic_load(&power_lock_waits);
+    unsigned before_shutdown = atomic_load(&shutdowns);
+    unsigned before_reboot = atomic_load(&reboots);
+    start();
+    wait_for(H2_H202_MFG_CHARGER, H2_H202_MFG_PHASE_ACTIVE);
+    assert(h2_pal_mutex_lock(&sync_api, operation) == H2_PAL_OK);
+    uint8_t results[H2_H202_MFG_ITEM_COUNT];
+    memset(results, H2_H202_MFG_PASSED, sizeof(results));
+    assert(h2_h202_mfg_progress_commit(&pref_api, results) == H2_PAL_OK);
+    if (reset) {
+      keys_now(2u);
+      keys_now(3u);
+      keys_now(2u);
+    } else {
+      keys_now(1u);
+    }
+    WAIT_UNTIL(atomic_load(&power_lock_waits) > wait_count);
+    assert(atomic_load(&power_lock_waits) > wait_count);
+    stop(); /* Join while management still owns the operation mutex. */
+    assert(atomic_load(&shutdowns) == before_shutdown &&
+           atomic_load(&reboots) == before_reboot);
+    h2_loader_mfg_summary_t summary;
+    stored(&summary);
+    assert(memcmp(summary.step_status, results, sizeof(results)) == 0);
+    assert(h2_h202_mfg_progress_clear(&pref_api) == H2_PAL_OK);
+    assert(h2_pal_mutex_unlock(&sync_api, operation) == H2_PAL_OK);
+    keys_now(0u);
+  }
+}
+
 /* Before management: white eyes, then the boot prompt played to the end
  * with the speaker released again. A missing prompt still lights the eyes. */
 static void test_boot_feedback(void) {
   memset(&audio, 0, sizeof(audio));
+  h2_h202_mfg_startup_audio_t startup = {0};
   unsigned frames = atomic_load(&led_frames);
-  assert(h2_h202_mfg_boot_feedback(&runtime, &profile) == H2_PAL_OK);
+  assert(h2_h202_mfg_startup_feedback(&startup, &runtime, &profile,
+                                      H2_H202_MFG_COLOR_WHITE,
+                                      H2_H202_MFG_PROMPT_BOOT) == H2_PAL_OK);
   assert(atomic_load(&led_frames) == frames + 1u);
   assert(atomic_load(&last_color) == (32 << 16 | 32 << 8 | 32));
   assert(audio.writes > 0u && atomic_load(&speaker_volume) == 35u);
@@ -1235,12 +1277,37 @@ static void test_boot_feedback(void) {
   const h2_h202_mfg_adpcm_t saved = profile.prompts[H2_H202_MFG_PROMPT_BOOT];
   profile.prompts[H2_H202_MFG_PROMPT_BOOT] = (h2_h202_mfg_adpcm_t){0};
   unsigned writes = audio.writes;
-  assert(h2_h202_mfg_boot_feedback(&runtime, &profile) == H2_PAL_ERR_NOT_FOUND);
+  assert(h2_h202_mfg_startup_feedback(
+             &startup, &runtime, &profile, H2_H202_MFG_COLOR_WHITE,
+             H2_H202_MFG_PROMPT_BOOT) == H2_PAL_ERR_NOT_FOUND);
   assert(atomic_load(&led_frames) == frames + 2u && audio.writes == writes);
   assert(!audio.speaker && !audio.track_open);
   profile.prompts[H2_H202_MFG_PROMPT_BOOT] = saved;
-  assert(h2_h202_mfg_boot_feedback(NULL, &profile) == H2_PAL_ERR_INVALID_ARG);
-  puts("boot feedback ok");
+  assert(h2_h202_mfg_startup_feedback(
+             NULL, &runtime, &profile, H2_H202_MFG_COLOR_WHITE,
+             H2_H202_MFG_PROMPT_BOOT) == H2_PAL_ERR_INVALID_ARG);
+
+  atomic_store(&deny_close, true);
+  assert(h2_h202_mfg_startup_feedback(
+             &startup, &runtime, &profile, H2_H202_MFG_COLOR_WHITE,
+             H2_H202_MFG_PROMPT_BOOT) == H2_PAL_ERR_IO);
+  assert(startup.track == &audio_track && audio.track_open && audio.speaker);
+  writes = audio.writes;
+  assert(h2_h202_mfg_startup_feedback(
+             &startup, &runtime, &profile, H2_H202_MFG_COLOR_WHITE,
+             H2_H202_MFG_PROMPT_BOOT) == H2_PAL_ERR_IO);
+  assert(startup.track == &audio_track && audio.writes == writes);
+  atomic_store(&deny_close, false);
+  atomic_store(&deny_speaker_stop, true);
+  assert(h2_h202_mfg_startup_audio_release(&startup) == H2_PAL_ERR_IO);
+  assert(startup.track == NULL && startup.audio == &audio_api && audio.speaker);
+  atomic_store(&deny_speaker_stop, false);
+  assert(h2_h202_mfg_startup_feedback(&startup, &runtime, &profile,
+                                      H2_H202_MFG_COLOR_WHITE,
+                                      H2_H202_MFG_PROMPT_BOOT) == H2_PAL_OK);
+  assert(startup.audio == NULL && startup.track == NULL &&
+         audio.writes > writes);
+  puts("boot feedback retains failed cleanup for retry");
 }
 
 static void test_resume_and_aging(void) {
@@ -1562,6 +1629,7 @@ int main(void) {
   test_session();
   test_resume_and_aging();
   test_reset();
+  test_cancel_power_wait();
   test_acceptance_gate();
   test_retained_track_close();
   test_aging_dhcp_retry();

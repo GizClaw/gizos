@@ -44,6 +44,7 @@ static h2_loader_t s_loader;
 static h2_loader_command_t s_command;
 static h2_pal_mutex_t* s_operation;
 static h2_h202_mfg_service_t* s_service;
+static h2_h202_mfg_startup_audio_t s_startup_audio;
 static mbedtls_sha256_context s_sha;
 
 static void hold(void) {
@@ -320,7 +321,7 @@ static void run_sd_check(void) {
       wait_for_removal = false;
       if (!waiting_for_card) {
         printf("H202_MFG_SD waiting_for_card\r\n");
-        (void)h2_h202_mfg_startup_feedback(s_runtime, profile,
+        (void)h2_h202_mfg_startup_feedback(&s_startup_audio, s_runtime, profile,
                                            H2_H202_MFG_COLOR_YELLOW,
                                            H2_H202_MFG_PROMPT_SD_INSERT);
         waiting_for_card = true;
@@ -343,13 +344,13 @@ static void run_sd_check(void) {
     if (unlock != H2_PAL_OK) fail("sd_unlock", unlock);
     printf("H202_MFG_SD stage=2 rc=%d\r\n", rc);
     if (rc == H2_PAL_OK) {
-      (void)h2_h202_mfg_startup_feedback(s_runtime, profile,
+      (void)h2_h202_mfg_startup_feedback(&s_startup_audio, s_runtime, profile,
                                          H2_H202_MFG_COLOR_GREEN,
                                          H2_H202_MFG_PROMPT_SD_PASSED);
       return;
     }
     if (rc != H2_PAL_ERR_UNAVAILABLE) {
-      (void)h2_h202_mfg_startup_feedback(s_runtime, profile,
+      (void)h2_h202_mfg_startup_feedback(&s_startup_audio, s_runtime, profile,
                                          H2_H202_MFG_COLOR_RED,
                                          H2_H202_MFG_PROMPT_SD_FAILED);
       wait_for_removal = true;
@@ -397,12 +398,19 @@ static void mfg_entry(void* user) {
   if (rc == H2_PAL_OK) rc = h2_runtime_init(&config, &s_runtime);
   if (rc != H2_PAL_OK) fail("runtime_init", rc);
   /* Acknowledge the accepted boot before Core hashes the Loader image. */
-  (void)h2_h202_mfg_boot_feedback(s_runtime, &h2_h202_mfg_profile);
+  (void)h2_h202_mfg_startup_feedback(
+      &s_startup_audio, s_runtime, &h2_h202_mfg_profile,
+      H2_H202_MFG_COLOR_WHITE, H2_H202_MFG_PROMPT_BOOT);
   static char device_uid[13];
   rc = h2_loader_pal_device_uid(s_runtime->device_identity, device_uid);
   if (rc != H2_PAL_OK) fail("device_uid", rc);
   start_loader(device_uid);
   run_sd_check();
+  while ((rc = h2_h202_mfg_startup_audio_release(&s_startup_audio)) !=
+         H2_PAL_OK) {
+    printf("H202_MFG_STARTUP_AUDIO_CLEANUP rc=%d\r\n", rc);
+    rtos_delay_milliseconds(H2_H202_MFG_RETRY_DELAY_MS);
+  }
   run_startup();
   const h2_h202_mfg_service_config_t service = {
       .runtime = s_runtime,

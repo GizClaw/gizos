@@ -24,8 +24,6 @@ static int test_firmware(const h2_pal_firmware_info_api_t*,
 static int test_loader_init(h2_loader_t*, const h2_loader_config_t*);
 static h2_pal_result_t test_service_start(const h2_h202_mfg_service_config_t*,
                                           h2_h202_mfg_service_t**);
-static h2_pal_result_t test_feedback(h2_runtime_t*,
-                                     const h2_h202_mfg_profile_t*);
 static int test_boot_init(h2_device_boot_policy_t*,
                           const h2_device_boot_policy_config_t*);
 static h2_pal_result_t test_uid(const h2_pal_device_identity_api_t*,
@@ -37,8 +35,8 @@ static h2_pal_result_t test_uid(const h2_pal_device_identity_api_t*,
 #define h2_pal_firmware_info_get_current test_firmware
 #define h2_loader_init test_loader_init
 #define h2_h202_mfg_service_start test_service_start
-#define h2_h202_mfg_boot_feedback test_feedback
-static h2_pal_result_t test_sd_feedback(h2_runtime_t*,
+static h2_pal_result_t test_sd_feedback(h2_h202_mfg_startup_audio_t*,
+                                        h2_runtime_t*,
                                         const h2_h202_mfg_profile_t*,
                                         h2_h202_mfg_color_t,
                                         h2_h202_mfg_prompt_t);
@@ -238,11 +236,17 @@ int h2_bk7258_board_sd_check(void) {
   ++f.storage_calls;
   return fail_storage_once && f.storage_calls == 1u ? H2_PAL_ERR_IO : H2_PAL_OK;
 }
-static h2_pal_result_t test_sd_feedback(h2_runtime_t* runtime_arg,
+static h2_pal_result_t test_sd_feedback(h2_h202_mfg_startup_audio_t* state,
+                                        h2_runtime_t* runtime_arg,
                                         const h2_h202_mfg_profile_t* profile,
                                         h2_h202_mfg_color_t color,
                                         h2_h202_mfg_prompt_t prompt) {
-  assert(runtime_arg == &runtime && profile == &h2_h202_mfg_profile);
+  assert(state == &s_startup_audio && runtime_arg == &runtime &&
+         profile == &h2_h202_mfg_profile);
+  if (prompt == H2_H202_MFG_PROMPT_BOOT) {
+    assert(color == H2_H202_MFG_COLOR_WHITE && f.uart == 0u);
+    return H2_PAL_OK;
+  }
   assert(f.uart == 1u && f.locked == 0u && f.service == 0u);
   if (prompt == H2_H202_MFG_PROMPT_SD_INSERT) {
     assert(color == H2_H202_MFG_COLOR_YELLOW && !f.sd_present);
@@ -273,12 +277,6 @@ static int test_runtime_init(const h2_runtime_config_t* config,
                              h2_runtime_t** out) {
   (void)config;
   *out = &runtime;
-  return H2_PAL_OK;
-}
-static h2_pal_result_t test_feedback(h2_runtime_t* r,
-                                     const h2_h202_mfg_profile_t* profile) {
-  (void)r;
-  (void)profile;
   return H2_PAL_OK;
 }
 static int test_firmware(const h2_pal_firmware_info_api_t* api,

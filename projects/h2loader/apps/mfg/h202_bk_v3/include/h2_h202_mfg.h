@@ -485,18 +485,25 @@ typedef struct h2_h202_mfg_profile {
   h2_h202_mfg_adpcm_t prompts[H2_H202_MFG_PROMPT_COUNT];
 } h2_h202_mfg_profile_t;
 
-/** Boot acknowledgement on the entry task, before management starts: all
- * eyes white, then the boot prompt played to completion. Loader Core startup
- * hashes the running image once before stage 03 lights.
- * Logs H202_MFG_BOOT_FEEDBACK; errors are reported, never fatal to boot. */
-h2_pal_result_t h2_h202_mfg_boot_feedback(h2_runtime_t* runtime,
-                                          const h2_h202_mfg_profile_t* profile);
+/** Entry-owned startup audio. Zero-initialize before use and keep the Runtime
+ * alive until cleanup succeeds. Only the entry task uses this state. */
+typedef struct h2_h202_mfg_startup_audio {
+  const h2_pal_audio_api_t* audio;
+  h2_pal_audio_track_t* track;
+} h2_h202_mfg_startup_audio_t;
 
-/** Show and play one startup indication on the entry task, before the
- * controller borrows the audio and eye providers. */
+/** Close the track, then stop the speaker. On failure, retain the pending
+ * cleanup state for a retry before starting MFG workers or releasing Runtime.
+ */
+h2_pal_result_t h2_h202_mfg_startup_audio_release(
+    h2_h202_mfg_startup_audio_t* state);
+
+/** Set the eyes and play a startup prompt on the entry task. Retries pending
+ * audio cleanup before starting playback. Playback errors do not block UART. */
 h2_pal_result_t h2_h202_mfg_startup_feedback(
-    h2_runtime_t* runtime, const h2_h202_mfg_profile_t* profile,
-    h2_h202_mfg_color_t color, h2_h202_mfg_prompt_t prompt);
+    h2_h202_mfg_startup_audio_t* state, h2_runtime_t* runtime,
+    const h2_h202_mfg_profile_t* profile, h2_h202_mfg_color_t color,
+    h2_h202_mfg_prompt_t prompt);
 
 typedef struct h2_h202_mfg_service h2_h202_mfg_service_t;
 
