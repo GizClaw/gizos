@@ -68,7 +68,8 @@ FRESULT f_mkdir(const char* p) {
 FRESULT f_open(FIL* f, const char* p, BYTE mode) {
   assert(f && mode == FA_READ);
   strcpy(last_path, p);
-  f->marker = 50;
+  f->marker = 0;
+  f->size = 50;
   return FR_OK;
 }
 FRESULT f_read(FIL* f, void* p, UINT n, UINT* count) {
@@ -84,7 +85,7 @@ FRESULT f_write(FIL* f, const void* p, UINT n, UINT* count) {
   return FR_OK;
 }
 FRESULT f_lseek(FIL* f, FSIZE_t position) {
-  assert(f != NULL && position == 20);
+  f->marker = position;
   return FR_OK;
 }
 FRESULT f_sync(FIL* f) {

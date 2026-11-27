@@ -4,12 +4,13 @@
 #include <stddef.h>
 typedef unsigned UINT;
 typedef uint64_t FSIZE_t;
-#define f_size(file) ((FSIZE_t)((file)->marker))
+#define f_size(file) ((file)->size)
 typedef unsigned char BYTE;
 typedef int FRESULT;
 typedef int gpio_output_state_e;
 typedef struct {
-  int marker;
+  FSIZE_t marker;
+  FSIZE_t size;
 } FIL;
 typedef struct {
   int marker;
