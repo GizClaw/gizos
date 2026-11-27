@@ -1,0 +1,14 @@
+name: Gizloader release
+
+on:
+  push:
+    tags: ["gizloader-v*"]
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  release:
+    uses: GizClaw/gizos/.github/workflows/gizloader.yml@main
+    secrets: inherit

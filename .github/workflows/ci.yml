@@ -6,9 +6,6 @@ on:
       orbstack_pr:
         type: boolean
         default: false
-  pull_request:
-    branches: [main]
-    types: [opened, synchronize]
   push:
     branches: [main]
   workflow_dispatch:
@@ -352,8 +349,17 @@ jobs:
 
       - name: Install Android SDK and NDK
         if: matrix.config == 'android_arm64'
+        timeout-minutes: 15
         shell: bash
         run: |
+          ndk_home="$ANDROID_HOME/ndk/$ANDROID_NDK_VERSION"
+          if [[ -f "$ANDROID_HOME/platforms/android-$ANDROID_API_LEVEL/android.jar" &&
+                -x "$ANDROID_HOME/build-tools/$ANDROID_BUILD_TOOLS_VERSION/aapt2" &&
+                -f "$ndk_home/source.properties" ]]; then
+            echo "Using Android SDK and NDK already installed on the runner"
+            printf 'ANDROID_NDK_HOME=%s\n' "$ndk_home" >> "$GITHUB_ENV"
+            exit 0
+          fi
           sdkmanager="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           if [[ ! -x "$sdkmanager" ]]; then
             sdkmanager="$ANDROID_HOME/cmdline-tools/23.0/bin/sdkmanager"
@@ -373,8 +379,7 @@ jobs:
             echo "Android SDK installation failed; retrying after attempt $attempt." >&2
             sleep "$((attempt * 5))"
           done
-          printf 'ANDROID_NDK_HOME=%s/ndk/%s\n' \
-            "$ANDROID_HOME" "$ANDROID_NDK_VERSION" >> "$GITHUB_ENV"
+          printf 'ANDROID_NDK_HOME=%s\n' "$ndk_home" >> "$GITHUB_ENV"
 
       - name: Restore Bazel repository cache
         if: runner.environment == 'github-hosted'
@@ -576,6 +581,7 @@ jobs:
           printf 'GIZOS_DEVENV_HOME=%s/gizos-devenv\n' "$RUNNER_TEMP" >> "$GITHUB_ENV"
 
       - name: Fetch catalog-pinned ESP-IDF sources
+        if: runner.environment == 'github-hosted'
         shell: bash
         run: |
           "$GIZOS_BIN" setup esp-idf 6.2 --sources-only
@@ -589,6 +595,7 @@ jobs:
           PYENV
 
       - name: Restore ESP-IDF tool cache
+        if: runner.environment == 'github-hosted'
         id: esp-idf-cache
         continue-on-error: true
         uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
@@ -597,11 +604,18 @@ jobs:
           key: gizos-idf-shared-v1-${{ runner.os }}-${{ hashFiles('tools/gizos/src/catalog.json', 'tools/bazel/native/versions/esp_idf_tool_versions.txt') }}-esp32s3-esp32p4-esp32c5-esp32s31
 
       - name: Install catalog-pinned ESP-IDF tools
+        if: runner.environment == 'github-hosted'
         shell: bash
         env:
           IDF_GITHUB_ASSETS: ""
           IDF_MIRROR_PREFIX_MAP: 'https://github\.com/espressif/binutils-gdb/,https://dl.espressif.com/github_assets/espressif/binutils-gdb/'
         run: '"$GIZOS_BIN" setup esp-idf 6.2 --targets esp32s3,esp32p4,esp32c5,esp32s31'
+
+      - name: Set up catalog-pinned ESP-IDF on OrbStack
+        if: runner.environment == 'self-hosted'
+        uses: GizClaw/gizos/.github/actions/orbstack-esp-idf@main
+        with:
+          targets: esp32s3,esp32p4,esp32c5,esp32s31
 
       - name: Configure ESP Wi-Fi build credentials
         env:
@@ -651,6 +665,7 @@ jobs:
 
       - name: Save ESP-IDF tool cache seed
         if: >-
+          runner.environment == 'github-hosted' &&
           github.event_name == 'push' && github.ref == 'refs/heads/main' &&
           steps.esp-idf-cache.outputs.cache-hit != 'true'
         continue-on-error: true

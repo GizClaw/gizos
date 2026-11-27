@@ -344,7 +344,9 @@ CI uses the complete compatible platform matrix for same-repository pull request
 
 ESP32-S3, ESP32-P4, and BK7258 configs automatically select all firmware endpoints for that platform. Each native firmware action declares 4 CPU and 4096 MiB to Bazel and passes a four-job limit to the underlying ESP-IDF or BK build. Bazel therefore schedules one action on a four-core runner and more independent launcher actions as a runner gains CPU and memory. Increasing a single runner size improves firmware throughput without creating one GitHub matrix entry per launcher.
 
-Linux CI on `main` and Linux Release jobs use `gizclaw-orbstack-amd64`. Its `BAZELRC` selects the persistent disk and repository caches under `/ci-cache/bazel`. Direct pull-request runs use GitHub-hosted runners. A caller invoking the trusted reusable CI workflow can opt same-repository pull requests in with `orbstack_pr`. The macOS and Windows jobs retain native platform runners.
+Linux CI for `main` and same-repository pull requests, and Linux Release jobs, use `gizclaw-orbstack-amd64`. Its `BAZELRC` selects the persistent disk and repository caches under `/ci-cache/bazel`. Pull requests call the reusable CI workflow on `main` and report `CI required` after the full matrix. Fork pull requests run on GitHub-hosted runners. The macOS and Windows jobs use their respective native platform runners.
+
+OrbStack jobs reuse the catalog-pinned ESP-IDF checkout under `/ci-cache/esp-idf/sources` and the architecture-specific tools under `/ci-cache/esp-idf/tools`. Setup verifies the checkout and takes the same revision lock as Firmwares before installing tools.
 
 These native SDK actions remain unsandboxed and execute only on the current
 runner, while their declared repository inputs and firmware outputs participate
