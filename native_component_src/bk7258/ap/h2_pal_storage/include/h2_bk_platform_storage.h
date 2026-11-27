@@ -2,6 +2,7 @@
 #define H2_BK_PLATFORM_STORAGE_H
 #include "os/h2_pal_disk.h"
 #include "os/h2_pal_fs.h"
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #ifdef __cplusplus
@@ -26,12 +27,19 @@ typedef struct h2_bk_sd_fs_config {
   const char* root;
   const h2_bk_sd_mount_t* mounts;
   size_t mount_count;
+  /** Optional board callbacks, used before any mount or format attempt. */
+  int (*select_pins)(void);
+  bool (*card_present)(void);
 } h2_bk_sd_fs_config_t;
 /* Configuration strings are borrowed for the filesystem lifetime. Each mount
  * maps a logical path prefix onto a board-selected FATFS directory. */
 int h2_bk_platform_sd_fs_init(const h2_bk_sd_fs_config_t* config,
                               h2_pal_fs_api_t* out_fs);
 int h2_bk_platform_sd_fs_mount(void* user, const char* path);
+/** One factory-only mount attempt. If an inserted card has no recognized
+ * filesystem, format it once and retry. The caller serializes filesystem use.
+ */
+int h2_bk_platform_sd_fs_factory_mount(const char* path);
 int h2_bk_platform_sd_fs_clear(void* user, const char* path);
 void h2_bk_platform_sd_fs_prepare(void);
 void h2_bk_platform_sd_fs_release(void);

@@ -17,10 +17,6 @@ static unsigned disk_configs, boot_starts, business_calls, http_creates,
     http_destroys;
 static int disk_error, boot_error, http_error, http_instance;
 
-FRESULT f_lseek(FIL* file, FSIZE_t offset) {
-  file->marker = (int)offset;
-  return FR_OK;
-}
 int h2_bk_platform_disk_configure(const h2_bk_disk_region_t* region) {
   assert(region->id == H2_BK7258_COREDUMP_ADDR);
   ++disk_configs;
