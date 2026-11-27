@@ -196,6 +196,7 @@ func TestRTPTimingEndpointAfterCloseWaitsForEchoAndContainsOnlyMetadata(t *testi
 	s := newTestServer()
 	s.rtpTimingCapacity = 4
 	item := newTrackedTimingSession(t, s)
+	item.timing.started = item.timing.started.Add(-time.Second)
 	defer s.closeAll()
 	packet := &rtp.Packet{Header: rtp.Header{Version: 2, SequenceNumber: 42,
 		SSRC: 123456, PayloadType: 109, Timestamp: 7654321}, Payload: []byte("private-payload-must-not-appear")}
